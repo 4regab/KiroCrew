@@ -81,6 +81,7 @@ from kiro_crew.sandbox_tiers import (
     _resolved_install_root_targets,
     _resolved_kiro_agents_targets,
     _sandbox_policy,
+    configured_readonly_layer,
 )
 from kiro_crew.sandbox_workspace import (
     _literal_ancestor_guards,
@@ -330,6 +331,42 @@ def _carveout_probes(candidates: tuple[str, ...]) -> dict[str, sandbox_plan.Carv
     return probes
 
 
+def _operator_layer_probes(
+    entries: tuple[str, ...], *, keep_unprobeable: bool
+) -> tuple[sandbox_plan.CarveoutProbe, ...]:
+    """What this host says about each operator read-only entry, relative ones included.
+
+    A relative entry is carried unprobed, so the plan refuses it by name rather than
+    this adapter dropping it silently. With *keep_unprobeable*, an entry whose ``stat``
+    fails for any reason but absence (``EACCES`` from a parent the agent ran ``chmod``
+    on, an I/O error) is kept as present rather than dropped as "not a directory": the
+    launcher then seals it, or refuses the spawn if it cannot pin it, and Seatbelt
+    denies the path either way. Exceptions pass ``False``: an unprobeable exception is
+    refused and its path stays read-only.
+    """
+    probes: dict[str, sandbox_plan.CarveoutProbe] = {}
+    for raw in entries:
+        if raw in probes:
+            continue
+        if not raw or not os.path.isabs(raw):
+            probes[raw] = sandbox_plan.CarveoutProbe(
+                raw=raw, lexical=raw, canonical=raw, is_dir=False
+            )
+            continue
+        lexical = os.path.normpath(raw)
+        canonical = os.path.realpath(lexical)
+        try:
+            is_dir = stat.S_ISDIR(os.stat(canonical).st_mode)
+        except (FileNotFoundError, NotADirectoryError):
+            is_dir = False
+        except OSError:
+            is_dir = keep_unprobeable
+        probes[raw] = sandbox_plan.CarveoutProbe(
+            raw=raw, lexical=lexical, canonical=canonical, is_dir=is_dir
+        )
+    return tuple(probes.values())
+
+
 def _plan_cwd(request: sandbox_plan.SandboxRequest, host_paths: list[str]) -> str:
     """The working directory a relative path in the plan resolves against.
 
@@ -391,7 +428,15 @@ def _live_plan_host(request: sandbox_plan.SandboxRequest) -> sandbox_plan.PlanHo
     # seal steps on is guarded, and so are the parents of its own spelling, which keep a
     # name below one not created yet guarded on Seatbelt (the namespace launcher skips an
     # absent name): Seatbelt denies writing each one, and the namespace launcher pins the
-    # ones this uid could rename.
+    # ones this uid could rename. The operator's read-only entries join them on the
+    # namespace backend only: a session's bind moves with its directory, but the next
+    # session resolves the entry by name again, so a parent renamed in between would
+    # leave the real tree unsealed. Seatbelt guards them through
+    # ``operator_ancestor_guards`` instead.
+    operator_paths, operator_exceptions = configured_readonly_layer()
+    operator_seal_targets = (
+        tuple(path for path in operator_paths if os.path.isabs(path)) if namespace else ()
+    )
     seal_parents = tuple(
         entry
         for target in (
@@ -400,6 +445,7 @@ def _live_plan_host(request: sandbox_plan.SandboxRequest) -> sandbox_plan.PlanHo
             *(os.path.join(home, rel) for rel in _CREW_READONLY_TARGETS),
             *relocated_crew_readonly,
             *install_root_targets,
+            *operator_seal_targets,
         )
         for entry in (os.path.dirname(os.path.normpath(target)), *_resolution_entries(target))
     )
@@ -409,6 +455,8 @@ def _live_plan_host(request: sandbox_plan.SandboxRequest) -> sandbox_plan.PlanHo
         else _literal_ancestor_guards(seal_parents)
     )
     carveout_probes = tuple(_carveout_probes(sandbox_plan.carveout_candidates(request)).values())
+    operator_readonly_probes = _operator_layer_probes(operator_paths, keep_unprobeable=True)
+    operator_exception_probes = _operator_layer_probes(operator_exceptions, keep_unprobeable=False)
     host_paths = [
         home,
         *([pod_os_home] if pod_os_home else []),
@@ -449,6 +497,8 @@ def _live_plan_host(request: sandbox_plan.SandboxRequest) -> sandbox_plan.PlanHo
         install_root_targets=install_root_targets,
         readonly_ancestor_guards=readonly_ancestor_guards,
         carveout_probes=carveout_probes,
+        operator_readonly_probes=operator_readonly_probes,
+        operator_exception_probes=operator_exception_probes,
         uid=uid,
         gid=gid,
         ssh_accept_new=_ssh_supports_accept_new() if namespace else False,
