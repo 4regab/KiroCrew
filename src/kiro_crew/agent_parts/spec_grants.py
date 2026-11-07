@@ -54,7 +54,17 @@ _MATE_SERVER = "kirocrew-mate"
 #: offers the Preview opt-in card first). ``find_capabilities`` only reads the
 #: worker's tools and the catalog.
 #: ``save_notes`` writes only the calling crewmate's own briefing, the file it
-#: has always kept for itself, admitted only in its own thread. A tool
+#: has always kept for itself, admitted only in its own thread. ``bot_list`` reads
+#: the other Bots' names and descriptions; ``bot_send`` queues one bounded message
+#: on another Bot's thread, where it arrives as data, under a hop limit, a per-pair
+#: rate limit, a crew-log entry and the ``agent.bot_messaging`` switch. ``room_list`` reads the names
+#: of the rooms the Bot is in; ``room_send`` posts one bounded text message to a room,
+#: where the other members read it as data, under a per-turn cap, a depth limit, a rate
+#: limit, a crew-log entry and the ``agent.group_rooms`` switch. ``channel_list`` reads the names
+#: of the connected channels; ``channel_send`` is granted without a tool prompt because
+#: the gateway holds every call for its own card showing the exact channel and text, and
+#: sends only on the user's "Send it" (``agent.channel_posts`` switch, rate limit, crew-log
+#: entry), whatever approval mode the Bot runs in. A tool
 #: added to the server is not in this tuple, so it asks first until it is
 #: reviewed here.
 _MATE_AUTO_GRANTS = (
@@ -71,6 +81,12 @@ _MATE_AUTO_GRANTS = (
     f"@{_MATE_SERVER}/key_result_progress",
     f"@{_MATE_SERVER}/save_goal_report",
     f"@{_MATE_SERVER}/save_notes",
+    f"@{_MATE_SERVER}/bot_list",
+    f"@{_MATE_SERVER}/bot_send",
+    f"@{_MATE_SERVER}/room_list",
+    f"@{_MATE_SERVER}/room_send",
+    f"@{_MATE_SERVER}/channel_list",
+    f"@{_MATE_SERVER}/channel_send",
 )
 
 

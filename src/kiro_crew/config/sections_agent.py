@@ -1359,6 +1359,51 @@ class AgentConfig:
             "and a subagent has no panel to write.",
         ),
     )
+    bot_messaging: bool = field(
+        default=True,
+        metadata=_meta(
+            "Bot Messaging",
+            "Let a Bot send a message to another Bot on this gateway by name, "
+            "with the bot_send and bot_list tools. The message reaches the other "
+            "Bot's own thread as data from a Bot, not as something you typed, and "
+            "the Bot may answer with a message of its own. A chain of messages "
+            "stops after three hops, a Bot can send only a few messages to the "
+            "same Bot in ten minutes, and every send is written to the sender's "
+            "crew log. On by default. Turn this off to stop all Bot-to-Bot "
+            "messages at once: the tools refuse from the next call, with no "
+            "restart. A message already waiting for a busy Bot is still delivered.",
+        ),
+    )
+    group_rooms: bool = field(
+        default=True,
+        metadata=_meta(
+            "Group Chat Rooms",
+            "Let Bots take part in group chat rooms on this gateway, with the "
+            "room_list and room_send tools. A room is you plus two to six Bots. "
+            "Each Bot reads the new messages in its own thread as data, decides "
+            "for itself whether to answer, and may stay silent. A Bot posts at most "
+            "three messages per turn, a round of replies stops after a few "
+            "rounds, and every post is written to the poster's crew log. On by "
+            "default. Turn this off to stop all room posts and wakes at once: the "
+            "tools refuse from the next call, with no restart.",
+        ),
+    )
+    channel_posts: bool = field(
+        default=True,
+        metadata=_meta(
+            "Bot Channel Posts",
+            "Let a Bot ask to post a message to a messaging channel you have "
+            "connected (Slack, Discord, Telegram, WhatsApp and the like), with "
+            "the channel_list and channel_send tools. Every post waits for your "
+            "answer on a card that shows the exact channel and the exact text, "
+            "and nothing is sent unless you press Send. The post goes to your own "
+            "direct messages on that channel, with a line saying which Bot sent "
+            "it. A Bot can ask at most a few times per channel in ten minutes, "
+            "and every request, whether you approve it or not, is written to the "
+            "Bot's crew log. On by default. Turn this off to stop all requests at "
+            "once: the tools refuse from the next call, with no restart.",
+        ),
+    )
     subagent_cost_gb: float = field(
         default=_DEFAULT_SUBAGENT_COST_GB,
         metadata=_meta(

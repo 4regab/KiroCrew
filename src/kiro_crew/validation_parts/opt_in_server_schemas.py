@@ -730,4 +730,31 @@ MCP_MATE_SCHEMAS: dict[str, ToolSchema] = {
         tool_name="save_notes",
         fields=[FieldSpec("text", str, required=True, max_len=_goals.NOTES_MAX_CHARS)],
     ),
+    "bot_list": ToolSchema(tool_name="bot_list", fields=[]),
+    "bot_send": ToolSchema(
+        tool_name="bot_send",
+        fields=[
+            FieldSpec("name", str, required=True, max_len=MAX_SHORT_STRING),
+            # The gateway holds the real cap (bot_messages.MAX_MESSAGE_CHARS) and says so.
+            FieldSpec("message", str, required=True, max_len=2000),
+        ],
+    ),
+    "room_list": ToolSchema(tool_name="room_list", fields=[]),
+    "room_send": ToolSchema(
+        tool_name="room_send",
+        fields=[
+            FieldSpec("room", str, required=True, max_len=MAX_SHORT_STRING),
+            # The gateway holds the real cap (bot_messages.MAX_MESSAGE_CHARS) and says so.
+            FieldSpec("message", str, required=True, max_len=2000),
+        ],
+    ),
+    "channel_list": ToolSchema(tool_name="channel_list", fields=[]),
+    "channel_send": ToolSchema(
+        tool_name="channel_send",
+        fields=[
+            FieldSpec("channel", str, required=True, max_len=MAX_SHORT_STRING),
+            # The gateway holds the real cap (channel_posts.MAX_POST_CHARS) and says so.
+            FieldSpec("message", str, required=True, max_len=400),
+        ],
+    ),
 }

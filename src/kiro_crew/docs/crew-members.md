@@ -296,6 +296,63 @@ memory, and the crew manager says so on the field when that is the case.
 holds, what is injected at the start of a conversation, and how backup and
 restore treat it.
 
+## Bots messaging each other
+
+A Bot can message another Bot on the same gateway by its short name, with the
+`bot_list` and `bot_send` tools. `bot_send` returns at once. The other Bot reads
+the message in its own thread when its current turn is free, as a note from a Bot
+and not from you, and may answer with a message of its own. It cannot read the
+sender's memory or files, and the sender cannot read its.
+
+The limits keep a conversation between Bots from running away. A message is at
+most 2,000 characters. A chain of replies stops after three hops. One Bot can send
+another Bot at most six messages in ten minutes. A Bot cannot message itself.
+Every send, including a refused one, is written to the sender's crew log as a
+`member/bot_message` event.
+
+On by default. Set `agent.bot_messaging` to `false` in the config to turn it off
+for every Bot; the tools refuse from the next call, with no restart.
+
+## Group chat rooms
+
+A room is you plus two to six Bots on this gateway. You write in the room; every
+Bot in it reads the new messages in its own thread and decides for itself whether
+to answer. A Bot answers by posting to the room with `room_send`, and staying
+silent is fine. What one Bot says in a room reaches the other Bots as a note from a
+Bot and not from you. Bots do not share chats, memory or files; the room is the
+only thing they have in common.
+
+The limits keep a room from running away. A message is at most 2,000 characters
+and text only. A Bot posts at most three messages per turn. A reply to a reply
+counts one level deeper; from the third level the Bots are told the room is
+wrapping up, and after the fourth nobody is woken. A Bot can post at most twenty
+messages to one room in ten minutes. Every post, including a refused one, is
+written to the poster's crew log as a `member/room_post` event.
+
+Rooms are made and read through `/api/rooms` (a page for them is not built yet).
+On by default. Set `agent.group_rooms` to `false` in the config to turn it off for
+every Bot; the tools refuse from the next call, with no restart.
+
+## Bots posting to your channels
+
+A Bot can ask to post one short message to a messaging channel you have connected
+(Slack, Discord, Telegram, WhatsApp, Feishu and the like), with the `channel_list` and
+`channel_send` tools. Nothing is sent on the Bot's word. Each time, a card appears in
+the Bot's chat that shows the exact channel and the exact text, and the message goes
+out only when you press **Send it**. The Bot waits up to five minutes for your answer;
+if you decline, close the card, answer in chat or do not answer, nothing is sent and
+the Bot is told so. No Bot can answer the card for you.
+
+The message goes to your own messages on that channel (the same place a Bot's
+`send_message` goes), with a line saying which Bot sent it. It is plain text, at most
+400 characters. A Bot can ask at most three times per channel in ten minutes, and
+every request, whether you approved it or not, is written to the Bot's crew log as a
+`member/channel_post` event. Weixin and WeCom are not offered, because the gateway
+cannot tell which of the people who messaged the bot is you.
+
+On by default. Set `agent.channel_posts` to `false` in the config to turn it off for
+every Bot; the tools refuse from the next call, with no restart.
+
 ## Three things called "crew"
 
 | | What it is |
