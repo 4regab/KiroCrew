@@ -2185,6 +2185,36 @@ broadcasts.
 maintained by the frontend flow. The backend accepts any valid slug and does
 not enforce uniqueness.
 
+**Untouched-session discard** — opening the chat panel with no bound session
+creates one before the user types. When the panel stops showing that session
+(closed, switched to comments, moved to another artifact, or the page left), the
+page discards it if it is still untouched: no transcript row, nothing a sidebar
+close would ask about (`closeBusyReasons`: a turn, a queue, an approval, sub-agents,
+a workflow, a goal loop or monitor), an empty composer draft, no staged file or
+session reference (those are stored apart from the text), and no upload in flight.
+Leaving through "Open in chat page" keeps the session.
+
+The page's reading comes from its own window and can be stale, so the decision is
+the server's. The page sends `deleteSlot({ key, discard: true })`, which runs the
+sidebar close's client bookkeeping but calls `POST /api/chat/slots/{slot}/discard`.
+That route refuses with 409 `turn_in_flight` when the slot holds a reservation,
+`slot_not_empty` when it has a transcript row or a queued prompt, and
+`not_discardable` when its transcript is not its own `dashboard:<slot>` one (a
+channel-, cron- or workflow-linked slot). It checks before the close and again in
+`close_slot`'s `pre_pop_check`, so a message that lands while the close awaits is
+refused, not closed. After the close it deletes the History row (the pinned title
+keeps an empty archived row listed) through the history delete's claim, and only
+when no slot holds the key: a send can recreate the key while the close saves
+history, and that replacement owns the transcript. A send that would recreate the
+key once that delete has started is refused instead (`delete_in_flight`, see
+[history.md](history.md)). The delete's own answer is the route's answer, and like
+`DELETE /api/sessions/{key}` it is the owner's call: a non-owner dashboard
+caller's discard closes the session and keeps its row. A refused discard is quiet:
+the row comes back with the refetch, no close-refused notice shows, and another
+session's notice stays. Any untouched
+session the panel showed is discarded, not only one this page created, so a
+session left behind by a full page unload goes the next time its panel closes.
+
 **Live refresh** — the artifact mutation funnel broadcasts a typed
 `artifact_update {slug, version, deleted}` WS event
 (`DashboardState.push_artifact_update`, called via the handlers'

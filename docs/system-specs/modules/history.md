@@ -915,7 +915,10 @@ Per-thread JSONL files at `~/.kiro/crew/sessions/{safe_key}.jsonl`. First line i
   owns the transcript, so a line deleted and recreated under another owner
   refuses with the app's uniform 404, and the rollback puts the marker back only
   on a line that app owns. A delete in another process is not visible here; the save's delete-won guard
-  below still keeps that case from rewriting the file.
+  below still keeps that case from rewriting the file. A chat send that would mint
+  a new slot on that key (`POST /api/chat`) refuses the same way, with a retryable
+  `delete_in_flight` (409): its first message would otherwise land in the
+  transcript the delete unlinks.
 
 ### Session search index writer
 
