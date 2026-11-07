@@ -22,6 +22,12 @@ tiers that follow who owns the field:
   ``[CURRENT ASSIGNMENT]`` section it keeps for itself
   (:mod:`kiro_crew.member_notes`). Its chat runs on the conductor, which has no
   file tool, so this is how it keeps them. Admitted like the goal tools.
+* **Bots** -- ``bot_list`` names the other Bots on this gateway and ``bot_send``
+  hands one of them a message by name. Sent at once, no card: the gateway queues
+  the message on the other Bot's own thread, where it reads it as data from a Bot
+  and may answer the same way. Admitted on any turn in the Bot's own dashboard
+  thread; limits and the off switch are the gateway's
+  (:mod:`kiro_crew.dashboard.handlers.member_messages`).
 * **Card-backed** -- ``set_model``, ``set_approval_mode``,
   ``request_capabilities``, ``set_goal`` (add or change one goal), ``set_key_results``
   (how the goals are measured, the whole set at once): what the crewmate
@@ -479,6 +485,37 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "additionalProperties": False,
             },
         },
+        {
+            "name": "bot_list",
+            "description": (
+                "List the other Bots on this gateway you can message, each with its name "
+                "and a short description. It changes nothing."
+            ),
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "bot_send",
+            "description": (
+                "Send a message to another Bot by its name (bot_list shows the names). It "
+                "returns at once: the other Bot reads your message when its own turn is free, "
+                "as a note from a Bot and not from the user, and may answer with a message of "
+                "its own, which reaches you later as a new turn. Write what it needs to act "
+                "without asking you back, in a few plain sentences; it cannot see your chat, "
+                "memory or files. A message chain stops after three hops, you can send one Bot "
+                "only a few messages in ten minutes, and you cannot message yourself. Use it "
+                "when another Bot's work or knowledge is what the task needs; to tell the "
+                "user something, reply in this chat."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "minLength": 1, "maxLength": MAX_SHORT_STRING},
+                    "message": {"type": "string", "minLength": 1, "maxLength": 2000},
+                },
+                "required": ["name", "message"],
+                "additionalProperties": False,
+            },
+        },
     ]
 
 
@@ -622,6 +659,27 @@ def _call_tool_inner(name: str, args: dict[str, Any]) -> str:
         if refused:
             return f"{refused}\nYour notes were not saved; do not say they were."
         return _render({**d, "next": "Saved; they open your next turn."})
+
+    if name == "bot_list":
+        d = _post("/api/member/self/bots/list", {}, session_key=sk)
+        return _error_for(name, d) or _render(d)
+
+    if name == "bot_send":
+        d = _post(
+            "/api/member/self/bots/send",
+            {"name": args.get("name", ""), "message": args.get("message", "")},
+            session_key=sk,
+        )
+        refused = _error_for(name, d)
+        if refused:
+            return f"{refused}\nThe message was not sent; do not say it was."
+        return _render(
+            {
+                **d,
+                "next": "Sent. Do not wait for an answer: if the other Bot replies, it arrives "
+                "later as a new turn. Carry on, or end your turn.",
+            }
+        )
 
     if name == "find_capabilities":
         d = _post("/api/member/self/capabilities", {"query": args.get("query", "")}, session_key=sk)

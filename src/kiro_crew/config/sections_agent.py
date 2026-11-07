@@ -1359,6 +1359,21 @@ class AgentConfig:
             "and a subagent has no panel to write.",
         ),
     )
+    bot_messaging: bool = field(
+        default=True,
+        metadata=_meta(
+            "Bot Messaging",
+            "Let a Bot send a message to another Bot on this gateway by name, "
+            "with the bot_send and bot_list tools. The message reaches the other "
+            "Bot's own thread as data from a Bot, not as something you typed, and "
+            "the Bot may answer with a message of its own. A chain of messages "
+            "stops after three hops, a Bot can send only a few messages to the "
+            "same Bot in ten minutes, and every send is written to the sender's "
+            "crew log. On by default. Turn this off to stop all Bot-to-Bot "
+            "messages at once: the tools refuse from the next call, with no "
+            "restart. A message already waiting for a busy Bot is still delivered.",
+        ),
+    )
     subagent_cost_gb: float = field(
         default=_DEFAULT_SUBAGENT_COST_GB,
         metadata=_meta(

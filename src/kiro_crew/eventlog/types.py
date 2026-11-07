@@ -59,8 +59,15 @@ SLOT_CLOSED = "slot/closed"
 PATROL_STARTED = "patrol/started"
 PATROL_STOPPED = "patrol/stopped"
 
+# This member sent, or tried to send, a message to another Bot (`bot_send`).
+# data: {"to": str, "chars": int, "hop": int, "outcome": str}
+# outcome is "sent", "queued" or the refusal code (unknown_bot, self_send,
+# hop_limit, rate_limited, target_unavailable).
+MEMBER_BOT_MESSAGE = "member/bot_message"
+
 ALL_EVENT_TYPES = frozenset(
     {
+        MEMBER_BOT_MESSAGE,
         MEMBER_CONFIG,
         MEMBER_BINDING,
         MEMBER_RULES,

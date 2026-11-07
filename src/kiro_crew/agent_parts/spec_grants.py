@@ -54,7 +54,10 @@ _MATE_SERVER = "kirocrew-mate"
 #: offers the Preview opt-in card first). ``find_capabilities`` only reads the
 #: worker's tools and the catalog.
 #: ``save_notes`` writes only the calling crewmate's own briefing, the file it
-#: has always kept for itself, admitted only in its own thread. A tool
+#: has always kept for itself, admitted only in its own thread. ``bot_list`` reads
+#: the other Bots' names and descriptions; ``bot_send`` queues one bounded message
+#: on another Bot's thread, where it arrives as data, under a hop limit, a per-pair
+#: rate limit, a crew-log entry and the ``agent.bot_messaging`` switch. A tool
 #: added to the server is not in this tuple, so it asks first until it is
 #: reviewed here.
 _MATE_AUTO_GRANTS = (
@@ -71,6 +74,8 @@ _MATE_AUTO_GRANTS = (
     f"@{_MATE_SERVER}/key_result_progress",
     f"@{_MATE_SERVER}/save_goal_report",
     f"@{_MATE_SERVER}/save_notes",
+    f"@{_MATE_SERVER}/bot_list",
+    f"@{_MATE_SERVER}/bot_send",
 )
 
 

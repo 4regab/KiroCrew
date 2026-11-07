@@ -1044,7 +1044,8 @@ change card; `find_capabilities`, which reads what the Bot's worker has and
 could be given; `goal_read`, `key_result_progress` and `save_goal_report`, which
 read and write the calling
 Bot's own goal record directly; `save_notes`, which replaces its own
-briefing). An existing spec gains
+briefing; `bot_list` and `bot_send`, which name the other Bots and queue one
+bounded message on another Bot's thread, under `agent.bot_messaging`). An existing spec gains
 the ref and those grants once
 (`mate_platform_granted.json`). Every tool acts on the calling Bot alone
 and refuses outside its own dashboard turn. A Bot created on a template

@@ -296,6 +296,23 @@ memory, and the crew manager says so on the field when that is the case.
 holds, what is injected at the start of a conversation, and how backup and
 restore treat it.
 
+## Bots messaging each other
+
+A Bot can message another Bot on the same gateway by its short name, with the
+`bot_list` and `bot_send` tools. `bot_send` returns at once. The other Bot reads
+the message in its own thread when its current turn is free, as a note from a Bot
+and not from you, and may answer with a message of its own. It cannot read the
+sender's memory or files, and the sender cannot read its.
+
+The limits keep a conversation between Bots from running away. A message is at
+most 2,000 characters. A chain of replies stops after three hops. One Bot can send
+another Bot at most six messages in ten minutes. A Bot cannot message itself.
+Every send, including a refused one, is written to the sender's crew log as a
+`member/bot_message` event.
+
+On by default. Set `agent.bot_messaging` to `false` in the config to turn it off
+for every Bot; the tools refuse from the next call, with no restart.
+
 ## Three things called "crew"
 
 | | What it is |

@@ -376,6 +376,13 @@ def _register_mcp_routes(app: web.Application) -> None:
         ("POST", "/api/member/self/notes", "api_member_self_notes"),
     ):
         app.router.add_route(_method, _path, _deferred("member_goals", _name))
+    # A Bot messages another Bot by name (``bot_list``, ``bot_send``): MCP-only under
+    # the same strict prefix.
+    for _path, _name in (
+        ("/api/member/self/bots/list", "api_member_self_bot_list"),
+        ("/api/member/self/bots/send", "api_member_self_bot_send"),
+    ):
+        app.router.add_post(_path, _deferred("member_messages", _name))
     # Spelled with ``add_put``: the ``crewmate.goal``, ``crewmate.key_results``
     # and ``crewmate.check_ins`` cards apply and undo through these routes, and
     # the card hook's route list is pinned against them.

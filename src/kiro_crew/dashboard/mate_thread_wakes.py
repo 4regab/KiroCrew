@@ -18,8 +18,10 @@ envelope ``[Worker report]``).
   wakes nobody.
 
 The same flush delivers a moved crewmate's one upgrade notice first
-(:mod:`kiro_crew.mate_upgrade_notice`). Per-gateway state lives on the dashboard
-state object, never in module globals.
+(:mod:`kiro_crew.mate_upgrade_notice`), and, after any worker reports, one message
+another Bot sent it (:func:`bot_message_prompt`, envelope ``[Message from Bot <name>]``,
+queued by :mod:`kiro_crew.dashboard.bot_messages`). Per-gateway state lives on the
+dashboard state object, never in module globals.
 """
 
 from __future__ import annotations
@@ -31,11 +33,18 @@ from typing import Any
 
 from kiro_crew import crewmate_prompts
 from kiro_crew import members as members_mod
+from kiro_crew.dashboard import bot_messages
 
 logger = logging.getLogger(__name__)
 
 #: The envelope a worker report opens with.
 WORKER_REPORT_PREFIX = "[Worker report]"
+
+#: The envelope a message from another Bot opens with; the sender's name and "]" follow.
+BOT_MESSAGE_PREFIX = "[Message from Bot"
+
+_BOT_BEGIN = "<<<message from Bot"
+_BOT_END = ">>>end of message from Bot"
 
 #: How much of a worker's reply one report carries.
 MAX_REPORT_CHARS = 4000
@@ -252,6 +261,40 @@ def report_prompt(
     return "\n".join(lines)
 
 
+def bot_message_prompt(entry: dict[str, Any]) -> str:
+    """The hidden turn that hands a Bot one message another Bot sent it, as data.
+
+    *entry* is what :func:`kiro_crew.dashboard.bot_messages.enqueue` holds. The
+    sender's name is the gateway's own (the configured name), never the sender's
+    words; the text is scrubbed, cut to the length cap and cannot close the
+    delimiter, so it cannot pass itself off as the note around it.
+    """
+    from kiro_crew.member_goals import scrub_text
+
+    name, hop = entry["from"], entry["hop"]
+    text = scrub_text(entry["text"]).strip().replace(_BOT_END, "")
+    cut = len(text) > bot_messages.MAX_MESSAGE_CHARS
+    text = text[: bot_messages.MAX_MESSAGE_CHARS].rstrip()
+    lines = [f"{BOT_MESSAGE_PREFIX} {name}] " + _PREAMBLE.rstrip(), ""]
+    lines.append(
+        crewmate_prompts.fill(
+            "bot_message.intro", name=name, hop=hop, max_hops=bot_messages.MAX_HOPS
+        )
+    )
+    lines.extend([_BOT_BEGIN, text, _BOT_END])
+    if cut:
+        lines.append(crewmate_prompts.fill("bot_message.cut", chars=bot_messages.MAX_MESSAGE_CHARS))
+    if entry["replaced"]:
+        lines.append(crewmate_prompts.fill("bot_message.replaced", count=entry["replaced"]))
+    reply = (
+        crewmate_prompts.fill("bot_message.reply_open", name=name)
+        if hop < bot_messages.MAX_HOPS
+        else crewmate_prompts.text("bot_message.reply_closed")
+    )
+    lines.extend(["", crewmate_prompts.fill("bot_message.guidance", reply=reply)])
+    return "\n".join(lines)
+
+
 def _pending(state: Any) -> dict[str, dict[str, dict[str, Any]]]:
     pending = getattr(state, "_mate_wakes", None)
     if not isinstance(pending, dict):
@@ -355,7 +398,11 @@ async def _flush(state: Any, key: str) -> None:
     while True:
         slot = state.get_slot(key)
         reports = _pending(state).get(key)
-        owed = key in _notices(state) or key in _kept_notices(state)
+        owed = (
+            key in _notices(state)
+            or key in _kept_notices(state)
+            or bot_messages.has_pending(state, key)
+        )
         if not (reports or owed) or slot is None or not is_crewmate_thread(slot):
             # Nothing to say, or the thread is gone: what is pending stays, and
             # the thread's next turn end schedules this again.
@@ -404,6 +451,13 @@ async def _flush(state: Any, key: str) -> None:
             # what is pending stays for the thread's next turn end.
             return
         if not reports:
+            # No worker report waits: one Bot message goes next, if the thread is idle.
+            # The turn's end calls this again for the next one.
+            entry = bot_messages.take_next(state, key) if _idle(slot) else None
+            if entry is not None:
+                setattr(slot, bot_messages.HOP_ATTR, entry["hop"])
+                dispatch_hidden_turn(state, slot, bot_message_prompt(entry), human_seen=False)
+                logger.info("Bot message from %s woke %s", entry["from"], key)
             return
         if _idle(slot):
             _pending(state).pop(key, None)
@@ -544,10 +598,13 @@ def note_turn_end(
                 reply_text if isinstance(reply_text, str) else "",
             )
         elif is_crewmate_thread(slot):
+            # Whatever turn just ended, a send made in the next one is a new chain.
+            setattr(slot, bot_messages.HOP_ATTR, 0)
             if (
                 _pending(state).get(slot.key)
                 or slot.key in _notices(state)
                 or slot.key in _kept_notices(state)
+                or bot_messages.has_pending(state, slot.key)
             ):
                 schedule_flush(state, slot.key)
             if slot.key not in _notice_checked(state):

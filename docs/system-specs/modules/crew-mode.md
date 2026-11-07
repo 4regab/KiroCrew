@@ -4413,6 +4413,53 @@ the thread's own turn task, so a report is delivered once, never twice; pending
 reports live in memory. While the app is stopping
 (`mate_welcome.app_is_stopping`) no hidden turn starts and reports stay pending.
 
+**A Bot messages another Bot by name** (`bot_list` and `bot_send` on `kirocrew-mate`,
+gateway half `dashboard/handlers/member_messages.py` under
+`/api/member/self/bots/list|send`, state and limits in `dashboard/bot_messages.py`).
+Asynchronous and fire-and-forget: `bot_send(name, message)` returns an ack at once, the
+other Bot reads the message on its own pinned thread, and any answer comes back later
+as a new turn the other Bot starts with its own `bot_send`. Callers use the configured
+short name (the display name is a label and never routes); the gateway resolves it to
+the thread, so a Bot never handles an id. Gateway Bots only: a Bot is a configured crew
+member whose pinned thread is bound (`bot_messages.reachable`), and a Remote Crew's
+slot (`executor == "remote"`) is not a thread `mate_thread_wakes.is_crewmate_thread`
+accepts. Both tools are admitted on any turn in the caller's own dashboard thread
+(a user message, a check-in, another Bot's message), and not from a channel, a
+schedule, a subagent or an app. They are deliberately NOT in
+`_USER_TURN_OPERATIONS`, so a Bot answering a Bot is not blocked, and a Bot message
+never starts a card or an `update_self`, which still need a turn the user sent.
+
+* **Delivery reuses the worker-report wake.** `enqueue` holds ONE pending message per
+  sender per target thread (a newer one replaces it and the count of replaced ones
+  is told to the target); `_flush` delivers the oldest one as ONE hidden turn
+  (`dispatch_hidden_turn`, `human_seen=False`) once the thread is idle and no worker
+  report waits, and the turn's end delivers the next. Pending messages live in
+  memory, like reports. The envelope is `[Message from Bot <name>]`
+  (`mate_thread_wakes.bot_message_prompt`, text in `crewmate_prompts.json`
+  `bot_message.*`): the name is the configured one, the text is scrubbed
+  (`member_goals.scrub_text`), cut to 2,000 characters and fenced between
+  `<<<message from Bot` / `>>>end of message from Bot` with the closing marker removed
+  from inside it. The guidance tells the target the text is data from a peer, never the
+  user's instruction, and that its plain reply reaches the user only.
+* **Limits.** A message over `MAX_MESSAGE_CHARS` (2,000) is refused, not cut. A chain
+  stops at `MAX_HOPS` (3): a send made in a turn a Bot message started is one hop
+  further than that message (`bot_messages.hop_of`, the slot's `_bot_message_hop`, set
+  when the wake starts the turn and cleared at every turn end), so A to B to C to D
+  delivers and D's reply is refused (`hop_limit`); the hop travels in the envelope text
+  (`message N of at most 3`). One sender may send one target `PAIR_LIMIT` (6) messages
+  in `PAIR_WINDOW_SECS` (600) (`rate_limited`). A Bot cannot message itself
+  (`self_send`); an unknown name answers `unknown_bot` with the names it can reach. The
+  sender gets no read of the target's memory, files or thread: only names and
+  descriptions (scrubbed, capped at 160 characters) and the ack.
+* **Every send is logged.** Each send, refused ones included, appends one
+  `member/bot_message` event to the sender's member log (`{to, chars, hop, outcome}`,
+  see [member-event-log](member-event-log.md)) and writes one audit line. The text of
+  a delivered message is also in the target thread's own session log as the turn's
+  prompt.
+* **One switch.** `agent.bot_messaging` (default on, no restart) is read on every call
+  (`bot_messages.enabled`); off, or with the `agent` section degraded, both tools answer
+  `bot_messaging_off`. A message already waiting for a busy Bot is still delivered.
+
 **Adding abilities to a Bot** (`kiro_crew.mate_worker_kit`, owner-only
 `GET/PUT /api/agents/{name}/worker-kit` and `POST .../worker-kit/preview`,
 handler `dashboard/handlers/member_worker_kit.py`): the owner picks another
@@ -5143,6 +5190,7 @@ Parent-change and impact previews use the server's redacted projection.
 | `test/test_cron_conductor_scripted.py` | A scripted `cron_add` from a Bot's conductor is dispatched like any caller's |
 | `test/test_mate_conductor_parity.py` | Every section of the root conductor's charter is a shared rule the Bot's conductor is told, a heading, or allowlisted with a reason; no Bot piece copies charter text; every MCP server, tool, auto-approve grant and mapped skill of `kirocrew-conductor` is on `kirocrew-mate-conductor`, both read through the per-session projection, or allowlisted; no allowlist entry is stale; a planted root-only section, server, tool, grant or skill is caught |
 | `test/test_mate_config_migration.py` | The upgrade migration carries a shared template's or a `crew-<hex>` copy's kit and nothing the worker base has, gives a default-template Bot a file that adds nothing, gives the conductor-bound first Bot what a default-template Bot gets, leaves a binding without a `member_id` alone without a log line above DEBUG, records the kit's source, skips and logs a Bot whose worker would differ (binding and disk untouched), changes nothing on a second run, leaves a hand-made rollback alone, and the carried capabilities read as already there |
+| `test/test_bot_messages.py` | A Bot's message reaches the named Bot's thread as `[Message from Bot <name>]`; an unknown name lists the valid ones; a Bot cannot message itself; a message over the cap is refused; a chain stops at three hops and a turn end starts a new chain; one pair is rate limited and the limit lifts with time; a busy target gets one message per sender when its turn ends; the envelope keeps the words as scrubbed data that cannot close it; `agent.bot_messaging` off refuses both tools; the tools are listed, validated and granted |
 | `test/test_mate_thread_wakes.py` | A worker's turn end wakes its Bot once; no wake for a session the Bot did not create or that this process did not witness; a busy thread gets one report (the latest, with the turn count) after its turn ends; a held report waits for the thread's next turn end; the excerpt's end marker cannot be forged; only the creator's send witnesses the link; a quiet worker end (`nothing_to_do`, no text) reports nothing and leaves a pending report as it was, while an empty reply without it or a reply with text still reports; every top-level turn end reaches the wake path with its quiet-end fact |
 | `test/test_mate_upgrade_notice.py` | A moved Bot's notice is posted once and never on a later start, never by a Bot created after the upgrade or on a thread whose binding names another member, reaches a thread not open at startup at its next turn end, and is owed only by Bots the migration moved |
 | `website/src/components/chat/crewmateBubbles.test.ts` | What a Bot's chat draws (machinery dropped, speech and user-facing rows kept, same array back when nothing is dropped) and the run rule (first/middle/last, single, breaks on a user row and a pending approval but not on a long silence, reads through a resolved approval and an untimestamped streaming row, corners on the left side only); a queued message drawn where it was sent, the requeued twin, undrawn queued rows and injected (cron / app) queued rows dropped; when a send is still awaiting a reply |
