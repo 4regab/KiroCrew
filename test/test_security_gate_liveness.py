@@ -717,7 +717,11 @@ def _url_payload_command(n: int) -> str:
 #: by ``tool_call_id``, the non-shell tool kinds, row-time merge across files and
 #: the unreadable-file finding, so ``security audit`` never reports an unread
 #: scan as clean. No check was relaxed.
-_PACKAGE_LINE_BUDGET = 35_001
+#: Raised by 20, from 35,001, for the per-decision payload-walk memo in
+#: ``shell_normalizer._shell_payload_walk`` (one walk of each distinct text per
+#: ``is_denied``) and the paren walk's skip of its second, ``${...}``-aware
+#: pass when the span holds no ``{``. Same verdicts, less work. Re-measured.
+_PACKAGE_LINE_BUDGET = 35_021
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
