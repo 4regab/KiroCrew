@@ -295,9 +295,11 @@ class WriteJob:
         return cls(run, what, JobKind.OPENING, 0, None, on_drop)
 
     @classmethod
-    def follow_on(cls, run: Callable[[], None], what: str) -> "WriteJob":
-        """Work a job queues for a unit from the writer thread. See :data:`_POLICY`."""
-        return cls(run, what, JobKind.FOLLOW_ON, 0, None, None)
+    def follow_on(
+        cls, run: Callable[[], None], what: str, *, after: Callable[[], None] | None = None
+    ) -> "WriteJob":
+        """Work queued for a unit behind what it owes, never inline. See :data:`_POLICY`."""
+        return cls(run, what, JobKind.FOLLOW_ON, 0, after, None)
 
 
 @dataclass
@@ -695,7 +697,7 @@ class CrewLogWriter:
             # shutdown, instead of landing out of order, which is neither.
         return self._buffer(unit, pending)
 
-    def flush(self, timeout: float = 5.0) -> bool:
+    def flush(self, timeout: "float | None" = 5.0) -> bool:
         """Wait until nothing is owed. True when the writer is quiet within *timeout*.
 
         For a caller that must read the file it just wrote -- a test, a shutdown path --
@@ -713,7 +715,7 @@ class CrewLogWriter:
         advances it drives the whole retry schedule without waiting on a real one.
         """
         if self._executor is None:
-            return self._run_passes_here(self._clock() + timeout)
+            return self._run_passes_here(self._clock() + (86400.0 if timeout is None else timeout))
         if self._quiet():
             # Nothing to hurry, and a wake set now would cut the NEXT burst's pause.
             return True
@@ -1079,7 +1081,8 @@ class CrewLogWriter:
         for job in jobs:
             if job.policy.requeue_on_drop:
                 self._uncount_one_requeued_drop(unit)
-                self.submit(unit, WriteJob(job.run, job.what, JobKind.REQUEUED))
+                after, job.after = job.after, None  # runs once the requeued copy resolves
+                self.submit(unit, WriteJob(job.run, job.what, JobKind.REQUEUED, 0, after))
             elif job.on_drop is not None:
                 hook = job.on_drop
                 job.on_drop = None

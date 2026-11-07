@@ -38,6 +38,7 @@ from kiro_crew.work_ledger import (
     WorkLedgerError,
     _commit_item_locked,
     _now_iso,
+    _relay_binding_changing,
     _require_acceptance,
     _require_item_id,
     _require_record_fits,
@@ -234,6 +235,7 @@ def _discard_if_unreported(board: str, item_id: str, worker: str) -> bool:
             logger.warning("remote work item %s: could not discard; closing it", item_id)
             return False
         try:
+            _relay_binding_changing(worker, removing=True)
             binding_path(worker).unlink(missing_ok=True)
         except OSError:
             logger.warning("remote work item %s: stale binding left for %s", item_id, worker)
@@ -255,6 +257,7 @@ def discard_mailbox(request: MailboxRequest, worker_slot_key: str) -> None:
             # is not bound to (another slot's, on a refused duplicate) is left.
             if read_binding(worker) != (board, request.item_id):
                 return
+            _relay_binding_changing(worker, removing=True)
             _restore_text(binding_path(worker), None)
             _restore_text(item_path(board, request.item_id), None)
             _restore_text(item_events_path(board, request.item_id), None)

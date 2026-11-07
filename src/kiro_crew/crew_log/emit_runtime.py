@@ -215,13 +215,19 @@ def _retry_delay(attempts: int) -> float:
     return writer.limits.retry_delay(attempts)
 
 
-def flush(timeout: float = 5.0) -> bool:
-    """Wait until no append is queued. True when the queue drained in time.
+def flush(timeout: "float | None" = 5.0) -> bool:
+    """Wait until no append and no board-relay copy is queued. True when both drained.
 
     For a caller that must read the file it just wrote -- a test, a shutdown
     path -- since an entry point returns as soon as the work is HANDED to the
     writer. Never called from the turn path: waiting there would reintroduce the
-    block this queue exists to remove.
+    block this queue exists to remove. *timeout* ``None`` waits without a bound.
+
+    The board relay decides off the writer and hands its copies back to it, and a
+    copy can be relayed once more up a nested board, so True means one round found
+    the writer quiet, the relay idle and no wake noted since the round began; a
+    budget spent before that answers False. An entry the relay holds for a retry (a
+    read that failed) is not queued work and does not keep this waiting.
 
     Terminates even against a filesystem that never answers: a batch the writer
     cannot write is retried a bounded number of times and then dropped, so the
@@ -229,7 +235,29 @@ def flush(timeout: float = 5.0) -> bool:
     A process that never wrote has no writer, and nothing to wait for.
     """
     writer = _writer_instance
-    return True if writer is None else writer.flush(timeout=timeout)
+    if writer is None:
+        return True
+    deadline = None if timeout is None else time.monotonic() + timeout
+
+    def left() -> "float | None":
+        return None if deadline is None else max(deadline - time.monotonic(), 0.0)
+
+    while True:
+        # Read every round: the relay module can be loaded by a job this wait drains.
+        feed = sys.modules.get("kiro_crew.crew_log.work_relay_feed")
+        before = feed.generation() if feed is not None else 0
+        if not writer.flush(timeout=left()):
+            return False
+        if feed is None:
+            if sys.modules.get("kiro_crew.crew_log.work_relay_feed") is None:
+                return True
+            continue
+        if not feed.drain(left()):
+            return False
+        if writer.flush(timeout=0) and feed.generation() == before and feed.idle():
+            return True
+        if deadline is not None and time.monotonic() >= deadline:
+            return False
 
 
 def dropped_writes() -> int:
@@ -543,7 +571,32 @@ def drain_for_shutdown(timeout: float = _SHUTDOWN_DRAIN_SECONDS) -> bool:
     """
     started = time.monotonic()
     writer = _writer_instance
-    drained = True if writer is None else writer.drain_for_shutdown(timeout).drained
+    feed = sys.modules.get("kiro_crew.crew_log.work_relay_feed")
+    if feed is not None and writer is not None:
+        # The relay's queued decisions first, so their copies are in the writer's drain;
+        # what does not fit in a third of the budget is caught up from the cursor at the
+        # next start. The cursor is written after the writer drained, so it counts the
+        # copies that landed.
+        try:
+            feed.drain(timeout / 3)
+        except Exception:  # pragma: no cover - a relay must not cost the shutdown
+            # Rendered text, never ``exc_info``, for the reason ``_note_eager`` gives.
+            logger.debug("crew log relay drain failed:\n%s", traceback.format_exc().rstrip())
+    left = max(started + timeout - time.monotonic(), _EAGER_SETTLE_FLOOR_SECONDS)
+    drained = True if writer is None else writer.drain_for_shutdown(left).drained
+    if feed is not None and writer is not None:
+        # Copies the drain itself relayed (a nested board) are written in the budget
+        # left; a relay that is still busy when it runs out makes this answer False.
+        try:
+            drained = flush(max(started + timeout - time.monotonic(), 0.0)) and drained
+        except Exception:  # pragma: no cover - a relay must not cost the shutdown
+            logger.debug("crew log relay settle failed:\n%s", traceback.format_exc().rstrip())
+            drained = False
+    if feed is not None:
+        try:
+            feed.persist()
+        except Exception:  # pragma: no cover - a cursor must not cost the shutdown
+            logger.debug("crew log relay cursor not written:\n%s", traceback.format_exc().rstrip())
     eager = sys.modules.get("kiro_crew.crew_log.eager")
     settle = getattr(eager, "drain", None)
     if settle is not None:

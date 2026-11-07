@@ -159,10 +159,19 @@ def _read_binding_text(worker_slot_key: str) -> str | None:
 def _restore_binding_text(worker_slot_key: str, snapshot: str | None) -> None:
     """Put the binding back as *snapshot* found it. ``None`` means delete. Never
     raises: the caller already holds the error it must surface."""
+    _relay_binding_changing(worker_slot_key, removing=snapshot is None)
     _restore_text(binding_path(worker_slot_key), snapshot)
 
 
+def _relay_binding_changing(worker_slot_key: str, *, removing: bool = False) -> None:
+    """Let the board relay record the binding that is about to end (``work_relay``)."""
+    from kiro_crew.crew_log import work_relay
+
+    work_relay.before_binding_change(worker_slot_key, removing=removing)
+
+
 def _write_binding(worker_slot_key: str, conductor_slot_key: str, item_id: str) -> None:
+    _relay_binding_changing(worker_slot_key)
     _write_record(
         binding_path(worker_slot_key),
         {

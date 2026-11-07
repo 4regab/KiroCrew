@@ -767,6 +767,7 @@ def _reconcile_bindings(
             # Re-read under the lock: another board may have rebound this worker
             # since the scan, and its current binding is not ours to remove.
             if read_binding(worker) == (slot_key, bound_item):
+                _relay_binding_changing(worker, removing=True)
                 binding_path(worker).unlink(missing_ok=True)
 
 
@@ -1188,6 +1189,7 @@ from kiro_crew.work_ledger_writes import (  # noqa: E402, F401
     _header_under_lock,
     _read_binding_text,
     _refuse_if_worker_holds_open_item,
+    _relay_binding_changing,
     _restore_binding_text,
     _write_binding,
     _write_goal,
