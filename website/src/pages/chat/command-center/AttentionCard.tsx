@@ -270,8 +270,10 @@ export default function AttentionCard({ item, title, context, onDraftChange, onO
         which the hand-off's prefill would overwrite. */}
     {/* A rejected submission is an error surface (errors-use-error-notice), even
         though its answer is safe in that session's composer. A retirement with no
-        failed submission is RestoredQuestionNotice's warn-tone status instead. */}
-    <ErrorNotice message={restored ? restoredNotice : expired ? t('components.approvalCard.approval_no_longer_pending') : answerRefused ? t(answerFailureKey(mutation.error)) : mutation.error?.message} />
+        failed submission is RestoredQuestionNotice's warn-tone status instead,
+        and an approval the decide found gone is status too. */}
+    <StatusNotice tone="info" message={expired ? t('components.approvalCard.approval_no_longer_pending') : null} />
+    <ErrorNotice message={restored ? restoredNotice : expired ? null : answerRefused ? t(answerFailureKey(mutation.error)) : mutation.error?.message} />
     {restored ? null
       : delivered ? <p role="status" className="text-sm text-ok flex items-center gap-2"><Check size={15} />{t('commandCenter.recorded')}</p>
       : item.question ? <QuestionCard questions={followUpQuestions || item.question.questions} askId={item.question.ask_id} submitLabel={t('commandCenter.send_answer')} busy={mutation.isPending} onDraftChange={onDraftChange} onSubmit={answers => submit({ answers })} />

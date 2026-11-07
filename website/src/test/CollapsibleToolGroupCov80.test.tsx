@@ -156,9 +156,11 @@ describe('CollapsibleToolGroup approval dispatch', () => {
 
     fireEvent.click(screen.getByText(T('approve')))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
+    // A gone approval is status, not an error (#18203).
+    expect(await screen.findByRole('status')).toHaveTextContent(
       i18nT('components.approvalCard.approval_no_longer_pending'),
     )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText(T('approve'))).not.toBeInTheDocument()
     expect(screen.queryByText(T('reject'))).not.toBeInTheDocument()
   })

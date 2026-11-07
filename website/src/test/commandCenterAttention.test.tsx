@@ -8,6 +8,7 @@ import { buildCommandCenter, type AttentionItem } from '../pages/chat/command-ce
 import { __resetPaneDraftsForTests } from '../utils/chatPaneDrafts'
 import { __resetForTests, loadDrafts } from '../utils/chatDrafts'
 import { registerMainComposer } from '../utils/composerRestore'
+import { i18nT } from '../i18n/t'
 
 /** Jev's consent for `Auto` mode, set per test rather than fetched. */
 const jev = vi.hoisted(() => ({ consented: false }))
@@ -323,6 +324,9 @@ describe('task dashboard input routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve once' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Approve once' })).not.toBeInTheDocument())
     expect(screen.queryByText('Your response was recorded.')).not.toBeInTheDocument()
+    // The gone approval is status, not an error (#18203).
+    expect(screen.getByText(i18nT('components.approvalCard.approval_no_longer_pending')).closest('[role]')).toHaveAttribute('role', 'status')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/chat?sid=child')
   })
 

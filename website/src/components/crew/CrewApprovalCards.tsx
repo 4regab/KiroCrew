@@ -6,6 +6,7 @@ import { ApiError, isTerminalApprovalRefusal } from '../../api/apiError'
 import { useAppSelector } from '../../store'
 import { Btn } from '../ui'
 import ErrorNotice from '../ErrorNotice'
+import StatusNotice from '../StatusNotice'
 import { i18nT } from '../../i18n/t'
 import { sessionDisplayTitle } from '../../utils/sessionDisplayTitle'
 import { useCrewWorkerSummary, crewWorkersQueryKey } from '../../pages/chat/command-center/CrewWorkerList'
@@ -185,14 +186,14 @@ function CrewApprovalCard({ root, request, compact = false, tree = 'crew' }: { r
               title={trustHint} onClick={() => decide('trust')}>{i18nT('components.crewMode.ultra_trust')}</button>
           )}
         </div>
-        {/* The same failure surface and wording as the full card below. */}
+        {/* The same notices and wording as the full card below. */}
+        <StatusNotice tone="info" testId="crew-approval-gone" message={gone ? i18nT('components.approvalCard.approval_no_longer_pending') : null} />
         <ErrorNotice
           variant="inline"
-          message={!mutation.error ? undefined
-            : gone ? i18nT('components.approvalCard.approval_no_longer_pending')
-              : mutation.error instanceof ApiError && mutation.error.message
-                ? i18nT('components.approvalCard.decision_not_recorded_error', { error: mutation.error.message })
-                : i18nT('components.approvalCard.decision_failed')}
+          message={!mutation.error || gone ? undefined
+            : mutation.error instanceof ApiError && mutation.error.message
+              ? i18nT('components.approvalCard.decision_not_recorded_error', { error: mutation.error.message })
+              : i18nT('components.approvalCard.decision_failed')}
           askAgent
           testId="crew-approval-failure"
         />
@@ -229,13 +230,14 @@ function CrewApprovalCard({ root, request, compact = false, tree = 'crew' }: { r
           drops the card; a refusal with the server's own message quotes it (a
           sign-in that lapsed included; the client's silent refresh retries it);
           a transport failure with no answer says the decision may not have
-          landed, and the buttons stay for one more try. */}
+          landed, and the buttons stay for one more try. The gone refusal is
+          status, not an error: nothing the user did failed. */}
+      <StatusNotice tone="info" testId="crew-approval-gone" message={gone ? i18nT('components.approvalCard.approval_no_longer_pending') : null} />
       <ErrorNotice
-        message={!mutation.error ? undefined
-          : gone ? i18nT('components.approvalCard.approval_no_longer_pending')
-            : mutation.error instanceof ApiError && mutation.error.message
-              ? i18nT('components.approvalCard.decision_not_recorded_error', { error: mutation.error.message })
-              : i18nT('components.approvalCard.decision_failed')}
+        message={!mutation.error || gone ? undefined
+          : mutation.error instanceof ApiError && mutation.error.message
+            ? i18nT('components.approvalCard.decision_not_recorded_error', { error: mutation.error.message })
+            : i18nT('components.approvalCard.decision_failed')}
         askAgent
         testId="crew-approval-failure"
       />
