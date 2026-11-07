@@ -356,6 +356,7 @@ async def _run_turn(
             # grammar by ``prompt_safe_handle``, and empty for an account with
             # no @handle, which ``build_message`` treats as "omit the line".
             user_display_name=getattr(msg, "username", "") or None,
+            tab_notices=True,
         )
 
         # PreToolUse security gate (channel-neutral, off ctx_builder.hooks):
@@ -724,7 +725,7 @@ async def _run_turn(
             landed=_turn_landed,
             compacted=getattr(driver, "compaction_completed", False) is True,
         )
-        rollback_skill_bodies(self.ctx_builder, session_key, landed=_turn_landed)
+        rollback_skill_bodies(self.ctx_builder, session_key, landed=_turn_landed, tab_notices=True)
         # Always finalize the placeholder (no perma-"🤔 …"), even if
         # get_or_create raised before the semaphore was held. Only release
         # the semaphore if we actually acquired it.

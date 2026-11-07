@@ -943,6 +943,7 @@ async def handle_message_transport(
                 # history fallback replays it as the thread's history, ahead of
                 # the same text as the current request.
                 exclude_last_n=1 if _logged_user_turn else 0,
+                tab_notices=True,
             )
         else:
             full_message = text
@@ -1515,7 +1516,7 @@ async def handle_message_transport(
         # read; a cancelled or failed turn discarded the prompt that carried them.
         if _turn_landed and _thread_replies is not None and _thread_replies.read_ok:
             note_turn(session_key, thread_ts or msg_ts, msg_ts)
-        rollback_skill_bodies(context_builder, session_key, landed=_turn_landed)
+        rollback_skill_bodies(context_builder, session_key, landed=_turn_landed, tab_notices=True)
         # Tear the renderer down even if TurnDriver.run() raised before on_done,
         # so the 30s tool-elapsed timer cannot keep hitting a dead stream.
         # Teardown must never block the release: the semaphore is keyed by

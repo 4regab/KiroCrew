@@ -861,6 +861,7 @@ async def _run_turn(turn: _SlackTurn) -> bool:
                 runtime_source="slack",
                 user_text_range=_user_text_range,
                 context_provider=client,
+                tab_notices=True,
             )
         else:
             full_message = text
@@ -1317,7 +1318,7 @@ async def _run_turn(turn: _SlackTurn) -> bool:
         # read; a cancelled or failed turn discarded the prompt that carried them.
         if _turn_landed and _thread_replies is not None and _thread_replies.read_ok:
             note_turn(session_key, thread_ts or msg_ts, msg_ts)
-        rollback_skill_bodies(context_builder, session_key, landed=_turn_landed)
+        rollback_skill_bodies(context_builder, session_key, landed=_turn_landed, tab_notices=True)
         # The permit is held past this ``finally`` when the turn reached a clean
         # model completion, because success/failure accounting is booked only
         # after ``_deliver_answer``'s answer-carrying delivery and mutates per-session breaker

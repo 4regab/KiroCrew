@@ -10,6 +10,10 @@ state before the prompt goes out, and must settle both on EVERY exit path:
 * the skill-body dedup writes ``build_message`` records at build time, committed
   when the prompt reached the window and rolled back when it did not.
 
+A channel engine that builds with ``tab_notices`` settles a third on the same
+verdict: the sub-agent notices its build read from the conversation's dashboard
+tab leave the tab's queue only when the turn landed.
+
 :class:`TurnBracket` holds that bookkeeping for one turn. It consumes per
 attempt (a turn replayed after a failed compaction re-consumes, and settles on
 the latest attempt's value), it re-arms before it rolls back, and it settles
@@ -136,7 +140,20 @@ def rearm_reinjection(
         )
 
 
-def rollback_skill_bodies(ctx_builder: Any, session_key: str, *, landed: bool) -> None:
+def _settle_record(ctx_builder: Any, method: str, session_key: str, **kwargs: Any) -> None:
+    """Call the builder's *method* for *session_key*; a no-op without it, never raises."""
+    settle = getattr(ctx_builder, method, None)
+    if not callable(settle):
+        return
+    try:
+        settle(session_key, **kwargs)
+    except Exception:
+        logger.debug("%s failed session=%s", method, session_key, exc_info=True)
+
+
+def rollback_skill_bodies(
+    ctx_builder: Any, session_key: str, *, landed: bool, tab_notices: bool = False
+) -> None:
     """Settle this turn's build-time skill-body dedup writes at the turn seam.
 
     ``build_message`` records injected skill bodies at build time and stashes an
@@ -147,22 +164,17 @@ def rollback_skill_bodies(ctx_builder: Any, session_key: str, *, landed: bool) -
     * not ``landed``: roll back, so the next turn re-injects full bodies instead of
       pointers.
 
-    With no armed entry both are no-ops. Never raises; a builder without the
+    *tab_notices*: the engine built with ``tab_notices``, so the dashboard-tab
+    notices its build read settle on the same verdict. Only such an engine passes
+    it, so no other turn on the session settles notices its prompt did not carry.
+
+    With no armed entry each is a no-op. Never raises; a builder without the
     methods is a no-op.
     """
     method = "commit_skill_bodies" if landed else "rollback_skill_bodies"
-    settle = getattr(ctx_builder, method, None)
-    if not callable(settle):
-        return
-    try:
-        settle(session_key)
-    except Exception:
-        logger.debug(
-            "settling skill-body dedup state failed (landed=%s) session=%s",
-            landed,
-            session_key,
-            exc_info=True,
-        )
+    _settle_record(ctx_builder, method, session_key)
+    if tab_notices:
+        _settle_record(ctx_builder, "settle_tab_notices", session_key, landed=landed)
 
 
 class TurnBracket:
@@ -184,7 +196,8 @@ class TurnBracket:
       covers an exit by exception. Not called means no compaction.
     * :meth:`settle` -- re-arm the flag when it was taken and the turn did not
       land, or when the backend compacted the session, THEN commit or roll back
-      the skill bodies. Only the first call acts, and it never raises.
+      the skill bodies and settle the tab notices the build read. Only the first
+      call acts, and it never raises.
     """
 
     def __init__(self, sessions: Any, ctx_builder: Any, session_key: str) -> None:
@@ -228,7 +241,9 @@ class TurnBracket:
             landed=self._landed,
             compacted=self._compacted,
         )
-        rollback_skill_bodies(self._ctx_builder, self._session_key, landed=self._landed)
+        rollback_skill_bodies(
+            self._ctx_builder, self._session_key, landed=self._landed, tab_notices=True
+        )
 
 
 @asynccontextmanager

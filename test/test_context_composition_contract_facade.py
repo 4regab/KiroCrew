@@ -226,6 +226,7 @@ _BUILDER_MEMBERS: dict[str, tuple[str, str]] = {
         "static",
         "(agent: 'str', project: 'str | None' = None, *, owner_template: 'str' = '') -> 'str'",
     ),
+    "_read_tab_notices": ("method", "(self, session_key: 'str | None') -> 'str'"),
     "_remember_startup_lessons": ("method", "(self, session_key: 'str', block: 'str') -> 'None'"),
     "_resolve_agent_prompt": (
         "method",
@@ -268,6 +269,10 @@ _BUILDER_MEMBERS: dict[str, tuple[str, str]] = {
         "(workspace: 'str | None' = None, memory_store: 'str | None' = None) -> 'MemoryStore'",
     ),
     "rollback_skill_bodies": ("method", "(self, session_key: 'str | None') -> 'None'"),
+    "settle_tab_notices": (
+        "method",
+        "(self, session_key: 'str | None', *, landed: 'bool') -> 'None'",
+    ),
 }
 
 

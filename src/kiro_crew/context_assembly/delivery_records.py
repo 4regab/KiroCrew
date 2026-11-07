@@ -11,11 +11,15 @@ Two bounded, oldest-evicted records the builder keeps per session key, both keye
   that ``rollback_skill_bodies`` and ``commit_skill_bodies`` settle once the turn's fate
   is known.
 
+A third record rides the same per-turn settle: the sub-agent notices a channel turn's
+build read from its conversation's dashboard tab, held until ``settle_tab_notices``
+takes them off the queue (landed) or leaves them there, one entry per session.
+
 Builder state read and written: ``_lessons_shown`` and ``_lessons_shown_lock``;
 ``_sent_skill_bodies``, ``_sent_skill_agents``, ``_sent_skill_bodies_undo`` and
-``_sent_skill_bodies_lock``; the bounds ``_SENT_SKILL_BODY_SESSIONS`` and
-``_SENT_SKILL_BODY_ENTRIES`` are read through the builder, so an instance override
-applies.
+``_sent_skill_bodies_lock``; ``tab_notices_for_session`` and ``_tab_notice_settles``;
+the bounds ``_SENT_SKILL_BODY_SESSIONS`` and ``_SENT_SKILL_BODY_ENTRIES`` are read
+through the builder, so an instance override applies.
 
 New per-session delivery records belong here.
 """
@@ -286,3 +290,41 @@ def commit_skill_bodies(self, session_key: str | None) -> None:
     key = self._cap_memo_key(session_key)
     with self._sent_skill_bodies_lock:
         self._sent_skill_bodies_undo.pop(key, None)
+
+
+def _read_tab_notices(self, session_key: str | None) -> str:
+    """The sub-agent notices queued on the tab showing *session_key*, as a turn prefix.
+
+    A notice for a channel conversation's agent waits on the dashboard tab that shows
+    the conversation, and a turn started in the channel's own thread never runs the
+    tab's drain, so its build reads them here through the dashboard's
+    ``tab_notices_for_session``. They stay queued: the call that removes and settles
+    them once the turn landed is held under the session until
+    :meth:`settle_tab_notices`, and a rebuild of the turn (a compaction replay) reads
+    them again. ``""`` when none are queued or no dashboard installed the reader.
+    """
+    read = self.tab_notices_for_session
+    if not session_key or read is None:
+        return ""
+    key = self._cap_memo_key(session_key)
+    self._tab_notice_settles.pop(key, None)
+    queued = read(session_key)
+    if not queued:
+        return ""
+    notices, settle = queued
+    self._tab_notice_settles[key] = settle
+    return "\n\n".join(notices) + "\n\n"
+
+
+def settle_tab_notices(self, session_key: str | None, *, landed: bool) -> None:
+    """Settle the tab notices *session_key*'s latest build read, once its turn's fate is known.
+
+    ``landed``: the prompt that carried them reached the agent, so they leave the
+    queue and their delivery debts are written. Otherwise they stay queued, still
+    owed, for the conversation's next turn. A no-op when the build read none.
+    """
+    if not session_key:
+        return
+    settle = self._tab_notice_settles.pop(self._cap_memo_key(session_key), None)
+    if settle is not None:
+        settle(landed)
