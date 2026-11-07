@@ -51,6 +51,7 @@ from . import ledger as L
 from . import pr_description as D  # noqa: F401
 from . import preflight as PF
 from .archive import Archive
+from .candidate_admission import admit_candidate
 from .contracts import TRACK_BUG, TRACK_PERF, BugGateResult, Proposal, TargetProfile
 from .driver_git import _git
 from .gate import Gate
@@ -138,8 +139,10 @@ class Driver:
         canary_advisory: bool = False,
         direct_commit: bool = False,
         prepush_review: bool = False,
+        candidate_admission: tuple[str, ...] | None = None,
     ):
         self.profile = profile
+        self.candidate_admission = candidate_admission
         # F10 DIRECT-COMMIT MODE (ROADMAP F10; operator opt-in per project). When True, a
         # VERIFIED winner is pushed straight to the operator-authorized feature branch
         # instead of filed as a CR. This deliberately relaxes the push-disabled invariant
@@ -912,6 +915,8 @@ class Driver:
             return fresh_count
 
         winner = verdict.winner
+        if not admit_candidate(self, winner):
+            return fresh_count
         self.stats.kept += 1
         self.log.info(
             "cycle %d: KEPT %s (%s) — running REPRODUCE", cycle, winner.cand_id, verdict.reason
@@ -1094,7 +1099,7 @@ class Driver:
         This is the bug-track analogue of :meth:`_apply_verdict`'s keep path, but the
         CR trigger is the boolean RED/GREEN gate (the doubled-RED flake check is the
         reproduction analogue, §4.1) — there is no second A/B and no noise band."""
-        if self._publishing_is_halted():
+        if self._publishing_is_halted() or not admit_candidate(self, winner):
             return
         diff_ref = self.archive.save_candidate(
             cand_id=winner.cand_id,
