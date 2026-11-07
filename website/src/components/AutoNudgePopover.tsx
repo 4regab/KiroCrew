@@ -76,6 +76,8 @@ const PAUSED_STATUS_KEY: Record<string, string> = {
   approval_stalled: 'components.autoNudgePopover.paused_approval_stalled',
   structural_terminal: 'components.autoNudgePopover.paused_last_cycle_failed',
   session_start_failures: 'components.autoNudgePopover.paused_last_cycle_failed',
+  interrupted_cycle: 'components.autoNudgePopover.paused_interrupted_cycle',
+  claim_unsaved: 'components.autoNudgePopover.paused_claim_unsaved',
 }
 
 /** The three editable fields, as every write of the form sends them. */

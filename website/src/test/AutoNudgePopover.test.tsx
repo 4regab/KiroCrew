@@ -652,6 +652,8 @@ describe('AutoNudgePopover status line and Pause | Play controls', () => {
     ['approval_stalled', 'Paused · waiting for your approval'],
     ['structural_terminal', 'Paused · the last cycle could not run'],
     ['session_start_failures', 'Paused · the last cycle could not run'],
+    ['interrupted_cycle', 'Paused · a restart interrupted the last cycle. Play resumes the loop.'],
+    ['claim_unsaved', 'Paused · its progress could not be saved. Play resumes the loop.'],
     ['some_future_reason', 'Paused'],
     [undefined, 'Paused'],
   ])('a paused loop reads one plain line by the title for stopped_reason %s', (reason, expected) => {
