@@ -110,6 +110,7 @@
         "crew_panel": true,
         "bot_messaging": true,
         "group_rooms": true,
+        "channel_posts": true,
         "subagent_cost_gb": 0.5,
         "subagent_cpu_cost_cores": 1.0,
         "subagent_auto_max": 32,
@@ -1742,6 +1743,20 @@
       "tags": [],
       "label": "Group Chat Rooms",
       "help": "Let Bots take part in group chat rooms on this gateway, with the room_list and room_send tools. A room is you plus two to six Bots. Each Bot reads the new messages in its own thread as data, decides for itself whether to answer, and may stay silent. A Bot posts at most three messages per turn, a round of replies stops after a few rounds, and every post is written to the poster's crew log. On by default. Turn this off to stop all room posts and wakes at once: the tools refuse from the next call, with no restart.",
+      "hasChildren": false,
+      "enumValues": null,
+      "defaultValue": true
+    },
+    {
+      "path": "agent.channel_posts",
+      "kind": "core",
+      "type": "boolean",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "label": "Bot Channel Posts",
+      "help": "Let a Bot ask to post a message to a messaging channel you have connected (Slack, Discord, Telegram, WhatsApp and the like), with the channel_list and channel_send tools. Every post waits for your answer on a card that shows the exact channel and the exact text, and nothing is sent unless you press Send. The post goes to your own direct messages on that channel, with a line saying which Bot sent it. A Bot can ask at most a few times per channel in ten minutes, and every request, whether you approve it or not, is written to the Bot's crew log. On by default. Turn this off to stop all requests at once: the tools refuse from the next call, with no restart.",
       "hasChildren": false,
       "enumValues": null,
       "defaultValue": true

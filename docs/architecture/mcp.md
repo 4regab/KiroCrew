@@ -2169,7 +2169,7 @@ Managed servers, registered by `agent._MANAGED_MCP_SERVERS` and installed into
 | `kirocrew-debug` | `kirocrew mcp-debug` (`mcp_debug.py`) | `debug_gateway`, `debug_refusals`, `debug_threads`, `debug_processes`, `debug_snapshots` |
 | `kirocrew-panel` | `kirocrew mcp-panel` (`mcp_panel.py`) | `panel_publish`, `panel_templates`, `dashboard_fields`, `dashboard_types`, `dashboard_write`, `dashboard_templates`, `dashboard_preview`, `dashboard_apply`, `dashboard_rollback`, `dashboard_snapshot` |
 | `kirocrew-guide` | `kirocrew mcp-guide` (`mcp_guide.py`) | `guide_list_actions`, `guide_start`, `guide_status`, `guide_cancel`, `list_change_kinds`, `find_setting`, `get_member_capabilities`, `diagnose_settings`, `propose_change`, `get_change_status`, `search_docs`, `find_ui` |
-| `kirocrew-mate` | `kirocrew mcp-mate` (`mcp_mate.py`) | `update_self`, `set_model`, `set_approval_mode`, `find_capabilities`, `request_capabilities`, `goal_read`, `set_goal`, `set_key_results`, `key_result_progress`, `save_goal_report`, `save_notes`, `bot_list`, `bot_send`, `room_list`, `room_send` |
+| `kirocrew-mate` | `kirocrew mcp-mate` (`mcp_mate.py`) | `update_self`, `set_model`, `set_approval_mode`, `find_capabilities`, `request_capabilities`, `goal_read`, `set_goal`, `set_key_results`, `key_result_progress`, `save_goal_report`, `save_notes`, `bot_list`, `bot_send`, `room_list`, `room_send`, `channel_list`, `channel_send` |
 | `kirocrew-secrets` | `kirocrew mcp-secrets` (`mcp_secrets.py`) | `call_api_with_secret` |
 
 `kirocrew-guide` is a platform capability: it is always emitted (not `opt_in`),
@@ -2268,7 +2268,12 @@ pinned, no-follow open), under the same admission as the goal writes. `bot_list`
 [crew-mode](../system-specs/modules/crew-mode.md), "A Bot messages another Bot by name".
 `room_list` and `room_send` let a Bot post to a group chat room it is in through
 `/api/member/self/rooms/list|send` (`dashboard/handlers/member_rooms.py`), under the same
-admission, switched off by `agent.group_rooms`; see "Group chat rooms" there. These goal operations are deliberately
+admission, switched off by `agent.group_rooms`; see "Group chat rooms" there.
+`channel_list` and `channel_send` let a Bot ask to post to a connected messaging channel
+through `/api/member/self/channels/list|send` (`dashboard/handlers/member_channels.py`);
+`channel_send` holds the call while the gateway shows the user a card and sends only on
+"Send it", whatever the Bot's approval mode; see
+[messaging](../system-specs/modules/messaging.md), "Bot channel posts". These goal operations are deliberately
 NOT in `_USER_TURN_OPERATIONS`: the check-in turns of
 `dashboard/goal_reminder.py` are gateway-authored hidden turns in the
 Bot's own thread, and recording readings and filing reports is what they

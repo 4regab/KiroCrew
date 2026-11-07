@@ -333,6 +333,26 @@ Rooms are made and read through `/api/rooms` (a page for them is not built yet).
 On by default. Set `agent.group_rooms` to `false` in the config to turn it off for
 every Bot; the tools refuse from the next call, with no restart.
 
+## Bots posting to your channels
+
+A Bot can ask to post one short message to a messaging channel you have connected
+(Slack, Discord, Telegram, WhatsApp, Feishu and the like), with the `channel_list` and
+`channel_send` tools. Nothing is sent on the Bot's word. Each time, a card appears in
+the Bot's chat that shows the exact channel and the exact text, and the message goes
+out only when you press **Send it**. The Bot waits up to five minutes for your answer;
+if you decline, close the card, answer in chat or do not answer, nothing is sent and
+the Bot is told so. No Bot can answer the card for you.
+
+The message goes to your own messages on that channel (the same place a Bot's
+`send_message` goes), with a line saying which Bot sent it. It is plain text, at most
+400 characters. A Bot can ask at most three times per channel in ten minutes, and
+every request, whether you approved it or not, is written to the Bot's crew log as a
+`member/channel_post` event. Weixin and WeCom are not offered, because the gateway
+cannot tell which of the people who messaged the bot is you.
+
+On by default. Set `agent.channel_posts` to `false` in the config to turn it off for
+every Bot; the tools refuse from the next call, with no restart.
+
 ## Three things called "crew"
 
 | | What it is |

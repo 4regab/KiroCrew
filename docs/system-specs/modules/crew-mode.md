@@ -4528,6 +4528,14 @@ move.
   the tools answer `group_rooms_off` and the user's create and post routes refuse. A wake
   already owed to a busy Bot is still delivered.
 
+**A Bot posts to a connected channel** (`channel_list` and `channel_send` on
+`kirocrew-mate`, gateway half `dashboard/handlers/member_channels.py` under
+`/api/member/self/channels/list|send`, policy in `dashboard/channel_posts.py`). Each
+`channel_send` shows the user a card with the exact channel and text and sends only on
+"Send it"; the specification is [messaging](messaging.md), "Bot channel posts". Switched
+off by `agent.channel_posts`; every request is a `member/channel_post` entry in the poster's
+log.
+
 **Adding abilities to a Bot** (`kiro_crew.mate_worker_kit`, owner-only
 `GET/PUT /api/agents/{name}/worker-kit` and `POST .../worker-kit/preview`,
 handler `dashboard/handlers/member_worker_kit.py`): the owner picks another

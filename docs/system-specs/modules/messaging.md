@@ -1754,6 +1754,73 @@ also keeps `api_teams_activity`, the iMessage save entry, `_run_belongs_to_calle
 finalizer exceptions the channel-config transaction raises, and that transaction's
 off-loop `.env` drain, `_write_env_off_loop`.
 
+### Bot channel posts (`channel_list`, `channel_send`)
+
+A Bot (a crewmate on `kirocrew-mate`) could already reach a connected channel with the
+core `send_message` tool (`session="<channel>"` for the owner's DM on a channel, `"slack"`
+for Slack). That path has no list of channel names and no per-call approval beyond the
+tool prompt, which a Bot in `trust` mode skips. `channel_list` and `channel_send` add what
+was missing and no second sender: names, and a gate the Bot's approval mode cannot lift.
+Gateway half `dashboard/handlers/member_channels.py` under
+`/api/member/self/channels/list|send` (MCP-only, strict prefix, admitted on any turn in the
+Bot's own dashboard thread like the other Bot tools); policy in `dashboard/channel_posts.py`.
+
+* **Names.** `channel_list` returns the channels that are connected right now
+  (`state.channel_status()`, the same status the channel pages read) and that the owner-DM
+  send serves: `channel_posts.POSTABLE` is Slack plus `constants.CHANNEL_OWNER_DM_NAMESPACES`.
+  A name resolves exactly or by its one case-insensitive match. A name that is not
+  connected answers `channel_not_connected` listing the connected ones. A connected channel
+  outside `POSTABLE` (`weixin`, `wecom`: the roster a Bot would pick the recipient from can
+  hold people who only messaged the bot, which is why `CHANNEL_OWNER_DM_NAMESPACES` omits
+  them) answers `channel_not_supported` with that reason, and no card is shown.
+* **Where it goes.** The sender is the one `send_message` uses:
+  `messaging_api.channel_delivery._deliver_channel_dm` for a transport channel (the
+  transport's own configured owner DM, only when the channel advertises exactly one, the
+  `channels` governance vet, the recipient check, display redaction and chunking) and
+  `proactive_send._post_send_message_to_slack` with no channel and no user for Slack (the
+  owner's DM). A channel with no single owner answers `no_recipient`. The text ends with
+  one line, `Sent by Bot: <name>`, as every proactive send names its sender. There is no
+  group, room or channel-id target, and rooms are never mirrored into channels.
+* **The gate.** Every call opens one blocking question card on the Bot's own tab
+  (`state.open_agent_ask`, the card `ask_question` shows) whose header names the channel
+  and whose question holds the Bot's name and the exact text, with two answers,
+  `channel_posts.APPROVE` ("Send it") and "Don't send". The handler, not the tool, holds
+  the call and reads the answer (`channel_posts.await_approval`, slices of
+  `ASK_WAIT_SLICE_SECS`, at most `APPROVAL_WAIT_SECS` (300) in all). Only an answer equal to
+  "Send it" on the one question sends (`channel_posts.approved`); a typed reply, "Don't
+  send", a dismissed card, an answer in chat, a timeout (`expired`) and a Bot call that hung
+  up (`cancelled`, checked each slice through the request's transport) all send nothing, and
+  the card is withdrawn on every exit. The card id is never given to the Bot, and the route
+  that answers a card (`POST /api/ask-question/{id}/answer`) takes the dashboard user's
+  login, not the internal secret a Bot's tool call carries, so a Bot cannot answer its own
+  card. Whoever may answer question cards answers this one: the owner and, in Shared Crew,
+  a collaborator. With no dashboard window open (`open_agent_ask` reaches no client), or no
+  room for another card, the call is refused (`approval_unavailable`) and nothing is sent.
+  The approval holds in every approval mode, because the gateway asks, not the tool prompt;
+  that is why both tools are in `_MATE_AUTO_GRANTS`.
+* **The text.** At most `MAX_POST_CHARS` (400) characters, refused rather than cut: the
+  card's question holds 500 and also carries the Bot's name and the channel. The text is
+  scrubbed once (`member_goals.scrub_text`) before the card is made and that scrubbed text
+  is what is sent. The gateway compares the question the card kept (the card redacts what
+  it shows) with the one it built; a difference withdraws the card and refuses
+  (`text_not_showable`), so the user never approves text other than what is sent.
+* **Limits and policy.** A Bot may open `POST_LIMIT` (3) cards per channel in
+  `PAIR_WINDOW_SECS` (600), approved or not (`rate_limited`, the Bot-message counter under
+  `channel:<name>`). Governance is checked before the card, fail closed:
+  `capabilities.messaging` and the per-channel `channels` allowlist
+  (`channel_posts.governance_refusal`, `governance_denied`), and the sender checks the
+  `channels` scope again. A failed delivery answers `channel_delivery_failed` (or says the
+  message may have been posted when Slack's outcome is unknown); the detail is scrubbed.
+* **Every request is logged.** Each call, refused ones included, appends one
+  `member/channel_post` event to the poster's member log (`{channel, chars, outcome}`, see
+  [member-event-log](member-event-log.md)) and one audit line. The text is not kept there.
+* **One switch.** `agent.channel_posts` (default on, no restart) is read on every call;
+  off, or with the `agent` section degraded, both tools answer `channel_posts_off`.
+
+The core `send_message` tool is unchanged: a Bot that has it can still post to the owner's
+DM by `session=` without a card. Removing it from a Bot's tools is the owner's call in the
+Bot's advanced settings.
+
 ## Telegram dashboard-session resume
 
 A private Telegram DM can take over an existing dashboard conversation without

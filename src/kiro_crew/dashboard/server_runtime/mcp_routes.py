@@ -389,6 +389,13 @@ def _register_mcp_routes(app: web.Application) -> None:
         ("/api/member/self/rooms/send", "api_member_self_room_send"),
     ):
         app.router.add_post(_path, _deferred("member_rooms", _name))
+    # A Bot asks to post to a connected channel (``channel_list``, ``channel_send``):
+    # MCP-only too; every send waits for the user's card.
+    for _path, _name in (
+        ("/api/member/self/channels/list", "api_member_self_channel_list"),
+        ("/api/member/self/channels/send", "api_member_self_channel_send"),
+    ):
+        app.router.add_post(_path, _deferred("member_channels", _name))
     # Spelled with ``add_put``: the ``crewmate.goal``, ``crewmate.key_results``
     # and ``crewmate.check_ins`` cards apply and undo through these routes, and
     # the card hook's route list is pinned against them.

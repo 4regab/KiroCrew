@@ -60,7 +60,11 @@ _MATE_SERVER = "kirocrew-mate"
 #: rate limit, a crew-log entry and the ``agent.bot_messaging`` switch. ``room_list`` reads the names
 #: of the rooms the Bot is in; ``room_send`` posts one bounded text message to a room,
 #: where the other members read it as data, under a per-turn cap, a depth limit, a rate
-#: limit, a crew-log entry and the ``agent.group_rooms`` switch. A tool
+#: limit, a crew-log entry and the ``agent.group_rooms`` switch. ``channel_list`` reads the names
+#: of the connected channels; ``channel_send`` is granted without a tool prompt because
+#: the gateway holds every call for its own card showing the exact channel and text, and
+#: sends only on the user's "Send it" (``agent.channel_posts`` switch, rate limit, crew-log
+#: entry), whatever approval mode the Bot runs in. A tool
 #: added to the server is not in this tuple, so it asks first until it is
 #: reviewed here.
 _MATE_AUTO_GRANTS = (
@@ -81,6 +85,8 @@ _MATE_AUTO_GRANTS = (
     f"@{_MATE_SERVER}/bot_send",
     f"@{_MATE_SERVER}/room_list",
     f"@{_MATE_SERVER}/room_send",
+    f"@{_MATE_SERVER}/channel_list",
+    f"@{_MATE_SERVER}/channel_send",
 )
 
 

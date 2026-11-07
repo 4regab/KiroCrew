@@ -748,4 +748,13 @@ MCP_MATE_SCHEMAS: dict[str, ToolSchema] = {
             FieldSpec("message", str, required=True, max_len=2000),
         ],
     ),
+    "channel_list": ToolSchema(tool_name="channel_list", fields=[]),
+    "channel_send": ToolSchema(
+        tool_name="channel_send",
+        fields=[
+            FieldSpec("channel", str, required=True, max_len=MAX_SHORT_STRING),
+            # The gateway holds the real cap (channel_posts.MAX_POST_CHARS) and says so.
+            FieldSpec("message", str, required=True, max_len=400),
+        ],
+    ),
 }

@@ -1388,6 +1388,22 @@ class AgentConfig:
             "tools refuse from the next call, with no restart.",
         ),
     )
+    channel_posts: bool = field(
+        default=True,
+        metadata=_meta(
+            "Bot Channel Posts",
+            "Let a Bot ask to post a message to a messaging channel you have "
+            "connected (Slack, Discord, Telegram, WhatsApp and the like), with "
+            "the channel_list and channel_send tools. Every post waits for your "
+            "answer on a card that shows the exact channel and the exact text, "
+            "and nothing is sent unless you press Send. The post goes to your own "
+            "direct messages on that channel, with a line saying which Bot sent "
+            "it. A Bot can ask at most a few times per channel in ten minutes, "
+            "and every request, whether you approve it or not, is written to the "
+            "Bot's crew log. On by default. Turn this off to stop all requests at "
+            "once: the tools refuse from the next call, with no restart.",
+        ),
+    )
     subagent_cost_gb: float = field(
         default=_DEFAULT_SUBAGENT_COST_GB,
         metadata=_meta(

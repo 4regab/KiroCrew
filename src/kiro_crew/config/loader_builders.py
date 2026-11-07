@@ -806,6 +806,7 @@ def _build_agent_config(agent_data: dict) -> AgentConfig:
         crew_panel=section.read("crew_panel", _safe_bool),
         bot_messaging=section.read("bot_messaging", _safe_bool),
         group_rooms=section.read("group_rooms", _safe_bool),
+        channel_posts=section.read("channel_posts", _safe_bool),
         subagent_cost_gb=section.read("subagent_cost_gb", _safe_float),
         subagent_cpu_cost_cores=section.read("subagent_cpu_cost_cores", _safe_float),
         subagent_auto_max=section.read(

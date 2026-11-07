@@ -71,10 +71,20 @@ MEMBER_BOT_MESSAGE = "member/bot_message"
 # turn_cap, round_limit, rate_limited).
 MEMBER_ROOM_POST = "member/room_post"
 
+# This member asked to post, or tried to ask, to a connected channel (`channel_send`).
+# data: {"channel": str, "chars": int, "outcome": str}
+# outcome is "sent" when the user approved and the channel took it; "denied" when the
+# user declined, closed the card or answered in chat; "expired" when no answer came in
+# time; "cancelled" when the Bot's call ended first; or the refusal or failure code
+# (not_connected, not_supported, message_too_long, governance_denied, rate_limited,
+# approval_unavailable, text_not_showable, no_recipient, delivery_failed).
+MEMBER_CHANNEL_POST = "member/channel_post"
+
 ALL_EVENT_TYPES = frozenset(
     {
         MEMBER_BOT_MESSAGE,
         MEMBER_ROOM_POST,
+        MEMBER_CHANNEL_POST,
         MEMBER_CONFIG,
         MEMBER_BINDING,
         MEMBER_RULES,
