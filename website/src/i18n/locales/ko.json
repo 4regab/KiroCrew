@@ -5468,7 +5468,7 @@
         "backup_others_on_drive": "이 드라이브에 백업하는 다른 설치본: {{count}}",
         "backup_show_others": "다른 설치본의 아카이브 포함",
         "backup_others_truncated": "처음 {{max}}개의 다른 설치본만 표시됩니다.",
-"backup_archives_truncated": "일부 {{kind}} 아카이브를 나열할 수 없습니다. 최신 아카이브가 빠져 있을 수 있습니다.",
+        "backup_archives_truncated": "일부 {{kind}} 아카이브를 나열할 수 없습니다. 최신 아카이브가 빠져 있을 수 있습니다.",
         "backup_shared_note": "두 설치본이 하나의 드라이브를 공유해도 메모리 공유나 세션 공유가 되는 것은 아닙니다. 각 백업은 한 시점의 개별 아카이브이며, 복원은 해당 파일을 스테이징 폴더로 다운로드할 뿐입니다 — 파일은 gateway를 멈춘 상태에서 직접 교체합니다.",
         "backup_restore_foreign_confirm": "이 아카이브는 다른 설치본({{install}})이 업로드했습니다. 복원하면 이 설치본이 아니라 그 설치본의 데이터를 다운로드합니다. 그래도 다운로드하시겠습니까?",
         "backup_restore_unverified_confirm": "이 아카이브는 이 설치본 자체 폴더에 저장되어 있지만, 이 설치본에는 업로드한 기록이 없습니다. 드라이브에 쓸 수 있는 누구나 그 폴더를 만들 수 있으므로, 이 설치본의 것이 아닐 수도 있습니다. 그래도 다운로드하시겠습니까?",
@@ -11110,7 +11110,8 @@
     "settings": "설정",
     "task_runner": "Task Runner",
     "webhooks": "Webhooks",
-    "crew_members": "Bot"
+    "crew_members": "Bot",
+    "rooms": "대화방"
   },
   "pages": {
     "agentsPage": {
@@ -12221,7 +12222,7 @@
         "spec_choice_done_resuming": "이제부터 {{agent}}에 {{file}}을(를) 사용합니다. 세션을 다시 시작합니다. 나중에 kirocrew agent pin으로 바꿀 수 있습니다.",
         "spec_choice_done": "이제부터 {{agent}}에 {{file}}을(를) 사용합니다. 메시지를 다시 보내 시작하세요. 나중에 kirocrew agent pin으로 바꿀 수 있습니다.",
         "spec_choice_failed": "선택을 저장하지 못했습니다",
-      "hidden_scratch_folder": "이 채팅의 폴더는 이전 실행에서 만든 임시 폴더라 더 이상 열 수 없습니다. 이제 이 채팅은 기본 폴더에서 작업합니다."
+        "hidden_scratch_folder": "이 채팅의 폴더는 이전 실행에서 만든 임시 폴더라 더 이상 열 수 없습니다. 이제 이 채팅은 기본 폴더에서 작업합니다."
       },
       "folderPanel": {
         "clear_search": "검색 지우기",
@@ -18241,7 +18242,13 @@
         "reply_threads_desc": "Bot 채팅의 어떤 메시지에도 답글 스레드를 달 수 있게 하고, 채팅을 보면서 사이드 패널에서 열 수 있습니다. 끄면 스레드에서 답글 달기가 나타나지 않고 기존 스레드는 삭제되지 않고 숨겨집니다.",
         "failed_to_save": "Bot 설정을 저장할 수 없습니다. 다시 시도하세요.",
         "failed_to_load": "Bot 설정을 불러올 수 없습니다.",
-        "retry": "다시 시도"
+        "retry": "다시 시도",
+        "bot_messaging": "Bot 간 메시지 주고받기",
+        "bot_messaging_desc": "Bot이 이름으로 다른 Bot에게 메시지를 보낼 수 있게 합니다. 받은 Bot은 자신의 스레드에서 당신이 아닌 Bot이 보낸 메모로 읽습니다. 끄면 다음 호출부터 도구가 거부됩니다.",
+        "group_rooms": "그룹 채팅 대화방",
+        "group_rooms_desc": "Bot이 당신과 함께 대화방에 참여할 수 있게 합니다. 각 Bot은 자신의 스레드에서 새 메시지를 읽고 답할지 스스로 정합니다. 끄면 대화방 만들기와 글쓰기가 거부되고, 기존 대화방은 계속 읽을 수 있습니다.",
+        "channel_posts": "Bot의 채널 게시",
+        "channel_posts_desc": "Bot이 연결해 둔 채널에 짧은 메시지 하나를 게시해 달라고 요청할 수 있게 합니다. 정확한 문구를 보여 주는 카드에서 “Send it”을 누르기 전에는 아무것도 전송되지 않습니다. 끄면 다음 호출부터 도구가 거부됩니다."
       },
       "developerPanel": {
         "developer_tools": "개발자 도구",
@@ -20922,6 +20929,47 @@
     "layoutEditorHarness": {
       "title": "레이아웃 편집기 하네스",
       "reset": "레이아웃 초기화"
+    },
+    "roomsPage": {
+      "title": "대화방",
+      "subtitle": "한곳에서 Bot 2~6개와 대화하세요.",
+      "new_room": "새 대화방",
+      "list_label": "대화방",
+      "conversation_label": "열린 대화방",
+      "pick_a_room": "읽을 대화방을 고르거나 새로 만드세요.",
+      "no_rooms": "아직 대화방이 없습니다",
+      "no_rooms_hint": "대화방은 나와 Bot 2~6개를 한 채팅에 모읍니다. 답할지는 각 Bot이 스스로 정합니다.",
+      "retry": "다시 시도",
+      "cancel": "취소",
+      "create": "만들기",
+      "create_title": "새 대화방",
+      "name_label": "대화방 이름",
+      "name_too_long": "이름은 최대 {{max}}자까지 가능합니다.",
+      "need_more_members": "Bot을 {{min}}개 이상 고르세요.",
+      "members_label": "이 대화방의 Bot",
+      "members_selected": "{{selected}}개 선택됨 ({{min}}~{{max}}개를 고르세요)",
+      "members_full": "대화방에는 Bot을 최대 {{max}}개까지 넣을 수 있습니다.",
+      "members_load_failed": "Bot 목록을 불러오지 못했습니다.",
+      "no_bots": "사용할 수 있는 Bot이 아직 없습니다. Bot이 대화방에 참여할 수 있도록 해당 Bot의 채팅을 한 번 여세요.",
+      "log_label": "대화방 메시지",
+      "no_messages": "아직 메시지가 없습니다",
+      "no_messages_hint": "대화방에 글을 쓰세요. 답할지는 각 Bot이 스스로 정합니다.",
+      "you": "나",
+      "message_label": "대화방에 보낼 메시지",
+      "message_placeholder": "대화방에 글을 쓰세요. @를 입력하면 Bot을 지정할 수 있습니다.",
+      "mention_list": "멘션할 수 있는 Bot",
+      "mention_everyone": "모두 (대화방 전체)",
+      "send": "보내기",
+      "char_count": "{{used}} / {{max}}",
+      "wrapping_up": "이 대화방은 마무리 중입니다. Bot은 꼭 필요할 때만 답합니다.",
+      "rooms_off": "그룹 채팅 대화방이 꺼져 있습니다. 설정의 개발자에서 켜세요.",
+      "rooms_off_short": "대화방이 꺼져 있습니다.",
+      "delete_room": "대화방 삭제",
+      "delete_title": "이 대화방을 삭제하시겠습니까?",
+      "delete_body": "대화방과 메시지가 참여한 모든 사람에게서 삭제됩니다. 되돌릴 수 없습니다.",
+      "delete": "삭제",
+      "back_to_rooms": "대화방 목록으로",
+      "room_gone": "이 대화방은 더 이상 없습니다."
     }
   },
   "privacyDisclosure": {

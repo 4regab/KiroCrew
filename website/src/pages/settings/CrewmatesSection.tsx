@@ -1,7 +1,9 @@
 /**
  * Settings > Developer > **Crewmates**: the server-side switches for crewmate
- * features. One today -- `dashboard.crewmate_threads`, reply threads on crewmate
- * chat messages (RFC crewmates launch, screen 07), off by default.
+ * features. `dashboard.crewmate_threads`, reply threads on crewmate chat messages
+ * (RFC crewmates launch, screen 07), is off by default. `agent.bot_messaging`,
+ * `agent.group_rooms` and `agent.channel_posts`, which let Bots message each other,
+ * join group chat rooms and ask to post to a channel, are on by default.
  *
  * Sits under its own heading, right after Feature Previews. The heading is
  * visual only: config has no crewmate parent flag, so this toggle nests under a
@@ -22,7 +24,15 @@ import { SettingsCard, SettingsSection, SettingsToggle } from '../../components/
 import { CREWMATE_THREADS_CONFIG_KEY } from '../../hooks/useCrewmateThreadsFlag'
 import { i18nT } from '../../i18n/t'
 
-type KirocrewConfigShape = { dashboard?: { crewmate_threads?: boolean } }
+type KirocrewConfigShape = {
+  dashboard?: { crewmate_threads?: boolean }
+  agent?: { bot_messaging?: boolean; group_rooms?: boolean; channel_posts?: boolean }
+}
+
+/** The gateway-side switches for Bots reaching other people and places. All three are on by
+ *  default, so a config that does not name one reads as on. The gateway reads each on every
+ *  call, so a change needs no restart. */
+type AgentSwitch = 'bot_messaging' | 'group_rooms' | 'channel_posts'
 
 export function CrewmatesSection() {
   const qc = useQueryClient()
@@ -34,6 +44,16 @@ export function CrewmatesSection() {
   const threads = cfgQ.data?.dashboard?.crewmate_threads === true
   const threadsMut = useMutation({
     mutationFn: (v: boolean) => api.patchConfig(CREWMATE_THREADS_CONFIG_KEY, v),
+    onSuccess: () => {
+      setSaveError('')
+      void qc.invalidateQueries({ queryKey: ['kirocrewConfig'] })
+    },
+    onError: () => setSaveError(i18nT('pages.settings.crewmatesSection.failed_to_save')),
+  })
+
+  const on = (key: AgentSwitch) => cfgQ.data?.agent?.[key] !== false
+  const agentMut = useMutation({
+    mutationFn: ({ key, value }: { key: AgentSwitch; value: boolean }) => api.patchConfig(`agent.${key}`, value),
     onSuccess: () => {
       setSaveError('')
       void qc.invalidateQueries({ queryKey: ['kirocrewConfig'] })
@@ -81,6 +101,30 @@ export function CrewmatesSection() {
           onChange={(v) => threadsMut.mutate(v)}
           disabled={!cfgQ.isSuccess || threadsMut.isPending}
           configKey={CREWMATE_THREADS_CONFIG_KEY}
+        />
+        <SettingsToggle
+          label={i18nT('pages.settings.crewmatesSection.bot_messaging')}
+          hint={i18nT('pages.settings.crewmatesSection.bot_messaging_desc')}
+          checked={on('bot_messaging')}
+          onChange={(v) => agentMut.mutate({ key: 'bot_messaging', value: v })}
+          disabled={!cfgQ.isSuccess || agentMut.isPending}
+          configKey="agent.bot_messaging"
+        />
+        <SettingsToggle
+          label={i18nT('pages.settings.crewmatesSection.group_rooms')}
+          hint={i18nT('pages.settings.crewmatesSection.group_rooms_desc')}
+          checked={on('group_rooms')}
+          onChange={(v) => agentMut.mutate({ key: 'group_rooms', value: v })}
+          disabled={!cfgQ.isSuccess || agentMut.isPending}
+          configKey="agent.group_rooms"
+        />
+        <SettingsToggle
+          label={i18nT('pages.settings.crewmatesSection.channel_posts')}
+          hint={i18nT('pages.settings.crewmatesSection.channel_posts_desc')}
+          checked={on('channel_posts')}
+          onChange={(v) => agentMut.mutate({ key: 'channel_posts', value: v })}
+          disabled={!cfgQ.isSuccess || agentMut.isPending}
+          configKey="agent.channel_posts"
         />
       </SettingsCard>
     </SettingsSection>

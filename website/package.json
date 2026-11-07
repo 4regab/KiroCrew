@@ -43,6 +43,7 @@
     "bench:render": "npm run bench:render:build && node scripts/bench-render.mjs --check perf-budgets.json",
     "capture:app-store-gallery": "npm run build && node scripts/capture-app-store-gallery.mjs",
     "verify:action-row-first-cell-hover": "node scripts/capture-action-row-first-cell-hover.mjs",
+    "verify:rooms-screen": "node scripts/verify-rooms-screen.mjs",
     "verify:agent-selector-dialog": "node scripts/verify-agent-selector-dialog.mjs",
     "verify:crews-dialog-select": "node scripts/verify-crews-dialog-select.mjs",
     "verify:browse-start-picker": "node scripts/capture-browse-start-picker.mjs",

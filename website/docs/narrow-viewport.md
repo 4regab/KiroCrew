@@ -867,3 +867,21 @@ it must not remount an editor or lose its selection, draft, or signed preview.
 The mobile root list still has no pane: returning to that list is an intentional
 navigation through the existing leave guard. Regression coverage resizes the
 shared memory editor in both directions with a reviewed batch waiting to apply.
+
+### Rooms: a list and a room on one tree
+
+`pages/RoomsPage.tsx` is a list/detail page built the same way: ONE tree, switched by
+classes. Below `md` the list pane is `hidden` while a room is open and the room pane is
+`hidden` while none is; from `md` up both pane classes are `md:block` / `md:flex`, so the two
+sit side by side (`md:w-72`, `lg:w-80` for the list) and each scrolls on its own
+(`overflow-y-auto` on the list pane and on the log, the page never scrolls). Nothing reads
+`useIsMobile()`, and the route element is not swapped, so a window that crosses 768px (a
+fold, a rotation) keeps the open room and the half-typed message; `RoomsPage.test.tsx` and
+`scripts/verify-rooms-screen.mjs` (767 to 375 to 768 with a draft) pin that.
+
+The open room carries its own header on a phone (back arrow, name, member chips), so the page
+header is `hidden md:block` while a room is open and the conversation gets the row. The back
+arrow is `md:hidden`: from `md` up the list is already on screen. The composer sits at the
+bottom with `pb-[env(safe-area-inset-bottom)]`, and every
+control in the room is at least 44px square (`min-h-11 min-w-11`). The room slides in over
+the list (`framer-motion`, 180 ms) and draws in place under `prefers-reduced-motion`.

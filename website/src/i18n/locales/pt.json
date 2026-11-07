@@ -5778,7 +5778,7 @@
         "backup_others_on_drive": "Outras instalações que fazem backup neste drive: {{count}}",
         "backup_show_others": "Incluir arquivos de outras instalações",
         "backup_others_truncated": "Apenas as primeiras {{max}} outras instalações são mostradas.",
-"backup_archives_truncated": "Não foi possível listar alguns arquivos de {{kind}}. Os mais recentes podem estar faltando.",
+        "backup_archives_truncated": "Não foi possível listar alguns arquivos de {{kind}}. Os mais recentes podem estar faltando.",
         "backup_shared_note": "Um drive compartilhado por duas instalações não é memória compartilhada nem sessões compartilhadas. Cada backup é um arquivo separado de um momento, e uma restauração apenas baixa esse arquivo para uma pasta de preparação — os arquivos você mesmo substitui, com o gateway parado.",
         "backup_restore_foreign_confirm": "Este arquivo foi enviado por outra instalação ({{install}}). Restaurá-lo baixa os dados daquela instalação, não os desta instalação. Baixar mesmo assim?",
         "backup_restore_unverified_confirm": "Este arquivo está guardado na pasta própria desta instalação, mas esta instalação não tem registro de tê-lo enviado. Qualquer um que possa escrever no drive pode criar essa pasta, então talvez ele não seja desta instalação. Baixar mesmo assim?",
@@ -11608,7 +11608,8 @@
     "settings": "Configurações",
     "task_runner": "Task Runner",
     "webhooks": "Webhooks",
-    "crew_members": "Bots"
+    "crew_members": "Bots",
+    "rooms": "Salas"
   },
   "pages": {
     "agentsPage": {
@@ -12761,7 +12762,7 @@
         "spec_choice_done_resuming": "A partir de agora {{agent}} usa {{file}}. Iniciando a sessão novamente. Você pode mudar isso depois com kirocrew agent pin.",
         "spec_choice_done": "A partir de agora {{agent}} usa {{file}}. Envie sua mensagem novamente para começar. Você pode mudar isso depois com kirocrew agent pin.",
         "spec_choice_failed": "Não foi possível salvar a escolha",
-      "hidden_scratch_folder": "A pasta deste chat era uma pasta temporária de uma execução anterior e não pode mais ser aberta. O chat agora trabalha na pasta padrão."
+        "hidden_scratch_folder": "A pasta deste chat era uma pasta temporária de uma execução anterior e não pode mais ser aberta. O chat agora trabalha na pasta padrão."
       },
       "folderPanel": {
         "clear_search": "Limpar pesquisa",
@@ -19203,7 +19204,13 @@
         "reply_threads_desc": "Deixa qualquer mensagem do chat de um Bot ter seu próprio tópico de resposta, aberto no painel lateral enquanto o chat continua visível. Desligado, Responder no tópico não aparece e os tópicos existentes ficam ocultos, não apagados.",
         "failed_to_save": "Não foi possível salvar a configuração de Bot. Tente de novo.",
         "failed_to_load": "Não foi possível carregar as configurações de Bot.",
-        "retry": "Tentar de novo"
+        "retry": "Tentar de novo",
+        "bot_messaging": "Bots trocando mensagens entre si",
+        "bot_messaging_desc": "Permite que um Bot envie uma mensagem a outro Bot pelo nome. O outro Bot a lê no próprio tópico como uma nota de um Bot, não sua. Desativado, as ferramentas recusam a partir da próxima chamada.",
+        "group_rooms": "Salas de chat em grupo",
+        "group_rooms_desc": "Permite que os Bots participem de salas com você. Cada Bot lê as mensagens novas no próprio tópico e decide por conta própria se responde. Desativado, criar salas e publicar são recusados; as salas existentes continuam legíveis.",
+        "channel_posts": "Bots publicando nos seus canais",
+        "channel_posts_desc": "Permite que um Bot peça para publicar uma mensagem curta em um canal que você conectou. Nada é enviado até você pressionar “Send it” em um cartão que mostra o texto exato. Desativado, as ferramentas recusam a partir da próxima chamada."
       },
       "developerPanel": {
         "developer_tools": "Ferramentas de desenvolvedor",
@@ -21970,6 +21977,47 @@
     "layoutEditorHarness": {
       "title": "Ambiente de teste do editor de layout",
       "reset": "Redefinir layout"
+    },
+    "roomsPage": {
+      "title": "Salas",
+      "subtitle": "Converse com dois a seis Bots em um só lugar.",
+      "new_room": "Nova sala",
+      "list_label": "Salas",
+      "conversation_label": "Sala aberta",
+      "pick_a_room": "Escolha uma sala para ler ou crie uma nova.",
+      "no_rooms": "Ainda não há salas",
+      "no_rooms_hint": "Uma sala reúne você e de dois a seis Bots em um só chat. Cada Bot decide por conta própria se responde.",
+      "retry": "Tentar de novo",
+      "cancel": "Cancelar",
+      "create": "Criar",
+      "create_title": "Nova sala",
+      "name_label": "Nome da sala",
+      "name_too_long": "O nome pode ter no máximo {{max}} caracteres.",
+      "need_more_members": "Escolha pelo menos {{min}} Bots.",
+      "members_label": "Bots desta sala",
+      "members_selected": "{{selected}} selecionados (escolha de {{min}} a {{max}})",
+      "members_full": "Uma sala comporta no máximo {{max}} Bots.",
+      "members_load_failed": "Não foi possível carregar a lista de Bots.",
+      "no_bots": "Ainda não há Bots disponíveis. Abra o chat de um Bot uma vez para que ele possa entrar em uma sala.",
+      "log_label": "Mensagens da sala",
+      "no_messages": "Ainda não há mensagens",
+      "no_messages_hint": "Escreva na sala. Cada Bot decide por conta própria se responde.",
+      "you": "Você",
+      "message_label": "Mensagem para a sala",
+      "message_placeholder": "Escreva na sala. Digite @ para citar um Bot.",
+      "mention_list": "Bots que você pode mencionar",
+      "mention_everyone": "todos (a sala inteira)",
+      "send": "Enviar",
+      "char_count": "{{used}} / {{max}}",
+      "wrapping_up": "Esta sala está terminando. Os Bots só respondem se for essencial.",
+      "rooms_off": "As salas de chat em grupo estão desativadas. Ative-as em Configurações, em Desenvolvedor.",
+      "rooms_off_short": "As salas estão desativadas.",
+      "delete_room": "Excluir sala",
+      "delete_title": "Excluir esta sala?",
+      "delete_body": "A sala e as mensagens dela são removidas para todos que estão nela. Isso não pode ser desfeito.",
+      "delete": "Excluir",
+      "back_to_rooms": "Voltar às salas",
+      "room_gone": "Esta sala não existe mais."
     }
   },
   "privacyDisclosure": {

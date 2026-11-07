@@ -5778,7 +5778,7 @@
         "backup_others_on_drive": "Altre installazioni che eseguono il backup su questo drive: {{count}}",
         "backup_show_others": "Includi gli archivi di altre installazioni",
         "backup_others_truncated": "Vengono mostrate solo le prime {{max}} altre installazioni.",
-"backup_archives_truncated": "Non è stato possibile elencare alcuni archivi di tipo {{kind}}. I più recenti potrebbero mancare.",
+        "backup_archives_truncated": "Non è stato possibile elencare alcuni archivi di tipo {{kind}}. I più recenti potrebbero mancare.",
         "backup_shared_note": "Un drive condiviso da due installazioni non è memoria condivisa né sessioni condivise. Ogni backup è un archivio separato di un momento, e un ripristino scarica quel file solo in una cartella di staging — i file li sostituisci tu, con il gateway fermo.",
         "backup_restore_foreign_confirm": "Questo archivio è stato caricato da un'altra installazione ({{install}}). Ripristinarlo scarica i dati di quella installazione, non quelli di questa installazione. Scaricarlo comunque?",
         "backup_restore_unverified_confirm": "Questo archivio si trova nella cartella propria di questa installazione, ma questa installazione non ha alcuna traccia di averlo caricato. Chiunque possa scrivere sul drive può creare quella cartella, quindi potrebbe non essere di questa installazione. Scaricarlo comunque?",
@@ -11608,7 +11608,8 @@
     "settings": "Impostazioni",
     "task_runner": "Task Runner",
     "webhooks": "Webhooks",
-    "crew_members": "Bot"
+    "crew_members": "Bot",
+    "rooms": "Stanze"
   },
   "pages": {
     "agentsPage": {
@@ -12761,7 +12762,7 @@
         "spec_choice_done_resuming": "D’ora in poi {{agent}} usa {{file}}. Avvio di nuovo della sessione. Puoi cambiarlo in seguito con kirocrew agent pin.",
         "spec_choice_done": "D’ora in poi {{agent}} usa {{file}}. Invia di nuovo il messaggio per iniziare. Puoi cambiarlo in seguito con kirocrew agent pin.",
         "spec_choice_failed": "Impossibile salvare la scelta",
-      "hidden_scratch_folder": "La cartella di questa chat era una cartella temporanea di un’esecuzione precedente e non può più essere aperta. La chat ora lavora nella cartella predefinita."
+        "hidden_scratch_folder": "La cartella di questa chat era una cartella temporanea di un’esecuzione precedente e non può più essere aperta. La chat ora lavora nella cartella predefinita."
       },
       "folderPanel": {
         "clear_search": "Cancella ricerca",
@@ -19203,7 +19204,13 @@
         "reply_threads_desc": "Consenti a qualsiasi messaggio nella chat di un Bot di avere il proprio thread di risposta, aperto nel pannello laterale mentre la chat resta visibile. Disattivato, Rispondi nel thread non viene offerto e i thread esistenti sono nascosti, non eliminati.",
         "failed_to_save": "Impossibile salvare l'impostazione dei Bot. Riprova.",
         "failed_to_load": "Impossibile caricare le impostazioni dei Bot.",
-        "retry": "Riprova"
+        "retry": "Riprova",
+        "bot_messaging": "Bot che si scrivono tra loro",
+        "bot_messaging_desc": "Permette a un Bot di inviare un messaggio a un altro Bot per nome. L'altro Bot lo legge nel proprio thread come una nota di un Bot, non tua. Se disattivato, gli strumenti rifiutano dalla chiamata successiva.",
+        "group_rooms": "Stanze di chat di gruppo",
+        "group_rooms_desc": "Permette ai Bot di partecipare alle stanze con te. Ogni Bot legge i nuovi messaggi nel proprio thread e decide da solo se rispondere. Se disattivato, creare stanze e pubblicare vengono rifiutati; le stanze esistenti restano leggibili.",
+        "channel_posts": "Bot che pubblicano nei tuoi canali",
+        "channel_posts_desc": "Permette a un Bot di chiedere di pubblicare un breve messaggio in un canale che hai collegato. Non viene inviato nulla finché non premi «Send it» su una scheda che mostra il testo esatto. Se disattivato, gli strumenti rifiutano dalla chiamata successiva."
       },
       "developerPanel": {
         "developer_tools": "Strumenti per sviluppatori",
@@ -21970,6 +21977,47 @@
     "layoutEditorHarness": {
       "title": "Banco di prova dell’editor di layout",
       "reset": "Reimposta layout"
+    },
+    "roomsPage": {
+      "title": "Stanze",
+      "subtitle": "Parla con da due a sei Bot in un unico posto.",
+      "new_room": "Nuova stanza",
+      "list_label": "Stanze",
+      "conversation_label": "Stanza aperta",
+      "pick_a_room": "Scegli una stanza da leggere o creane una nuova.",
+      "no_rooms": "Ancora nessuna stanza",
+      "no_rooms_hint": "Una stanza mette te e da due a sei Bot in un'unica chat. Ogni Bot decide da solo se rispondere.",
+      "retry": "Riprova",
+      "cancel": "Annulla",
+      "create": "Crea",
+      "create_title": "Nuova stanza",
+      "name_label": "Nome della stanza",
+      "name_too_long": "Il nome può avere al massimo {{max}} caratteri.",
+      "need_more_members": "Scegli almeno {{min}} Bot.",
+      "members_label": "Bot in questa stanza",
+      "members_selected": "{{selected}} selezionati (scegline da {{min}} a {{max}})",
+      "members_full": "Una stanza contiene al massimo {{max}} Bot.",
+      "members_load_failed": "Impossibile caricare l'elenco dei Bot.",
+      "no_bots": "Nessun Bot disponibile per ora. Apri una volta la chat di un Bot perché possa entrare in una stanza.",
+      "log_label": "Messaggi della stanza",
+      "no_messages": "Ancora nessun messaggio",
+      "no_messages_hint": "Scrivi nella stanza. Ogni Bot decide da solo se rispondere.",
+      "you": "Tu",
+      "message_label": "Messaggio alla stanza",
+      "message_placeholder": "Scrivi nella stanza. Digita @ per nominare un Bot.",
+      "mention_list": "Bot che puoi menzionare",
+      "mention_everyone": "tutti (l'intera stanza)",
+      "send": "Invia",
+      "char_count": "{{used}} / {{max}}",
+      "wrapping_up": "Questa stanza sta per chiudersi. I Bot rispondono solo se è essenziale.",
+      "rooms_off": "Le stanze di chat di gruppo sono disattivate. Attivale in Impostazioni, sotto Sviluppatore.",
+      "rooms_off_short": "Le stanze sono disattivate.",
+      "delete_room": "Elimina stanza",
+      "delete_title": "Eliminare questa stanza?",
+      "delete_body": "La stanza e i suoi messaggi vengono rimossi per tutti i presenti. L'operazione non si può annullare.",
+      "delete": "Elimina",
+      "back_to_rooms": "Torna alle stanze",
+      "room_gone": "Questa stanza non esiste più."
     }
   },
   "privacyDisclosure": {

@@ -5468,7 +5468,7 @@
         "backup_others_on_drive": "このドライブにバックアップしている他のインストール：{{count}}",
         "backup_show_others": "他のインストールのアーカイブを含める",
         "backup_others_truncated": "最初の {{max}} 件の他のインストールのみ表示しています。",
-"backup_archives_truncated": "{{kind}} のアーカイブの一部を一覧表示できませんでした。最新のものが表示されていない可能性があります。",
+        "backup_archives_truncated": "{{kind}} のアーカイブの一部を一覧表示できませんでした。最新のものが表示されていない可能性があります。",
         "backup_shared_note": "2つのインストールで1つのドライブを共有しても、メモリの共有にもセッションの共有にもなりません。各バックアップはある瞬間の個別のアーカイブであり、復元はそのファイルをステージングフォルダーにダウンロードするだけです — ファイルの置き換えは、gateway を停止した状態で自分で行います。",
         "backup_restore_foreign_confirm": "このアーカイブは別のインストール（{{install}}）によってアップロードされました。復元すると、このインストールではなくそのインストールのデータをダウンロードします。それでもダウンロードしますか？",
         "backup_restore_unverified_confirm": "このアーカイブはこのインストール自身のフォルダーに保存されていますが、このインストールにはアップロードした記録がありません。ドライブに書き込める者なら誰でもそのフォルダーを作成できるため、このインストールのものではない可能性があります。それでもダウンロードしますか？",
@@ -11110,7 +11110,8 @@
     "settings": "設定",
     "task_runner": "Task Runner",
     "webhooks": "Webhooks",
-    "crew_members": "Bot"
+    "crew_members": "Bot",
+    "rooms": "ルーム"
   },
   "pages": {
     "agentsPage": {
@@ -12221,7 +12222,7 @@
         "spec_choice_done_resuming": "今後 {{agent}} には {{file}} を使います。セッションを再開しています。後で kirocrew agent pin で変更できます。",
         "spec_choice_done": "今後 {{agent}} には {{file}} を使います。メッセージをもう一度送信して開始してください。後で kirocrew agent pin で変更できます。",
         "spec_choice_failed": "選択を保存できませんでした",
-      "hidden_scratch_folder": "このチャットのフォルダーは以前の実行で作られた一時フォルダーで、もう開けません。このチャットは既定のフォルダーで動作するようになりました。"
+        "hidden_scratch_folder": "このチャットのフォルダーは以前の実行で作られた一時フォルダーで、もう開けません。このチャットは既定のフォルダーで動作するようになりました。"
       },
       "folderPanel": {
         "clear_search": "検索をクリア",
@@ -18241,7 +18242,13 @@
         "reply_threads_desc": "Bot のチャットのどのメッセージにも独自の返信スレッドを持たせ、チャットを表示したままサイドパネルで開きます。オフにすると「スレッドで返信」は表示されず、既存のスレッドは削除ではなく非表示になります。",
         "failed_to_save": "Bot の設定を保存できませんでした。もう一度お試しください。",
         "failed_to_load": "Bot の設定を読み込めませんでした。",
-        "retry": "再試行"
+        "retry": "再試行",
+        "bot_messaging": "Bot 同士のメッセージ",
+        "bot_messaging_desc": "Bot が名前を指定して別の Bot にメッセージを送れるようにします。受け取った Bot は自分のスレッドで、あなたではなく Bot からのメモとして読みます。オフにすると、次の呼び出しからツールは拒否されます。",
+        "group_rooms": "グループチャットのルーム",
+        "group_rooms_desc": "Bot があなたと一緒にルームに参加できるようにします。各 Bot は自分のスレッドで新しいメッセージを読み、返信するかどうかを自分で決めます。オフにすると、ルームの作成と投稿は拒否され、既存のルームは読めるままです。",
+        "channel_posts": "Bot からあなたのチャンネルへの投稿",
+        "channel_posts_desc": "Bot が、接続済みのチャンネルへ短いメッセージを 1 件投稿するよう依頼できるようにします。正確な文面を示すカードで「Send it」を押すまで、何も送信されません。オフにすると、次の呼び出しからツールは拒否されます。"
       },
       "developerPanel": {
         "developer_tools": "開発者ツール",
@@ -20922,6 +20929,47 @@
     "layoutEditorHarness": {
       "title": "レイアウトエディタのハーネス",
       "reset": "レイアウトをリセット"
+    },
+    "roomsPage": {
+      "title": "ルーム",
+      "subtitle": "2〜6 個の Bot と 1 か所で会話します。",
+      "new_room": "新しいルーム",
+      "list_label": "ルーム",
+      "conversation_label": "開いているルーム",
+      "pick_a_room": "読むルームを選ぶか、新しく作成してください。",
+      "no_rooms": "ルームはまだありません",
+      "no_rooms_hint": "ルームでは、あなたと 2〜6 個の Bot が 1 つのチャットに入ります。返信するかどうかは各 Bot が自分で決めます。",
+      "retry": "再試行",
+      "cancel": "キャンセル",
+      "create": "作成",
+      "create_title": "新しいルーム",
+      "name_label": "ルーム名",
+      "name_too_long": "名前は {{max}} 文字までです。",
+      "need_more_members": "Bot を {{min}} 個以上選んでください。",
+      "members_label": "このルームの Bot",
+      "members_selected": "{{selected}} 個を選択中（{{min}}〜{{max}} 個を選んでください）",
+      "members_full": "1 つのルームには最大 {{max}} 個の Bot が入ります。",
+      "members_load_failed": "Bot の一覧を読み込めませんでした。",
+      "no_bots": "利用できる Bot はまだありません。ルームに加われるよう、Bot のチャットを一度開いてください。",
+      "log_label": "ルームのメッセージ",
+      "no_messages": "メッセージはまだありません",
+      "no_messages_hint": "ルームに書き込んでください。返信するかどうかは各 Bot が自分で決めます。",
+      "you": "あなた",
+      "message_label": "ルームへのメッセージ",
+      "message_placeholder": "ルームに書き込みます。@ を入力すると Bot を指名できます。",
+      "mention_list": "メンションできる Bot",
+      "mention_everyone": "全員（ルーム全体）",
+      "send": "送信",
+      "char_count": "{{used}} / {{max}}",
+      "wrapping_up": "このルームは終わりに近づいています。Bot は必要な場合のみ返信します。",
+      "rooms_off": "グループチャットのルームはオフです。設定の「開発者」でオンにしてください。",
+      "rooms_off_short": "ルームはオフです。",
+      "delete_room": "ルームを削除",
+      "delete_title": "このルームを削除しますか？",
+      "delete_body": "ルームとそのメッセージは、参加している全員から削除されます。元に戻せません。",
+      "delete": "削除",
+      "back_to_rooms": "ルーム一覧に戻る",
+      "room_gone": "このルームはもう存在しません。"
     }
   },
   "privacyDisclosure": {
