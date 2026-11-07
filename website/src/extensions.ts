@@ -23,6 +23,7 @@
  *   import { registerMobileConnectRenderer } from '@/components/mobileConnectRenderers'
  *   import { registerRemoteProvisionerRenderer } from '@/components/remoteProvisionerRenderers'
  *   import { registerCrewRowActions }    from '@/components/remoteCrewRowActions'
+ *   import { registerDocumentPanelTabs } from '@/pages/chat/documentPanelTabs'
  *
  * plus one SUPPRESSOR, for a built-in surface an edition's environment makes
  * permanently inapplicable (the registrars above can only add):

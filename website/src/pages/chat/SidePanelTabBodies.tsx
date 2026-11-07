@@ -38,6 +38,7 @@ import { useAppSelector } from '../../store'
 import { mcpAppKey } from '../../store/chatSlice'
 import McpAppFrame from '../../components/McpAppFrame'
 import { dashboardPreviewTargetFromRef } from '../../utils/dashboardPreview'
+import { DocumentPanelTabs } from './DocumentPanelTabs'
 import { i18nT } from '../../i18n/t'
 
 const DashboardPreviewPanel = lazy(() => import('./DashboardPreviewPanel'))
@@ -363,10 +364,9 @@ function TabBody({ tab, active, slot, projectDir, onClose, onPanelHandle, onCont
     // MarkdownPanel showing the current working-tree diff. Nothing is known
     // about a restored tab until a read lands, so it gets the self-hydrating
     // placeholder rather than an editor over an empty buffer.
-    if (tab.content === undefined) {
-      return <HydratingFileTab path={tab.path || ''} onDiskContent={onDiskContent} />
-    }
-    return (
+    const fileBody = tab.content === undefined
+      ? <HydratingFileTab path={tab.path || ''} onDiskContent={onDiskContent} />
+      : (
       <FileTabBody
         tab={tab}
         active={active}
@@ -386,6 +386,10 @@ function TabBody({ tab, active, slot, projectDir, onClose, onPanelHandle, onCont
         onRevealConsumed={onRevealConsumed}
       />
     )
+    // Edition tabs beside the document (`registerDocumentPanelTabs`); a working-tree
+    // diff is a view of the file, not the document, so it gets none.
+    if (tab.kind === 'wtdiff') return fileBody
+    return <DocumentPanelTabs target={{ kind: 'file', path: tab.path || '' }} active={active} slot={slot}>{fileBody}</DocumentPanelTabs>
   }
   if (tab.kind === 'folder') {
     return (
@@ -406,6 +410,7 @@ function TabBody({ tab, active, slot, projectDir, onClose, onPanelHandle, onCont
     // unmount the host page (and any unsaved form on it).
     if (previewTarget) return <ErrorBoundary scope="dashboard-preview" retryOnly><Suspense fallback={null}><DashboardPreviewPanel target={previewTarget} /></Suspense></ErrorBoundary>
     return (
+      <DocumentPanelTabs target={{ kind: 'artifact', slug: tab.artifactSlug || '', artifactKind: tab.artifactKind || 'markdown' }} active={active} slot={slot}>
       <ArtifactPanel
         embedded
         active={active}
@@ -418,6 +423,7 @@ function TabBody({ tab, active, slot, projectDir, onClose, onPanelHandle, onCont
         connected={connected}
         ref={setArtifactRef}
       />
+      </DocumentPanelTabs>
     )
   }
   if (tab.kind === 'diff') {
