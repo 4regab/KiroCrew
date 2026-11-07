@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -81,6 +82,12 @@ def _provider(
     # The gateway claim reads real state; it is not what these tests pin.
     provider.reclaim = MagicMock()  # type: ignore[method-assign]
     return provider
+
+
+async def _passthrough(message, send, _incarnation, *, requests_model=True):
+    """An essential delivery that hands the message straight to the send."""
+    async for event in send(message):
+        yield event
 
 
 class TestTheMark:
@@ -353,6 +360,85 @@ class TestTheTurnBoundary:
             async for _ in provider.stream("hello"):
                 pass
         assert released == ["claim-1"]
+
+    @pytest.mark.asyncio
+    async def test_a_prompt_gate_refusal_after_the_apply_sends_nothing(self, monkeypatch) -> None:
+        """The channel's gate reaches the session through the outer provider and is
+        handed to the handle the apply swapped in; its refusal sends no prompt."""
+        from kiro_crew.providers.acp import AcpProvider
+
+        runtime = _runtime()
+        inner = _provider(runtime)
+        inner.mark_mcp_config_changed()
+        prompted: list[str] = []
+
+        async def _prompt(message: str, *, prompt_gate: Any = None, **_kw: object):
+            # The real handle asks the gate after its last await (see the handle test).
+            prompt_gate()
+            prompted.append(message)
+            if False:
+                yield None
+
+        runtime.new_handle.prompt = _prompt
+        released: list[object] = []
+        monkeypatch.setattr(inner, "_claim_shared_turn", lambda: "claim-1")
+
+        async def _end(claim: object) -> None:
+            released.append(claim)
+
+        monkeypatch.setattr(inner, "_end_shared_turn", _end)
+        inner.essential_delivery = SimpleNamespace(stream=_passthrough, invalidate=lambda: None)
+        outer = AcpProvider.__new__(AcpProvider)
+        outer._client = inner
+        outer.essential_delivery = SimpleNamespace(stream=_passthrough, invalidate=lambda: None)
+        asked_on: list[object] = []
+
+        def _refuse() -> None:
+            asked_on.append(inner._handle)
+            raise PermissionError("sender no longer admitted")
+
+        with pytest.raises(PermissionError):
+            async for _ in outer.stream("hello", prompt_gate=_refuse):
+                pass
+        assert asked_on == [runtime.new_handle]
+        assert prompted == [] and released == ["claim-1"]
+
+    @pytest.mark.asyncio
+    async def test_the_direct_client_asks_the_gate_after_the_prompt_is_built(
+        self, monkeypatch
+    ) -> None:
+        """The direct client applies a pending MCP change in ``_ready_confirmed_session``
+        and then builds the prompt; a sender revoked during the build is refused
+        before the write, and the turn is released."""
+        from kiro_crew.acp import client_turn
+        from kiro_crew.acp.client import AcpClient
+        from kiro_crew.providers.acp import AcpProvider
+
+        admitted = [True]
+
+        def _build(message: str, **_kw: object) -> list[dict[str, str]]:
+            admitted[0] = False
+            return [{"type": "text", "text": message}]
+
+        monkeypatch.setattr(client_turn, "build_prompt_blocks", _build)
+        client = AcpClient()
+        client.ensure_ready = AsyncMock()  # type: ignore[method-assign]
+        client._settle_orphan_steers = AsyncMock()  # type: ignore[method-assign]
+        client._send_request = AsyncMock(return_value=1)  # type: ignore[method-assign]
+        outer = AcpProvider.__new__(AcpProvider)
+        outer._client = client
+        outer._ready_confirmed_session = AsyncMock()  # type: ignore[method-assign]
+        outer.essential_delivery = SimpleNamespace(stream=_passthrough, invalidate=lambda: None)
+
+        def _gate() -> None:
+            if not admitted[0]:
+                raise PermissionError("sender no longer admitted")
+
+        with pytest.raises(PermissionError):
+            async for _ in outer.stream("hello", prompt_gate=_gate):
+                pass
+        client._send_request.assert_not_awaited()
+        assert client._turn_done.is_set()
 
 
 class TestKeepRecordOnTeardown:

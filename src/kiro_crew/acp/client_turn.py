@@ -31,7 +31,7 @@ import asyncio
 import logging
 import time
 from contextlib import aclosing
-from typing import TYPE_CHECKING, AsyncGenerator, AsyncIterator
+from typing import TYPE_CHECKING, AsyncGenerator, AsyncIterator, Callable
 
 from kiro_crew.acp import disposed_session, launch_tuning, pi_steer_turn
 from kiro_crew.acp._dispatch import (
@@ -845,18 +845,20 @@ async def stream_events(
     timeout: float | None = None,
     *,
     allow_image: bool = True,
+    prompt_gate: Callable[[], None] | None = None,
 ) -> AsyncIterator[AcpEvent]:
     """Send a prompt and yield AcpEvent objects (text, tool_call, permission, complete).
 
     ``allow_image=False`` sends *message* as text only: no path in it is
-    read or inlined.
+    read or inlined. ``prompt_gate`` is called right before the prompt is
+    written; whatever it raises ends the turn with nothing sent.
     """
     timeout = await _effective_prompt_timeout_async(timeout)
     self._cancelled = False
     self._turn_done.clear()
     async with launch_tuning.switch_barrier(self):
         await self.ensure_ready()
-    req_id = await self._send_prompt(message, allow_image=allow_image)
+    req_id = await self._send_prompt(message, allow_image=allow_image, prompt_gate=prompt_gate)
     # aclosing(): a consumer that closes this stream early must close the
     # dispatcher too, so its finally records the turn's unanswered steers
     # as orphans before the next _send_prompt settles them.
@@ -1460,7 +1462,13 @@ async def _dispatch_events(
 # ── Private Helpers ──
 
 
-async def _send_prompt(self: AcpClient, message: str, *, allow_image: bool = True) -> int:
+async def _send_prompt(
+    self: AcpClient,
+    message: str,
+    *,
+    allow_image: bool = True,
+    prompt_gate: Callable[[], None] | None = None,
+) -> int:
     await self._settle_orphan_steers()
     # Shared with AcpSessionHandle.prompt via prompt_blocks so the two paths
     # cannot drift.
@@ -1495,6 +1503,13 @@ async def _send_prompt(self: AcpClient, message: str, *, allow_image: bool = Tru
             # waits on the turn ending before it raises.
             self._turn_done.set()
             raise AcpError(issue, transient=False, user_worded=True)
+    if prompt_gate is not None:
+        try:
+            prompt_gate()
+        except BaseException:
+            # Nothing was sent: release a caller waiting on this turn's end.
+            self._turn_done.set()
+            raise
     return await self._send_request(
         METHOD_PROMPT,
         {

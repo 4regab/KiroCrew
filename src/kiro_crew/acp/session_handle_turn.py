@@ -150,6 +150,7 @@ async def prompt(
     *,
     allow_image: bool = True,
     sign_in_ask: str = "",
+    prompt_gate: Callable[[], None] | None = None,
 ) -> AsyncIterator[AcpEvent]:
     """Send session/prompt and yield AcpEvent objects until the turn completes.
 
@@ -164,6 +165,9 @@ async def prompt(
     ``allow_image=False`` sends the message as text only: no path in it is
     read or inlined, whatever the agent advertises. For a prompt that is
     text ABOUT a session, where a path is quoted history, not an attachment.
+
+    ``prompt_gate`` is called once the prompt is built, right before it is
+    written; whatever it raises ends the turn with nothing sent.
     """
 
     async def _build() -> tuple[str, dict[str, Any]]:
@@ -233,7 +237,7 @@ async def prompt(
         )
         yield AcpEvent(kind=EVENT_COMPLETE, stop_reason=STOP_REASON_END_TURN)
         return
-    turn = self._run_turn(_build, timeout, sign_in_ask=sign_in_ask)
+    turn = self._run_turn(_build, timeout, sign_in_ask=sign_in_ask, prompt_gate=prompt_gate)
     try:
         async for event in turn:
             yield event
@@ -319,6 +323,7 @@ async def _run_turn(
     *,
     extract_command_result: bool = False,
     sign_in_ask: str = "",
+    prompt_gate: Callable[[], None] | None = None,
 ) -> AsyncGenerator[AcpEvent, None]:
     """Shared turn lifecycle for :meth:`prompt` and :meth:`stream_command`.
 
@@ -759,6 +764,9 @@ async def _run_turn(
         # failure so a dead write cannot leave the session permanently
         # routed-to.
         _method, _params = await build_request()
+        # Once the request is built, right before the write: a refusal sends nothing.
+        if prompt_gate is not None:
+            prompt_gate()
         _mark = getattr(self._runtime, "mark_turn_active", None)
         if _mark is not None:
             _mark(self._session_id, True)

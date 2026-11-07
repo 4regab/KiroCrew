@@ -642,6 +642,33 @@ async def test_prompt_resets_turn_done_when_cancelled_while_building_blocks():
 
 
 @pytest.mark.asyncio
+async def test_prompt_gate_is_asked_after_the_prompt_is_built():
+    """A sender revoked while the prompt is built is refused before the write:
+    nothing is sent and the handle stays reusable."""
+    rt, _, _ = _make_runtime()
+    q = _register(rt, "sA")
+    handle = AcpSessionHandle("sA", q["sA"], rt)
+    rt.send_request = AsyncMock(return_value=1)
+    admitted = [True]
+
+    def _build(message, **_kw):
+        admitted[0] = False
+        return [{"type": "text", "text": message}]
+
+    def _gate():
+        if not admitted[0]:
+            raise PermissionError("sender no longer admitted")
+
+    with patch("kiro_crew.acp.session_handle.build_prompt_blocks", side_effect=_build):
+        gen = handle.prompt("hi", prompt_gate=_gate)
+        with pytest.raises(PermissionError):
+            await gen.__anext__()
+
+    rt.send_request.assert_not_awaited()
+    assert handle.is_turn_active is False
+
+
+@pytest.mark.asyncio
 async def test_handle_wait_turn_done_immediate():
     rt, _, _ = _make_runtime()
     q = _register(rt, "sA")
