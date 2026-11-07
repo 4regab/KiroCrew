@@ -46,6 +46,7 @@ from kiro_crew.history import (
 
 if TYPE_CHECKING:
     from kiro_crew.dashboard.state import _ChatSlot
+    from kiro_crew.dashboard.transcript_binding import TranscriptBinding
     from kiro_crew.history import ConversationLog
 
 logger = logging.getLogger("kiro_crew.dashboard.chat_persistence")
@@ -456,6 +457,9 @@ def merge_empty_window(
     after_commit_under_lock: Callable[[], None] | None = None,
     queue_deferred_under_lock: Callable[[dict], bool] | None = None,
     turn_timeout_override: tuple[int | None] | None = None,
+    autocompact_override: tuple[float | None] | None = None,
+    after_commit_on_transcript: Callable[[], None] | None = None,
+    routed_binding: TranscriptBinding,
 ) -> str | None:
     """Commit a forced or closing save of a message-less slot as a metadata merge.
 
@@ -469,6 +473,13 @@ def merge_empty_window(
     on disk and does not move the queue witness, so a snapshot older than a
     queue another writer committed cannot overwrite it, and the queue stays
     owed for the next save.
+
+    ``after_commit_under_lock`` acts on *slot*, so it is skipped when the slot was
+    rebound while the merge ran. ``after_commit_on_transcript`` acts on the
+    transcript the merge targets, so it runs under the same lock after every
+    commit, and for a line-less tab, whose slot then holds the only copy.
+    ``routed_binding`` is the binding the save read with its routing
+    (:func:`autocompact_fold`).
 
     Raises ``OSError`` when the record is unreadable, so a close or an
     acknowledged edit is never reported durable on a merge that did not happen.
@@ -525,6 +536,10 @@ def merge_empty_window(
             # live queue itself.
             if slot_history_key(slot) == history_key:
                 slot._queue_persisted_sig = queue_persist_signature(queue_snapshot)
+            if after_commit_on_transcript is not None:
+                # The slot holds the transcript's only copy, so the save that
+                # creates the line must already read it.
+                after_commit_on_transcript()
             return False
         if refusal_under_lock is not None:
             refusal = refusal_under_lock(meta)
@@ -571,8 +586,11 @@ def merge_empty_window(
             # here would write the stale live flag.
             mutes_opened=mutes_opened_override,
             muted=muted_override,
-            # The turn-time-limit endpoint's staged value, the same way.
+            # The turn-time-limit and threshold endpoints' staged values, the same way.
             turn_timeout_secs=_turn_timeout_fold(slot, turn_timeout_override, meta),
+            autocompact_pct=autocompact_fold(
+                slot, autocompact_override, routed_binding, history_key
+            ),
         )
         merged_fields.update(cp._metadata_codec.encode(slot, merge=True, folds=folds))
         if queue_deferred_under_lock is not None and queue_deferred_under_lock(meta):
@@ -583,6 +601,8 @@ def merge_empty_window(
 
     def _after_commit_under_lock() -> None:
         _record_pending_memory_mode(pending_mode_target, merged_fields["memory_mode"])
+        if after_commit_on_transcript is not None:
+            after_commit_on_transcript()
         # The queued prompts this merge committed are now durable, so the
         # flush's drift check must stop reporting them as owed. Set inside the
         # lock, like the full save's witness: a writer that commits a newer
@@ -681,6 +701,24 @@ def _turn_timeout_fold(
     return (cp._validate_turn_timeout_secs(on_disk.get("turn_timeout_secs")),)
 
 
+def autocompact_fold(
+    slot: _ChatSlot,
+    override: tuple[float | None] | None,
+    routed: TranscriptBinding,
+    history_key: str,
+) -> tuple[float | None]:
+    """The ``autocompact_pct`` a save writes to *history_key*, under its lock.
+
+    The endpoint's staged value wins. Otherwise the threshold is the binding's, and
+    a slot rebound while the save waited for the lock holds another transcript's,
+    so a slot that moved writes *routed*, the binding read with its routing.
+    """
+    if override is not None:
+        return override
+    live = slot._binding  # read before the key, so a rebind between them reads as moved
+    return ((live if slot_history_key(slot) == history_key else routed).autocompact_pct,)
+
+
 def build_full_line(
     slot: _ChatSlot,
     existing_meta: dict,
@@ -696,6 +734,7 @@ def build_full_line(
     mutes_opened_override: bool | None = None,
     muted_override: bool | None = None,
     turn_timeout_override: tuple[int | None] | None = None,
+    autocompact_override: tuple[float | None] | None = None,
 ) -> tuple[dict, str, list[dict], set[str], str | None]:
     """The line a full save writes: ``(line, mode, queue, retired note ids, tab_id)``.
 
@@ -873,6 +912,7 @@ def build_full_line(
             mutes_opened=mutes_opened_override,
             muted=muted_override,
             turn_timeout_secs=_turn_timeout_fold(slot, turn_timeout_override, existing_meta),
+            autocompact_pct=autocompact_override,
         ),
     )
     # The drop records this write retires are CONSUMED only after the
