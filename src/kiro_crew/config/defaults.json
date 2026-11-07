@@ -64,7 +64,9 @@
     "@kirocrew-mate/save_goal_report",
     "@kirocrew-mate/save_notes",
     "@kirocrew-mate/bot_list",
-    "@kirocrew-mate/bot_send"
+    "@kirocrew-mate/bot_send",
+    "@kirocrew-mate/room_list",
+    "@kirocrew-mate/room_send"
   ],
   "resources": [
     "file://.kiro/steering/**/*.md"

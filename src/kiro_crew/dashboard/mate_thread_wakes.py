@@ -33,7 +33,7 @@ from typing import Any
 
 from kiro_crew import crewmate_prompts
 from kiro_crew import members as members_mod
-from kiro_crew.dashboard import bot_messages
+from kiro_crew.dashboard import bot_messages, group_rooms
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,12 @@ BOT_MESSAGE_PREFIX = "[Message from Bot"
 
 _BOT_BEGIN = "<<<message from Bot"
 _BOT_END = ">>>end of message from Bot"
+
+#: The envelope a room wake opens with; the room's name and `"]` follow.
+ROOM_PREFIX = '[Group chat: "'
+
+_ROOM_BEGIN = "<<<room message from"
+_ROOM_END = ">>>end of room message"
 
 #: How much of a worker's reply one report carries.
 MAX_REPORT_CHARS = 4000
@@ -272,9 +278,9 @@ def bot_message_prompt(entry: dict[str, Any]) -> str:
     from kiro_crew.member_goals import scrub_text
 
     name, hop = entry["from"], entry["hop"]
-    text = scrub_text(entry["text"]).strip().replace(_BOT_END, "")
+    text = scrub_text(entry["text"]).strip()
     cut = len(text) > bot_messages.MAX_MESSAGE_CHARS
-    text = text[: bot_messages.MAX_MESSAGE_CHARS].rstrip()
+    text = bot_messages.defang(text[: bot_messages.MAX_MESSAGE_CHARS].rstrip())
     lines = [f"{BOT_MESSAGE_PREFIX} {name}] " + _PREAMBLE.rstrip(), ""]
     lines.append(
         crewmate_prompts.fill(
@@ -292,6 +298,48 @@ def bot_message_prompt(entry: dict[str, Any]) -> str:
         else crewmate_prompts.text("bot_message.reply_closed")
     )
     lines.extend(["", crewmate_prompts.fill("bot_message.guidance", reply=reply)])
+    return "\n".join(lines)
+
+
+def room_wake_prompt(entry: dict[str, Any]) -> str:
+    """The hidden turn that shows a Bot a room's new messages, as data.
+
+    *entry* is what :func:`kiro_crew.dashboard.group_rooms.take_next` returns. The room
+    name, the Bot names and who a message is from are the gateway's own, never the
+    messages' words; each message sits in its own fence and cannot close it. A message
+    from the user is marked as the user's, a message from a Bot as a peer's.
+    """
+    room = bot_messages.defang(entry["room"]).replace('"', "'")
+    others = [n for n in entry["members"] if n != entry["me"]]
+    lines = [f'{ROOM_PREFIX}{room}"] ' + _PREAMBLE.rstrip(), ""]
+    lines.append(
+        crewmate_prompts.fill(
+            "room.intro", me=entry["me"], room=room, others=", ".join(others) or "none"
+        )
+    )
+    for message in entry["messages"]:
+        who = f"Bot {message['from']}" if message["from"] != group_rooms.USER else "the user"
+        lines.extend(
+            [
+                f"{_ROOM_BEGIN} {bot_messages.defang(who)}",
+                bot_messages.defang(message["text"]),
+                _ROOM_END,
+            ]
+        )
+    if entry["omitted"]:
+        lines.append(crewmate_prompts.fill("room.omitted", count=entry["omitted"]))
+    if entry["mentioned"]:
+        lines.append(crewmate_prompts.text("room.mention"))
+    if entry["depth"] >= group_rooms.WRAP_DEPTH:
+        wrap = crewmate_prompts.text("room.wrapping")
+    else:
+        wrap = crewmate_prompts.text("room.open")
+    lines.extend(
+        [
+            "",
+            crewmate_prompts.fill("room.guidance", room=room, cap=group_rooms.TURN_CAP, wrap=wrap),
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -402,6 +450,7 @@ async def _flush(state: Any, key: str) -> None:
             key in _notices(state)
             or key in _kept_notices(state)
             or bot_messages.has_pending(state, key)
+            or group_rooms.has_pending(state, key)
         )
         if not (reports or owed) or slot is None or not is_crewmate_thread(slot):
             # Nothing to say, or the thread is gone: what is pending stays, and
@@ -458,6 +507,13 @@ async def _flush(state: Any, key: str) -> None:
                 setattr(slot, bot_messages.HOP_ATTR, entry["hop"])
                 dispatch_hidden_turn(state, slot, bot_message_prompt(entry), human_seen=False)
                 logger.info("Bot message from %s woke %s", entry["from"], key)
+                return
+            # Then one room's new messages, the same way.
+            room_entry = group_rooms.take_next(state, key, slot.agent) if _idle(slot) else None
+            if room_entry is not None:
+                group_rooms.begin_turn(slot, room_entry["depth"])
+                dispatch_hidden_turn(state, slot, room_wake_prompt(room_entry), human_seen=False)
+                logger.info("room wake on %s", key)
             return
         if _idle(slot):
             _pending(state).pop(key, None)
@@ -600,11 +656,13 @@ def note_turn_end(
         elif is_crewmate_thread(slot):
             # Whatever turn just ended, a send made in the next one is a new chain.
             setattr(slot, bot_messages.HOP_ATTR, 0)
+            group_rooms.end_turn(slot)
             if (
                 _pending(state).get(slot.key)
                 or slot.key in _notices(state)
                 or slot.key in _kept_notices(state)
                 or bot_messages.has_pending(state, slot.key)
+                or group_rooms.has_pending(state, slot.key)
             ):
                 schedule_flush(state, slot.key)
             if slot.key not in _notice_checked(state):

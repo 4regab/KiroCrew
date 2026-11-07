@@ -57,7 +57,10 @@ _MATE_SERVER = "kirocrew-mate"
 #: has always kept for itself, admitted only in its own thread. ``bot_list`` reads
 #: the other Bots' names and descriptions; ``bot_send`` queues one bounded message
 #: on another Bot's thread, where it arrives as data, under a hop limit, a per-pair
-#: rate limit, a crew-log entry and the ``agent.bot_messaging`` switch. A tool
+#: rate limit, a crew-log entry and the ``agent.bot_messaging`` switch. ``room_list`` reads the names
+#: of the rooms the Bot is in; ``room_send`` posts one bounded text message to a room,
+#: where the other members read it as data, under a per-turn cap, a depth limit, a rate
+#: limit, a crew-log entry and the ``agent.group_rooms`` switch. A tool
 #: added to the server is not in this tuple, so it asks first until it is
 #: reviewed here.
 _MATE_AUTO_GRANTS = (
@@ -76,6 +79,8 @@ _MATE_AUTO_GRANTS = (
     f"@{_MATE_SERVER}/save_notes",
     f"@{_MATE_SERVER}/bot_list",
     f"@{_MATE_SERVER}/bot_send",
+    f"@{_MATE_SERVER}/room_list",
+    f"@{_MATE_SERVER}/room_send",
 )
 
 

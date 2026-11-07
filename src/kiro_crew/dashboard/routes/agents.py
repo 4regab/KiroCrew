@@ -13,7 +13,7 @@ from __future__ import annotations
 from aiohttp import web
 
 from kiro_crew.dashboard import handlers
-from kiro_crew.dashboard.handlers import agent_templates, member_export
+from kiro_crew.dashboard.handlers import agent_templates, member_export, rooms
 from kiro_crew.dashboard.handlers.agent_catalog import api_agent_catalog
 
 
@@ -121,6 +121,13 @@ def register(app: web.Application) -> None:
     app.router.add_post("/api/teams", handlers.api_teams_create)
     app.router.add_put("/api/teams/{id}", handlers.api_teams_update)
     app.router.add_delete("/api/teams/{id}", handlers.api_teams_delete)
+    # Group chat rooms (the user plus two to six Bots): owner-only; the Bots reach a room
+    # through their own tools under /api/member/self/rooms.
+    app.router.add_get("/api/rooms", rooms.api_rooms_list)
+    app.router.add_post("/api/rooms", rooms.api_rooms_create)
+    app.router.add_get("/api/rooms/{room_id}", rooms.api_room_get)
+    app.router.add_post("/api/rooms/{room_id}/messages", rooms.api_room_post)
+    app.router.add_delete("/api/rooms/{room_id}", rooms.api_room_delete)
 
     # Crew appearance library: the dashboard's own pack store, separate from
     # Crew Companion's. On the dashboard router so a crew's face renders while

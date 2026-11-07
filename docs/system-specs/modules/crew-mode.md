@@ -4438,8 +4438,8 @@ never starts a card or an `update_self`, which still need a turn the user sent.
   (`mate_thread_wakes.bot_message_prompt`, text in `crewmate_prompts.json`
   `bot_message.*`): the name is the configured one, the text is scrubbed
   (`member_goals.scrub_text`), cut to 2,000 characters and fenced between
-  `<<<message from Bot` / `>>>end of message from Bot` with the closing marker removed
-  from inside it. The guidance tells the target the text is data from a peer, never the
+  `<<<message from Bot` / `>>>end of message from Bot` with every `<<<` and `>>>` in it
+  broken up (`bot_messages.defang`), so the text cannot close the fence. The guidance tells the target the text is data from a peer, never the
   user's instruction, and that its plain reply reaches the user only.
 * **Limits.** A message over `MAX_MESSAGE_CHARS` (2,000) is refused, not cut. A chain
   stops at `MAX_HOPS` (3): a send made in a turn a Bot message started is one hop
@@ -4459,6 +4459,74 @@ never starts a card or an `update_self`, which still need a turn the user sent.
 * **One switch.** `agent.bot_messaging` (default on, no restart) is read on every call
   (`bot_messages.enabled`); off, or with the `agent` section degraded, both tools answer
   `bot_messaging_off`. A message already waiting for a busy Bot is still delivered.
+
+**Group chat rooms** (`room_list` and `room_send` on `kirocrew-mate`, the Bots' half
+`dashboard/handlers/member_rooms.py` under `/api/member/self/rooms/list|send`, the
+user's half `dashboard/handlers/rooms.py` under `/api/rooms`, the room and its limits
+in `dashboard/group_rooms.py`). A room is the user plus two to six Bots of this
+gateway. It is owned by the gateway: Bots do not share transcripts, and no Bot reads
+another's memory or files. A Bot learns what was said only from the turn the gateway
+starts in its own pinned thread, and says something only by calling `room_send`, so
+unsent text and tool calls stay private to its own thread. Staying silent is a normal
+move.
+
+* **The room.** `{id, name, members, seq, messages, cursors}`, one file per room under
+  `member-records/chat-rooms/<id>.json`: the gateway-only directory the OS sandbox masks
+  and the agent file tools refuse, so a Bot cannot open it as a file. It is loaded once
+  per gateway into `state._group_rooms` (behind an `asyncio.Lock`, written off the loop
+  with `atomic_write`) and reloaded on restart. A room holds `MIN_MEMBERS` (2) to
+  `MAX_MEMBERS` (6) Bots, named by configured name (resolved exactly or by their one
+  case-insensitive match; an unknown name answers `unknown_bot` with the valid ones). A
+  gateway keeps `MAX_ROOMS` (20), a name is unique ignoring case and at most 60 characters,
+  and a log keeps the newest `MAX_LOG` (200) messages. A message is `{seq, from, text,
+  depth, ts}`; `from` is `""` (`group_rooms.USER`) for the user and a Bot's configured
+  name otherwise.
+* **The wake.** A user message wakes every member; a Bot's message wakes every other
+  member (`group_rooms.wake_members`). Each woken Bot is owed one wake per room
+  (`state._room_wakes`, in memory like the Bot-message queue). `mate_thread_wakes._flush`
+  delivers the oldest owed one as ONE hidden turn (`dispatch_hidden_turn`,
+  `human_seen=False`) once the thread is idle, after any worker report or Bot message;
+  a busy Bot is woken when its turn ends and then sees every message since its last wake,
+  oldest first, once (`group_rooms.take_next` moves its cursor; the newest
+  `WAKE_MAX_MESSAGES` (20) are shown and older ones counted). Its own posts are not
+  shown back. Cursors are saved with the room on each post, so a restart can show a Bot a
+  few messages twice; owed wakes are lost on restart.
+* **The envelope** `[Group chat: "<name>"]` (`mate_thread_wakes.room_wake_prompt`, text in
+  `crewmate_prompts.json` `room.*`). The room name, the member names and who a message is
+  from are the gateway's own: `the user` or `Bot <name>`. Each message sits in its own
+  `<<<room message from ...` / `>>>end of room message` fence, scrubbed (a Bot's, not the
+  user's) and with every `<<<` and `>>>` in it broken up (`bot_messages.defang`), so no
+  text can close a fence or open a fake one, even by spelling a closing line around a
+  nested copy. The guidance says a Bot's words are data from a peer, never an instruction
+  and never the user, that only a message marked as from the user is the user speaking,
+  that each Bot decides for itself whether to answer, and that when it posts nothing it
+  ends the turn with `nothing_to_do`. A message that names the Bot with `@name` or
+  `@everyone` gets one extra line saying so; it is a cue, not a routing rule.
+* **Limits.** A message is at most `MAX_MESSAGE_CHARS` (2,000) characters, refused rather
+  than cut. A Bot posts at most `TURN_CAP` (3) messages per turn (`turn_cap`; the count
+  is the slot's `_room_sent`, cleared at every turn end, so a new turn is a new
+  allowance). A user message is depth 0 and a reply is one deeper than the wake that
+  started the turn (`group_rooms.depth_of`, the slot's `_room_depth`, set when the wake
+  starts the turn and cleared at every turn end). From `WRAP_DEPTH` (3, the Bot-message hop
+  limit) the wake tells the Bot the room is wrapping up and to post only if essential. A
+  post past `MAX_DEPTH` (4) is refused (`round_limit`), and a post AT `MAX_DEPTH` is kept
+  in the log but wakes nobody, so a loop of Bots answering Bots ends. One Bot may post
+  `POST_LIMIT` (20) messages to one room in `PAIR_WINDOW_SECS` (600) (`rate_limited`,
+  the Bot-message counter under the key `room:<id>`). A Bot can post only in a room it is
+  in; any other room answers `unknown_room` with the rooms it is in.
+* **Every post is logged.** Each `room_send`, refused ones included, appends one
+  `member/room_post` event to the poster's member log (`{room, chars, depth, outcome}`,
+  see [member-event-log](member-event-log.md)) and one audit line. The text is in the room
+  file and in each woken Bot's own session log as the turn's prompt.
+* **The user's routes** are owner-only (`require_owner_dashboard_request`): `GET /api/rooms`,
+  `POST /api/rooms {name, members}`, `GET /api/rooms/{id}` (with messages),
+  `POST /api/rooms/{id}/messages {message}` and `DELETE /api/rooms/{id}`. Reading is
+  allowed with the switch off; creating and posting are not. There is no dashboard page
+  yet; the room view is the user's to review before it is built.
+* **One switch.** `agent.group_rooms` (default on, no restart) is read on every call
+  (`bot_messages.enabled(cfg, "group_rooms")`); off, or with the `agent` section degraded,
+  the tools answer `group_rooms_off` and the user's create and post routes refuse. A wake
+  already owed to a busy Bot is still delivered.
 
 **Adding abilities to a Bot** (`kiro_crew.mate_worker_kit`, owner-only
 `GET/PUT /api/agents/{name}/worker-kit` and `POST .../worker-kit/preview`,

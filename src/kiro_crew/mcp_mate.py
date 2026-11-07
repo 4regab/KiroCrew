@@ -28,6 +28,11 @@ tiers that follow who owns the field:
   and may answer the same way. Admitted on any turn in the Bot's own dashboard
   thread; limits and the off switch are the gateway's
   (:mod:`kiro_crew.dashboard.handlers.member_messages`).
+* **Rooms** -- ``room_list`` names the group chat rooms the Bot is in and ``room_send``
+  posts text to one. Sent at once, no card: the gateway keeps the room, wakes the other
+  members with the new messages as data, and each one decides for itself whether to
+  answer. Admitted like ``bot_send``; limits and the off switch are the gateway's
+  (:mod:`kiro_crew.dashboard.handlers.member_rooms`).
 * **Card-backed** -- ``set_model``, ``set_approval_mode``,
   ``request_capabilities``, ``set_goal`` (add or change one goal), ``set_key_results``
   (how the goals are measured, the whole set at once): what the crewmate
@@ -516,6 +521,35 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "additionalProperties": False,
             },
         },
+        {
+            "name": "room_list",
+            "description": (
+                "List the group chat rooms you are in, each with its name and the other Bots "
+                "in it. It changes nothing."
+            ),
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "room_send",
+            "description": (
+                "Post text to a group chat room you are in (room_list shows the names). "
+                "Everyone else in the room reads it as a note from you, and each decides for "
+                "itself whether to answer. It returns at once. Post only when you have "
+                "something worth adding: staying silent is a normal move, and the room's "
+                'messages reach you as a turn that opens with [Group chat: "<name>"]. You can '
+                "post three messages per turn, a round of replies ends after a few rounds, and "
+                "the text is plain text only. To tell the user something, reply in this chat."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "room": {"type": "string", "minLength": 1, "maxLength": MAX_SHORT_STRING},
+                    "message": {"type": "string", "minLength": 1, "maxLength": 2000},
+                },
+                "required": ["room", "message"],
+                "additionalProperties": False,
+            },
+        },
     ]
 
 
@@ -678,6 +712,27 @@ def _call_tool_inner(name: str, args: dict[str, Any]) -> str:
                 **d,
                 "next": "Sent. Do not wait for an answer: if the other Bot replies, it arrives "
                 "later as a new turn. Carry on, or end your turn.",
+            }
+        )
+
+    if name == "room_list":
+        d = _post("/api/member/self/rooms/list", {}, session_key=sk)
+        return _error_for(name, d) or _render(d)
+
+    if name == "room_send":
+        d = _post(
+            "/api/member/self/rooms/send",
+            {"room": args.get("room", ""), "message": args.get("message", "")},
+            session_key=sk,
+        )
+        refused = _error_for(name, d)
+        if refused:
+            return f"{refused}\nThe message was not posted; do not say it was."
+        return _render(
+            {
+                **d,
+                "next": "Posted. Do not wait for an answer: if others reply, it arrives later "
+                "as a new turn. Carry on, or end your turn.",
             }
         )
 

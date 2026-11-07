@@ -47,8 +47,10 @@ HOP_ATTR = "_bot_message_hop"
 _now = time.monotonic
 
 
-def enabled(cfg: Any) -> bool:
-    """Whether Bot messaging is on in *cfg* (``agent.bot_messaging``).
+def enabled(cfg: Any, switch: str = "bot_messaging") -> bool:
+    """Whether Bot messaging is on in *cfg* (``agent.bot_messaging``, or another *switch*).
+
+    Group chat rooms read the same check with ``agent.group_rooms``.
 
     A config whose ``agent`` section failed to load reads as off, the direction
     that cannot send what the operator meant to stop (as ``members.crew_panel_enabled``).
@@ -57,7 +59,7 @@ def enabled(cfg: Any) -> bool:
 
     if cfg.degraded_sections & {DEGRADED_WHOLE_CONFIG, "agent"}:
         return False
-    return bool(cfg.agent.bot_messaging)
+    return bool(getattr(cfg.agent, switch))
 
 
 def reachable(cfg: Any) -> dict[str, dict[str, str]]:
@@ -89,6 +91,17 @@ def resolve(name: Any, names: list[str]) -> str | None:
         return name
     same = [n for n in names if n.casefold() == name.strip().casefold()]
     return same[0] if len(same) == 1 else None
+
+
+def defang(text: str) -> str:
+    """*text* with every ``<<<`` and ``>>>`` broken up, so it cannot open or close an envelope.
+
+    The envelopes that hand a Bot someone else's words (a Bot message, a room message)
+    are fenced by lines that start ``<<<`` and ``>>>``. Removing one exact closing line
+    is not enough, because the text can spell the rest of the line around a nested
+    copy; no ``>>>`` left means no closing line at all.
+    """
+    return text.replace("<<<", "< < <").replace(">>>", "> > >")
 
 
 def hop_of(slot: Any) -> int:
@@ -138,8 +151,11 @@ def take_next(state: Any, key: str) -> dict[str, Any] | None:
     return entry
 
 
-def take_rate_slot(state: Any, sender: str, target: str) -> bool:
-    """Count one send from *sender* to *target*; False when the pair is at its limit."""
+def take_rate_slot(state: Any, sender: str, target: str, limit: int = PAIR_LIMIT) -> bool:
+    """Count one send from *sender* to *target*; False when the pair is at *limit* in the window.
+
+    *target* is any name the caller keeps its own counts under (a Bot, or ``room:<id>``).
+    """
     sends = getattr(state, "_bot_message_sends", None)
     if not isinstance(sends, dict):
         sends = {}
@@ -148,7 +164,7 @@ def take_rate_slot(state: Any, sender: str, target: str) -> bool:
     now = _now()
     while window and now - window[0] >= PAIR_WINDOW_SECS:
         window.popleft()
-    if len(window) >= PAIR_LIMIT:
+    if len(window) >= limit:
         return False
     window.append(now)
     return True

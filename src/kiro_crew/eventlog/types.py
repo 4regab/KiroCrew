@@ -65,9 +65,16 @@ PATROL_STOPPED = "patrol/stopped"
 # hop_limit, rate_limited, target_unavailable).
 MEMBER_BOT_MESSAGE = "member/bot_message"
 
+# This member posted, or tried to post, to a group chat room (`room_send`).
+# data: {"room": str, "chars": int, "depth": int, "outcome": str}
+# outcome is "posted" or the refusal code (unknown_room, message_too_long,
+# turn_cap, round_limit, rate_limited).
+MEMBER_ROOM_POST = "member/room_post"
+
 ALL_EVENT_TYPES = frozenset(
     {
         MEMBER_BOT_MESSAGE,
+        MEMBER_ROOM_POST,
         MEMBER_CONFIG,
         MEMBER_BINDING,
         MEMBER_RULES,

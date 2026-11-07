@@ -313,6 +313,26 @@ Every send, including a refused one, is written to the sender's crew log as a
 On by default. Set `agent.bot_messaging` to `false` in the config to turn it off
 for every Bot; the tools refuse from the next call, with no restart.
 
+## Group chat rooms
+
+A room is you plus two to six Bots on this gateway. You write in the room; every
+Bot in it reads the new messages in its own thread and decides for itself whether
+to answer. A Bot answers by posting to the room with `room_send`, and staying
+silent is fine. What one Bot says in a room reaches the other Bots as a note from a
+Bot and not from you. Bots do not share chats, memory or files; the room is the
+only thing they have in common.
+
+The limits keep a room from running away. A message is at most 2,000 characters
+and text only. A Bot posts at most three messages per turn. A reply to a reply
+counts one level deeper; from the third level the Bots are told the room is
+wrapping up, and after the fourth nobody is woken. A Bot can post at most twenty
+messages to one room in ten minutes. Every post, including a refused one, is
+written to the poster's crew log as a `member/room_post` event.
+
+Rooms are made and read through `/api/rooms` (a page for them is not built yet).
+On by default. Set `agent.group_rooms` to `false` in the config to turn it off for
+every Bot; the tools refuse from the next call, with no restart.
+
 ## Three things called "crew"
 
 | | What it is |

@@ -1045,7 +1045,9 @@ could be given; `goal_read`, `key_result_progress` and `save_goal_report`, which
 read and write the calling
 Bot's own goal record directly; `save_notes`, which replaces its own
 briefing; `bot_list` and `bot_send`, which name the other Bots and queue one
-bounded message on another Bot's thread, under `agent.bot_messaging`). An existing spec gains
+bounded message on another Bot's thread, under `agent.bot_messaging`; `room_list` and
+`room_send`, which name the group chat rooms the Bot is in and post one bounded text
+message to one, under `agent.group_rooms`). An existing spec gains
 the ref and those grants once
 (`mate_platform_granted.json`). Every tool acts on the calling Bot alone
 and refuses outside its own dashboard turn. A Bot created on a template

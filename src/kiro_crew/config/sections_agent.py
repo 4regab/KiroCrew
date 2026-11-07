@@ -1374,6 +1374,20 @@ class AgentConfig:
             "restart. A message already waiting for a busy Bot is still delivered.",
         ),
     )
+    group_rooms: bool = field(
+        default=True,
+        metadata=_meta(
+            "Group Chat Rooms",
+            "Let Bots take part in group chat rooms on this gateway, with the "
+            "room_list and room_send tools. A room is you plus two to six Bots. "
+            "Each Bot reads the new messages in its own thread as data, decides "
+            "for itself whether to answer, and may stay silent. A Bot posts at most "
+            "three messages per turn, a round of replies stops after a few "
+            "rounds, and every post is written to the poster's crew log. On by "
+            "default. Turn this off to stop all room posts and wakes at once: the "
+            "tools refuse from the next call, with no restart.",
+        ),
+    )
     subagent_cost_gb: float = field(
         default=_DEFAULT_SUBAGENT_COST_GB,
         metadata=_meta(
