@@ -18,6 +18,7 @@ import pytest
 
 from kiro_crew import cli_open
 from kiro_crew.cli_open import DeepLinkError, build_deep_link, open_url
+from kiro_crew.instances.registry import _ID_RE
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEEP_LINK_JS = _REPO_ROOT / "website" / "electron" / "deep-link.js"
@@ -153,3 +154,8 @@ class TestGrammarAgreesWithTheElectronResolver:
     def test_scheme_is_identical(self):
         source = _DEEP_LINK_JS.read_text(encoding="utf-8")
         assert f'const SCHEME = "{cli_open.SCHEME}";' in source
+
+    def test_crew_id_regex_is_the_registry_id_rule(self):
+        # A crew link names a crew by its registry id; a drifted copy would turn a
+        # valid crew into an "unknown crew" error. JS `$` stands for Python `\Z`.
+        assert _js_regex("CREW_ID_RE") == _ID_RE.pattern.replace("\\Z", "$")

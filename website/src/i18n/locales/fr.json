@@ -22123,6 +22123,8 @@
       "session_gone_open_failed": "La session sur laquelle vous avez cliqué a été supprimée et ne peut pas être ouverte.",
       "session_closed_find_in_older_sessions": "Cette session a été fermée. Retrouve sa transcription dans Sessions plus anciennes.",
       "session_open_error_named": "Impossible d’ouvrir « {{name}} ».",
+      "crew_link_unknown": "Ce lien désigne une crew que cette app n’a pas, ou qu’elle ne peut pas ouvrir pour l’instant. Un lien de crew la désigne par son identifiant.",
+      "crew_link_not_connected": "La crew de ce lien n’est pas connectée. Connectez-la depuis son onglet, puis rouvrez le lien.",
       "session_open_error": "Impossible d’ouvrir la session.",
       "session_gone_open_failed_named": "« {{name}} » a été supprimée et ne peut pas être ouverte.",
       "truncated_chars": "…({{count}} caractères tronqués — rouvre la session pour voir la sortie complète)",

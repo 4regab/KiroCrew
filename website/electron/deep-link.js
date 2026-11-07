@@ -11,9 +11,9 @@
 // URLs are allowed to drive navigation. The string comes from the OS, which
 // hands the app whatever any other program asked LaunchServices (or the
 // Windows/Linux registration) to open, so it is untrusted input. The rule is an
-// allowlist of two shapes -- raise the window, or open one session -- mirroring
-// `external-scheme.js`'s stance on outbound schemes: a deny-by-default shape,
-// never a pass-through.
+// allowlist of three shapes -- raise the window, open one session, or open one
+// session on a remote crew -- mirroring `external-scheme.js`'s stance on
+// outbound schemes: a deny-by-default shape, never a pass-through.
 //
 // Electron-free on purpose (like display-media.js and external-scheme.js) so
 // the parsing and the allowlist are unit-tested without a live app;
@@ -51,10 +51,15 @@ function deepLinkFromArgv(argv) {
 /**
  * Resolve a kirocrew:// URL to the dashboard route it may open.
  *
- * Exactly two forms are accepted:
+ * Exactly three forms are accepted:
  *
- *   kirocrew://                       -> { route: "" }           (raise the window)
- *   kirocrew://chat?sid=<slot key>    -> { route: "/chat?sid=<encoded key>", slotKey }
+ *   kirocrew://                              -> { route: "" }           (raise the window)
+ *   kirocrew://chat?sid=<slot key>           -> { route: "/chat?sid=<encoded key>", slotKey }
+ *   kirocrew://chat?crew=<crew id>&sid=<key> -> { route: "/chat?crew=<id>&crewSid=<encoded key>", slotKey }
+ *
+ * A crew link's route carries no `sid`, so an older dashboard never opens a
+ * same-named LOCAL session. A `crew` that is not a crew id routes to the
+ * value-free `/chat?crewError=1`, so the dashboard can say so.
  *
  * Anything else -- another scheme, an unknown host, a path segment, a missing
  * or malformed sid, any other query parameter -- is refused with a reason. The
@@ -97,10 +102,17 @@ function resolveDeepLink(raw) {
 
   if (host !== "chat" || segments.length) return refuse("unknown route");
   if (params.length === 0) return refuse("missing sid");
-  if (params.length !== 1 || params[0] !== "sid") return refuse("unknown query parameter");
+  const crewLink = params.length === 2 && params.includes("crew") && params.includes("sid");
+  if (!crewLink && (params.length !== 1 || params[0] !== "sid")) return refuse("unknown query parameter");
   const sid = url.searchParams.get("sid") || "";
-  if (!isSlotKey(sid)) return refuse("invalid sid");
-  return { ok: true, route: `/chat?sid=${encodeURIComponent(sid)}`, slotKey: sid };
+  if (!crewLink) {
+    if (!isSlotKey(sid)) return refuse("invalid sid");
+    return { ok: true, route: `/chat?sid=${encodeURIComponent(sid)}`, slotKey: sid };
+  }
+  if (!CREW_SLOT_KEY_RE.test(sid)) return refuse("invalid sid");
+  const crew = url.searchParams.get("crew") || "";
+  if (!CREW_ID_RE.test(crew)) return { ok: true, route: "/chat?crewError=1", slotKey: "" };
+  return { ok: true, route: `/chat?crew=${crew}&crewSid=${encodeURIComponent(sid)}`, slotKey: sid };
 }
 
 function refuse(reason) {
@@ -115,6 +127,14 @@ const SLOT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 function isSlotKey(s) {
   return typeof s === "string" && SLOT_KEY_RE.test(s);
 }
+
+// A crew link's key is also stored as that crew's last-chat hint, whose store
+// takes at most 128 characters (`isPaneSlotKey`, website/src/lib/paneLastSlot.ts),
+// so the slot-key rule above is capped there. A test pins both.
+const CREW_SLOT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+// A crew id as the instances registry mints it (`_ID_RE`,
+// src/kiro_crew/instances/registry.py; a test pins the two).
+const CREW_ID_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 module.exports = {
   SCHEME,

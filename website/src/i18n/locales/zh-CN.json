@@ -21085,6 +21085,8 @@
       "session_gone_open_failed": "你点击的会话已被删除，无法打开。",
       "session_closed_find_in_older_sessions": "该会话已关闭。可在“较早的会话”中找到它的记录。",
       "session_open_error_named": "无法打开“{{name}}”。",
+      "crew_link_unknown": "该链接指向的 Crew 在此应用中不存在，或当前无法打开。Crew 链接需使用 Crew 的 ID。",
+      "crew_link_not_connected": "该链接指向的 Crew 未连接。请先在其标签页中连接，然后再次打开该链接。",
       "session_open_error": "无法打开该会话。",
       "session_gone_open_failed_named": "“{{name}}”已被删除，无法打开。",
       "truncated_chars": "…（已截断 {{count}} 个字符 —— 重新打开会话可查看完整输出）",
