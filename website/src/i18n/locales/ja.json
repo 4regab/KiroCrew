@@ -13462,6 +13462,24 @@
         "no_prompt_yet": "このセッションではまだプロンプトが送信されていません。",
         "retry": "再試行",
         "starting": "新しい下書きセッションを開いています…"
+      },
+      "botEventCard": {
+        "sent": "{{me}}が{{peer}}にメッセージを送信しました",
+        "received": "{{peer}}からのメッセージ",
+        "room_post": "{{me}}が{{room}}に投稿しました",
+        "room_wake": "グループチャット: {{room}}（新着{{n}}件）",
+        "refused_bot": "{{peer}}に送信されませんでした: {{reason}}",
+        "refused_room": "{{room}}に投稿されませんでした: {{reason}}",
+        "older_not_shown": "表示されていない以前のメッセージ: {{n}}件",
+        "queued_note": "{{peer}}は作業中で、ターンが終わったら読みます",
+        "reason_rate_limited": "短時間にメッセージが多すぎます",
+        "reason_chain_limit": "返信の連鎖が上限に達しています",
+        "reason_turn_cap": "このターンの投稿数が上限に達しました",
+        "reason_no_match": "その名前のボットもルームもありません",
+        "reason_self": "ボットは自分にメッセージを送れません",
+        "reason_unavailable": "今はスレッドを開けませんでした",
+        "reason_too_long": "メッセージが長すぎます",
+        "reason_other": "ゲートウェイが拒否しました"
       }
     },
     "chatPage": {

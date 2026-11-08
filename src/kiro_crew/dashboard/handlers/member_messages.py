@@ -25,7 +25,7 @@ from aiohttp import web
 
 from kiro_crew import member_goals
 from kiro_crew.config.loader import KiroCrewConfig
-from kiro_crew.dashboard import bot_messages, mate_thread_wakes
+from kiro_crew.dashboard import bot_events, bot_messages, mate_thread_wakes
 from kiro_crew.dashboard.handlers.guide import _audit
 from kiro_crew.dashboard.handlers.member_goals import _agent_body, _agent_member, _deny
 
@@ -111,6 +111,14 @@ async def api_member_self_bot_send(request: web.Request) -> web.Response:
             },
         )
         _audit(sk, OP_BOT_SEND, "ok" if response.status == 200 else "denied", outcome)
+        # The Bot's own chat shows what it sent, or why it was not sent.
+        peer = to or name
+        event = (
+            bot_events.sent(member, peer, message, queued=outcome == "queued")
+            if outcome in ("sent", "queued")
+            else bot_events.refused(member, outcome, peer=peer)
+        )
+        bot_events.record_for_session(request.app["state"], sk, event)
         return response
 
     if chars > bot_messages.MAX_MESSAGE_CHARS:

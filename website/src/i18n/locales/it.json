@@ -14102,6 +14102,24 @@
         "no_prompt_yet": "In questa sessione non è ancora stato inviato nessun prompt.",
         "retry": "Riprova",
         "starting": "Apertura di una nuova sessione bozza…"
+      },
+      "botEventCard": {
+        "sent": "{{me}} ha inviato un messaggio a {{peer}}",
+        "received": "Messaggio da {{peer}}",
+        "room_post": "{{me}} ha scritto in {{room}}",
+        "room_wake": "Chat di gruppo: {{room}} ({{n}} nuovi)",
+        "refused_bot": "Non inviato a {{peer}}: {{reason}}",
+        "refused_room": "Non scritto in {{room}}: {{reason}}",
+        "older_not_shown": "Messaggi precedenti non mostrati: {{n}}",
+        "queued_note": "{{peer}} era occupato e lo leggerà quando finisce il turno",
+        "reason_rate_limited": "troppi messaggi in poco tempo",
+        "reason_chain_limit": "la catena di risposte ha raggiunto il limite",
+        "reason_turn_cap": "questo turno ha già pubblicato il massimo consentito",
+        "reason_no_match": "nessun bot o stanza ha quel nome",
+        "reason_self": "un bot non può scrivere a se stesso",
+        "reason_unavailable": "al momento non è stato possibile aprire il thread",
+        "reason_too_long": "il messaggio è troppo lungo",
+        "reason_other": "il gateway l'ha rifiutato"
       }
     },
     "chatPage": {

@@ -13462,6 +13462,24 @@
         "no_prompt_yet": "此会话中尚未发送任何提示词。",
         "retry": "重试",
         "starting": "正在打开新的草稿会话…"
+      },
+      "botEventCard": {
+        "sent": "{{me}} 向 {{peer}} 发送了一条消息",
+        "received": "来自 {{peer}} 的消息",
+        "room_post": "{{me}} 在 {{room}} 中发了消息",
+        "room_wake": "群聊：{{room}}（{{n}} 条新消息）",
+        "refused_bot": "未发送给 {{peer}}：{{reason}}",
+        "refused_room": "未发布到 {{room}}：{{reason}}",
+        "older_not_shown": "未显示的较早消息：{{n}} 条",
+        "queued_note": "{{peer}} 正忙，会在当前回合结束后阅读",
+        "reason_rate_limited": "短时间内消息过多",
+        "reason_chain_limit": "回复链已达上限",
+        "reason_turn_cap": "本回合已发到上限",
+        "reason_no_match": "没有叫这个名字的机器人或房间",
+        "reason_self": "机器人不能给自己发消息",
+        "reason_unavailable": "暂时无法打开该对话",
+        "reason_too_long": "消息太长",
+        "reason_other": "网关拒绝了它"
       }
     },
     "chatPage": {

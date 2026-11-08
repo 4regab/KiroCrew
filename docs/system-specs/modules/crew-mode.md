@@ -3595,7 +3595,8 @@ hands work to worker sessions and starts no sub-agents ("Conductor and
 worker" below), so delegated work shows as those sessions in the sidebar
 (the 2026-10-17 crewmate-chat decision entry, shipped in PR #22444).
 Runtime `notice` rows and
-compaction status cards are hidden rather than removed from history. When the
+compaction status cards are hidden rather than removed from history, with one exception: the
+Bot event rows ("Bot event rows" below) are drawn. When the
 filter leaves NOTHING to draw although the transcript is not empty (a patroller
 that has never spoken), the pane's empty hint is the Bot's — "<name> hasn't
 said anything to you yet." plus a verb-first second line pointing at where its visible work is ("See what it is working on." — neutral about whether any worker exists yet, since the tab it opens may be the empty box, and never "sessions"). That second
@@ -4456,6 +4457,9 @@ never starts a card or an `update_self`, which still need a turn the user sent.
   see [member-event-log](member-event-log.md)) and writes one audit line. The text of
   a delivered message is also in the target thread's own session log as the turn's
   prompt.
+* **Every send is drawn in the Bot's own chat.** A wake is a hidden turn, so without a row
+  the transcript shows nothing between a Bot's reply and the next message. See "Bot event
+  rows" below.
 * **One switch.** `agent.bot_messaging` (default on, no restart) is read on every call
   (`bot_messages.enabled`); off, or with the `agent` section degraded, both tools answer
   `bot_messaging_off`. A message already waiting for a busy Bot is still delivered.
@@ -4531,6 +4535,9 @@ move.
   `member/room_post` event to the poster's member log (`{room, chars, depth, outcome}`,
   see [member-event-log](member-event-log.md)) and one audit line. The text is in the room
   file and in each woken Bot's own session log as the turn's prompt.
+* **Rooms are drawn in the Bot's own chat too**: a post the Bot makes (`room_post`), a refused one
+  (`refused`) and each wake that shows it new messages (`room_wake`, listing who said what, up to
+  20 messages of 1,000 characters). See "Bot event rows" below.
 * **The user's routes** are owner-only (`require_owner_dashboard_request`): `GET /api/rooms`,
   `POST /api/rooms {name?, members}`, `PATCH /api/rooms/{id} {name}` (rename; owner-only and switch-aware
   like create, 1 to 80 characters, `name_in_use` for a taken name, one `member/room_rename` event in each
@@ -4567,6 +4574,25 @@ move.
   (`bot_messages.enabled(cfg, "group_rooms")`); off, or with the `agent` section degraded,
   the tools answer `group_rooms_off` and the user's create, rename and post routes refuse. A wake
   already owed to a busy Bot is still delivered.
+
+**Bot event rows** (`dashboard/bot_events.py`). A Bot message or a room wake reaches a Bot as a
+hidden turn, so its own chat would show nothing of it. Each is written as one row in the Bot's own slot
+with `slot.append`: an assistant-role system notice, `meta.kind` `bot_event` (a `SYSTEM_NOTICE_KINDS`
+member on both sides, `BOT_EVENT_KIND` / `systemNotice.ts`, so the last-real-message scans skip it), the
+facts in `meta.bot_event`, the English line in `content`. Being a transcript row it is saved with the
+transcript and drawn again after a reload or a gateway restart; the writer redacts secrets on the way to
+disk. Five types: `sent` (`{me, peer, text, queued}`, written by `member_messages.answer` for `sent` and
+`queued`), `received` (`{me, peer, text, hop}`, written by `mate_thread_wakes._flush` just before the
+hidden turn starts), `room_post` and `refused` (`member_rooms.answer` and `member_messages.answer`, with
+the gateway's refusal code as `reason`), `room_wake` (`{me, room, messages, omitted}`, `_flush`). Writing a
+row never raises and never changes whether the send or the wake happens. The dashboard draws it with
+`BotEventCard` (`pages/chat/`, through `SystemNoticeRow`): one line collapsed with the two Bots' faces, a
+button with `aria-expanded` that opens the text as plain text (never markdown, never as the user's or
+the Bot's own words), and a muted line with the reason for a refusal. A Bot's own chat
+(`isCrewmateChatRow`) draws this one notice kind and no other
+(`docs/decisions/2026-11-08-the-bot-chat-draws-bot-event-rows.md`, superseding
+`2026-10-17-crewmate-chat-hands-off-to-worker-sessions.md` for this one kind). The row is not speech
+(`is_speech_row`, `isCrewmateSpeech`) and does not end the typing bubble.
 
 **A Bot posts to a connected channel** (`channel_list` and `channel_send` on
 `kirocrew-mate`, gateway half `dashboard/handlers/member_channels.py` under

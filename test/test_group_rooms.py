@@ -820,3 +820,43 @@ def test_a_real_slot_carries_the_turn_counters():
     assert (group_rooms.depth_of(slot), group_rooms.sent_in_turn(slot)) == (2, 1)
     group_rooms.end_turn(slot)
     assert (group_rooms.depth_of(slot), group_rooms.sent_in_turn(slot)) == (0, 0)
+
+
+def _rows(slot) -> list[dict]:
+    """The Bot event rows in a real slot's transcript, oldest first."""
+    return [
+        m["meta"]["bot_event"]
+        for m in slot.messages
+        if m.get("meta", {}).get("kind") == "bot_event"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_room_message_leaves_a_wake_row_in_each_members_chat(net):
+    room_id = await net.make_room("Lab", ("atlas", "bolt", "cleo"))
+    await net.say(room_id, "hey there")
+    for bot in ("atlas", "bolt", "cleo"):
+        assert _rows(net.slots[bot]) == [
+            {
+                "type": "room_wake",
+                "me": bot,
+                "room": "Lab",
+                "messages": [{"from": "", "text": "hey there"}],
+                "omitted": 0,
+            }
+        ]
+    assert _rows(net.slots["dana"]) == []
+
+
+@pytest.mark.asyncio
+async def test_a_post_leaves_a_row_for_the_poster_and_a_refusal_one_with_the_reason(net):
+    await net.make_room("Lab", ("atlas", "bolt"))
+    await net.post("atlas", "Lab", "I will take it")
+    await net.post("atlas", "Nope", "x")
+    rows = _rows(net.slots["atlas"])
+    assert rows == [
+        {"type": "room_post", "me": "atlas", "room": "Lab", "text": "I will take it"},
+        {"type": "refused", "me": "atlas", "peer": "", "room": "Nope", "reason": "unknown_room"},
+    ]
+    # bolt reads the post in its own wake, listing who said what
+    assert _rows(net.slots["bolt"])[0]["messages"] == [{"from": "atlas", "text": "I will take it"}]

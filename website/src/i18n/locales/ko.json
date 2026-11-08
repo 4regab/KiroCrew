@@ -13462,6 +13462,24 @@
         "no_prompt_yet": "이 세션에서는 아직 보낸 프롬프트가 없습니다.",
         "retry": "다시 시도",
         "starting": "새 초안 세션을 여는 중…"
+      },
+      "botEventCard": {
+        "sent": "{{me}}이(가) {{peer}}에게 메시지를 보냈습니다",
+        "received": "{{peer}}의 메시지",
+        "room_post": "{{me}}이(가) {{room}}에 게시했습니다",
+        "room_wake": "그룹 채팅: {{room}} (새 메시지 {{n}}개)",
+        "refused_bot": "{{peer}}에게 보내지 못함: {{reason}}",
+        "refused_room": "{{room}}에 게시하지 못함: {{reason}}",
+        "older_not_shown": "표시되지 않은 이전 메시지: {{n}}개",
+        "queued_note": "{{peer}}이(가) 작업 중이라 턴이 끝나면 읽습니다",
+        "reason_rate_limited": "짧은 시간에 메시지가 너무 많음",
+        "reason_chain_limit": "답장 연쇄가 한도에 도달함",
+        "reason_turn_cap": "이번 턴에 허용된 최대 게시 수에 도달함",
+        "reason_no_match": "해당 이름의 봇이나 방이 없음",
+        "reason_self": "봇은 자기 자신에게 메시지를 보낼 수 없음",
+        "reason_unavailable": "지금은 스레드를 열 수 없음",
+        "reason_too_long": "메시지가 너무 김",
+        "reason_other": "게이트웨이가 거부함"
       }
     },
     "chatPage": {

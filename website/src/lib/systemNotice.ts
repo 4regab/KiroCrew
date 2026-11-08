@@ -1,7 +1,7 @@
 /**
  * Assistant-role system notices the backend injects into the feed -- status
  * reports (auto-compaction, session reload confirmations, session-switch
- * boundary rows, Shared Crew memory changes), not real turns.
+ * boundary rows, Shared Crew memory changes, Bot event rows), not real turns.
  *
  * Every scan that walks backward for "the assistant's last word" (follow-up
  * [OPTIONS:] derivation, the continuable-thread checks) must skip these, or a
@@ -14,7 +14,11 @@ const SYSTEM_NOTICE_KINDS: ReadonlySet<string> = new Set([
   'session_reload',
   'session_switch',
   'memory_change',
+  'bot_event',
 ])
+
+/** The Bot event rows (`dashboard/bot_events.py`): the one notice kind a Bot's own chat draws. */
+export const BOT_EVENT_KIND = 'bot_event'
 
 export function isSystemNoticeKind(kind: string | undefined): boolean {
   return !!kind && SYSTEM_NOTICE_KINDS.has(kind)

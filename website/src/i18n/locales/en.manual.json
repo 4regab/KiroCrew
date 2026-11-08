@@ -6403,6 +6403,24 @@
         "replay_action_hand_back": "you handed back",
         "replay_action_page_moved": "page moved on",
         "replay_action_auto": "passed on its own"
+      },
+      "botEventCard": {
+        "sent": "{{me}} sent a message to {{peer}}",
+        "received": "Message from {{peer}}",
+        "room_post": "{{me}} posted in {{room}}",
+        "room_wake": "Group chat: {{room}} ({{n}} new)",
+        "refused_bot": "Not sent to {{peer}}: {{reason}}",
+        "refused_room": "Not posted in {{room}}: {{reason}}",
+        "older_not_shown": "Older messages not shown: {{n}}",
+        "queued_note": "{{peer}} was busy and reads it when its turn ends",
+        "reason_rate_limited": "too many messages in a short time",
+        "reason_chain_limit": "the chain of replies is at its limit",
+        "reason_turn_cap": "this turn already posted the most allowed",
+        "reason_no_match": "no Bot or room has that name",
+        "reason_self": "a Bot cannot message itself",
+        "reason_unavailable": "the thread could not be opened right now",
+        "reason_too_long": "the message is too long",
+        "reason_other": "the gateway refused it"
       }
     },
     "chatPage": {

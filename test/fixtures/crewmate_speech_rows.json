@@ -5,6 +5,7 @@
     { "name": "assistant reply", "role": "assistant", "content": "Found the cause of #4213.", "speech": true },
     { "name": "say-nothing reply (U+200B)", "role": "assistant", "content": "\u200b", "speech": false },
     { "name": "compaction notice under the assistant role", "role": "assistant", "content": "Context summary: the conversation so far…", "meta": { "kind": "compaction" }, "speech": false },
+    { "name": "Bot event row under the assistant role (drawn in a Bot's chat, but not speech)", "role": "assistant", "content": "Ace sent a message to Four", "meta": { "kind": "bot_event", "bot_event": { "type": "sent", "me": "Ace", "peer": "Four", "text": "hi", "queued": false } }, "speech": false },
     { "name": "session-reload notice under the assistant role", "role": "assistant", "content": "Session reloaded.", "meta": { "kind": "session_reload" }, "speech": false },
     { "name": "well-formed workflow completion envelope", "role": "assistant", "content": "[Workflow completion event]\nWorkflow `triage` (wf_9f2c) → **finished**\n\nDone.", "speech": false },
     { "name": "malformed workflow envelope (prefix only, header does not parse) degrades to visible markdown", "role": "assistant", "content": "[Workflow completion event]\nsomething went wrong before the header", "speech": true },
