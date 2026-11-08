@@ -71,6 +71,10 @@ MEMBER_BOT_MESSAGE = "member/bot_message"
 # turn_cap, round_limit, rate_limited).
 MEMBER_ROOM_POST = "member/room_post"
 
+# The user renamed a group chat room this member is in.
+# data: {"room": str, "old": str}  (the new name and the old one)
+MEMBER_ROOM_RENAME = "member/room_rename"
+
 # This member asked to post, or tried to ask, to a connected channel (`channel_send`).
 # data: {"channel": str, "chars": int, "outcome": str}
 # outcome is "sent" when the user approved and the channel took it; "denied" when the
@@ -84,6 +88,7 @@ ALL_EVENT_TYPES = frozenset(
     {
         MEMBER_BOT_MESSAGE,
         MEMBER_ROOM_POST,
+        MEMBER_ROOM_RENAME,
         MEMBER_CHANNEL_POST,
         MEMBER_CONFIG,
         MEMBER_BINDING,

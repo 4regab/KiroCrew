@@ -4,9 +4,11 @@ The user's half of :mod:`kiro_crew.dashboard.group_rooms`; the Bots' half is
 :mod:`handlers.member_rooms`. ``crew-mode.md``, "Group chat rooms".
 
 * ``GET /api/rooms`` -- every room, without its messages.
-* ``POST /api/rooms`` -- ``{name, members}``: make a room of two to six Bots.
+* ``POST /api/rooms`` -- ``{name?, members}``: make a room of two to six Bots; an empty
+  name becomes the member names joined by commas.
+* ``PATCH /api/rooms/{room_id}`` -- ``{name}``: rename the room (1 to 80 characters).
 * ``GET /api/rooms/{room_id}`` -- one room with its messages.
-* ``POST /api/rooms/{room_id}/messages`` -- ``{message}``: the user speaks; every member
+* ``POST /api/rooms/{room_id}/messages`` -- ``{message, reply_to?}``: the user speaks; every member
   Bot is woken.
 * ``DELETE /api/rooms/{room_id}`` -- remove the room and its log.
 
@@ -81,7 +83,18 @@ async def api_room_get(request: web.Request) -> web.Response:
     room = rooms.get(request.match_info["room_id"])
     if room is None:
         return web.json_response({"error": "no such room", "code": "unknown_room"}, status=404)
-    return web.json_response({"room": group_rooms.public(room, messages=True)})
+    page = {"before": 0, "limit": group_rooms.PAGE_SIZE}
+    for name, low, high in (("before", 0, None), ("limit", 1, group_rooms.MAX_PAGE_SIZE)):
+        raw = request.query.get(name)
+        if raw is None:
+            continue
+        if not raw.isdecimal() or int(raw) < low or (high is not None and int(raw) > high):
+            return web.json_response(
+                {"error": f"{name} must be a whole number from {low}", "code": "invalid_page"},
+                status=400,
+            )
+        page[name] = int(raw)
+    return web.json_response({"room": group_rooms.public(room, messages=True, **page)})
 
 
 async def api_room_post(request: web.Request) -> web.Response:
@@ -95,23 +108,22 @@ async def api_room_post(request: web.Request) -> web.Response:
     room_id = request.match_info["room_id"]
     if room_id not in await group_rooms.load(state):
         return web.json_response({"error": "no such room", "code": "unknown_room"}, status=404)
-    message = (await _body(request)).get("message")
+    body = await _body(request)
+    message, reply_to = body.get("message"), body.get("reply_to")
+    if reply_to is not None and (isinstance(reply_to, bool) or not isinstance(reply_to, int)):
+        return web.json_response(
+            {"error": "reply_to must be a message number", "code": "invalid_reply"}, status=400
+        )
     if not isinstance(message, str) or not message.strip():
         return web.json_response(
             {"error": "the message is empty", "code": "invalid_message"}, status=400
         )
-    if len(message) > bot_messages.MAX_MESSAGE_CHARS:
-        return web.json_response(
-            {
-                "error": f"the message is {len(message)} characters; the limit is "
-                f"{bot_messages.MAX_MESSAGE_CHARS}",
-                "code": "message_too_long",
-            },
-            status=400,
-        )
     try:
-        # The user's own words are kept as typed; only a Bot's text is scrubbed.
-        posted = await group_rooms.add_message(state, room_id, group_rooms.USER, message.strip(), 0)
+        # The user's own words are kept as typed, whatever their length (the request
+        # size limit of the gateway still applies); only a Bot's text is scrubbed and capped.
+        posted = await group_rooms.add_message(
+            state, room_id, group_rooms.USER, message.strip(), 0, reply_to
+        )
     except group_rooms.RoomError as exc:
         return _fail(exc)
     woken = await group_rooms.wake_members(state, cfg, room_id, group_rooms.USER, posted)
@@ -125,3 +137,40 @@ async def api_room_delete(request: web.Request) -> web.Response:
     if not await group_rooms.delete(request.app["state"], request.match_info["room_id"]):
         return web.json_response({"error": "no such room", "code": "unknown_room"}, status=404)
     return web.json_response({"ok": True})
+
+
+async def api_room_rename(request: web.Request) -> web.Response:
+    """PATCH /api/rooms/{room_id} — ``{name}``: rename the room."""
+    if (denied := await require_owner_dashboard_request(request, "rooms.rename")) is not None:
+        return denied
+    cfg = await asyncio.to_thread(KiroCrewConfig.load)
+    if (off := _switch_off(cfg)) is not None:
+        return off
+    try:
+        room, old = await group_rooms.rename(
+            request.app["state"], request.match_info["room_id"], (await _body(request)).get("name")
+        )
+    except group_rooms.RoomError as exc:
+        return _fail(exc)
+    await _log_rename(cfg, room, old)
+    return web.json_response({"ok": True, "room": group_rooms.public(room)})
+
+
+async def _log_rename(cfg: KiroCrewConfig, room: dict[str, Any], old: str) -> None:
+    """One ``member/room_rename`` event in each member's log. A member that cannot be logged is skipped."""
+    from kiro_crew import eventlog_hooks
+    from kiro_crew import members as members_mod
+    from kiro_crew.eventlog.types import MEMBER_ROOM_RENAME
+
+    for member in room["members"]:
+        try:
+            slug = members_mod.member_slug(member, cfg)
+        except members_mod.MemberSlugError:
+            continue
+        await asyncio.to_thread(
+            eventlog_hooks.emit,
+            slug,
+            member,
+            MEMBER_ROOM_RENAME,
+            {"room": room["name"], "old": old[: group_rooms.MAX_NAME_CHARS]},
+        )

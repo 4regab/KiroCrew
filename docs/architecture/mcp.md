@@ -2268,7 +2268,8 @@ pinned, no-follow open), under the same admission as the goal writes. `bot_list`
 [crew-mode](../system-specs/modules/crew-mode.md), "A Bot messages another Bot by name".
 `room_list` and `room_send` let a Bot post to a group chat room it is in through
 `/api/member/self/rooms/list|send` (`dashboard/handlers/member_rooms.py`), under the same
-admission, switched off by `agent.group_rooms`; see "Group chat rooms" there.
+admission, switched off by `agent.group_rooms`; `room_send` takes an optional integer `reply_to`, the
+number of the message it answers as the room wake shows it; see "Group chat rooms" there.
 `channel_list` and `channel_send` let a Bot ask to post to a connected messaging channel
 through `/api/member/self/channels/list|send` (`dashboard/handlers/member_channels.py`);
 `channel_send` holds the call while the gateway shows the user a card and sends only on

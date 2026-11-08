@@ -322,16 +322,22 @@ silent is fine. What one Bot says in a room reaches the other Bots as a note fro
 Bot and not from you. Bots do not share chats, memory or files; the room is the
 only thing they have in common.
 
-The limits keep a room from running away. A message is at most 2,000 characters
-and text only. A Bot posts at most three messages per turn. A reply to a reply
+The limits keep a room from running away. Your messages have no length limit. A Bot's
+message is at most 2,000 characters and text only. A Bot is shown at most the 20 newest
+messages and the first 4,000 characters of each (a longer one is cut for that Bot only,
+and says so; the room keeps all of it). A Bot posts at most three messages per turn. A reply to a reply
 counts one level deeper; from the third level the Bots are told the room is
 wrapping up, and after the fourth nobody is woken. A Bot can post at most twenty
 messages to one room in ten minutes. Every post, including a refused one, is
 written to the poster's crew log as a `member/room_post` event.
 
-Rooms are made and read on the **Rooms** page in the left rail. New room takes a name and
-two to six Bots. Type `@` in the box to name a Bot, or `@everyone`; a name is a cue to the
-Bots, and every Bot still decides for itself whether to answer. When a room has gone a few
+Rooms are made and read on the **Rooms** page in the left rail. Press **+** (or Ctrl/Cmd+Shift+N),
+pick two to six Bots in the **To** field and the room is made, named after its members. Click
+the name at the top of a room to rename it. Right-click a room in the list (or press and hold
+on a touch screen) for Rename chat and Delete. Reply on a message answers it and shows what it
+answers; a reply to a Bot's message counts as naming that Bot. Type `@` in the box to name a
+Bot, or `@everyone`; a name is a cue to the Bots, and every Bot still decides for itself
+whether to answer. A line under the messages says which Bots are working. When a room has gone a few
 rounds, a line says it is wrapping up and the Bots reply only if it is essential. The page
 reads the same rooms as `/api/rooms`.
 On by default. Turn it off in Settings > Developer > Bots, or set `agent.group_rooms` to

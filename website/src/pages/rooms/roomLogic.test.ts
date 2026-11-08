@@ -5,6 +5,10 @@ import {
   createBlock,
   EVERYONE,
   isWrappingUp,
+  mergeMessages,
+  messageRuns,
+  splitMentions,
+  withMentions,
   mentionCandidates,
   mentionQuery,
   toggleMember,
@@ -13,18 +17,12 @@ import {
 const bots = (n: number) => Array.from({ length: n }, (_, i) => `bot${i + 1}`)
 const msg = (depth: number): RoomMessage => ({ seq: 1, from: 'atlas', text: 'x', depth, ts: 0 })
 
-describe('createBlock: two to six Bots and a name', () => {
+describe('createBlock: two to six Bots', () => {
   it('blocks one Bot and seven Bots, and lets two through six', () => {
-    expect(createBlock('Lab', bots(1))).toBe('few')
-    expect(createBlock('Lab', bots(0))).toBe('few')
-    expect(createBlock('Lab', bots(7))).toBe('many')
-    for (const n of [2, 3, 4, 5, 6]) expect(createBlock('Lab', bots(n)), String(n)).toBeNull()
-  })
-
-  it('needs a name that is not blank and not over 60 characters', () => {
-    expect(createBlock('   ', bots(2))).toBe('name')
-    expect(createBlock('x'.repeat(61), bots(2))).toBe('name')
-    expect(createBlock('x'.repeat(60), bots(2))).toBeNull()
+    expect(createBlock(bots(1))).toBe('few')
+    expect(createBlock(bots(0))).toBe('few')
+    expect(createBlock(bots(7))).toBe('many')
+    for (const n of [2, 3, 4, 5, 6]) expect(createBlock(bots(n)), String(n)).toBeNull()
   })
 })
 
@@ -81,5 +79,50 @@ describe('isWrappingUp', () => {
     expect(isWrappingUp([msg(4)])).toBe(true)
     // A new user message (depth 0) after a long exchange starts a fresh round.
     expect(isWrappingUp([msg(3), msg(0)])).toBe(false)
+  })
+})
+
+describe('mergeMessages', () => {
+  it('joins pages oldest first and keeps one copy of a repeated message', () => {
+    const at = (seq: number): RoomMessage => ({ seq, from: '', text: String(seq), depth: 0, ts: 0 })
+    expect(mergeMessages([at(3), at(4)], [at(1), at(2), at(3)]).map((m) => m.seq)).toEqual([1, 2, 3, 4])
+    expect(mergeMessages([], [])).toEqual([])
+  })
+})
+
+describe('messageRuns: what the transcript draws around a message', () => {
+  const at = (seq: number, from: string, ts = seq * 10): RoomMessage => ({ seq, from, text: String(seq), depth: 0, ts })
+
+  it('names a Bot once for a run of its messages, and puts its face on the last of the run', () => {
+    const runs = messageRuns([at(1, ''), at(2, 'atlas'), at(3, 'atlas'), at(4, 'bolt'), at(5, 'atlas')])
+    expect(runs.map((r) => r.showName)).toEqual([false, true, false, true, true])
+    expect(runs.map((r) => r.showFace)).toEqual([false, false, true, true, true])
+  })
+
+  it('shows a time label first and after a pause of more than thirty minutes, and starts a new name run there', () => {
+    const runs = messageRuns([at(1, 'atlas', 0), at(2, 'atlas', 60), at(3, 'atlas', 60 + 31 * 60)])
+    expect(runs.map((r) => r.showTime)).toEqual([true, false, true])
+    expect(runs.map((r) => r.showName)).toEqual([true, false, true])
+    expect(runs.map((r) => r.showFace)).toEqual([false, true, true])
+  })
+})
+
+describe('splitMentions and withMentions', () => {
+  it('cuts the room\'s own @names out of the text, longest name first, and leaves addresses alone', () => {
+    const members = ['Pipo', 'Pipo · SWE', 'Atlas']
+    expect(splitMentions('hi @Pipo · SWE and @atlas, mail me@Atlas.com', members)).toEqual([
+      { mention: false, text: 'hi ' },
+      { mention: true, text: '@Pipo · SWE' },
+      { mention: false, text: ' and ' },
+      { mention: true, text: '@atlas' },
+      { mention: false, text: ', mail me@Atlas.com' },
+    ])
+    expect(splitMentions('@everyone look', members)[0]).toEqual({ mention: true, text: '@everyone' })
+    expect(splitMentions('@Nobody', members)).toEqual([{ mention: false, text: '@Nobody' }])
+  })
+
+  it('puts the picked names in front of the typed text', () => {
+    expect(withMentions(['Atlas', 'everyone'], 'go')).toBe('@Atlas @everyone go')
+    expect(withMentions([], 'go')).toBe('go')
   })
 })

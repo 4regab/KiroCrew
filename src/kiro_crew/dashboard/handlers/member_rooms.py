@@ -7,7 +7,7 @@ turn in that thread (a message from the user, a check-in, a room wake), but not 
 channel, a schedule, a subagent or an app. ``crew-mode.md``, "Group chat rooms".
 
 * ``POST /api/member/self/rooms/list`` -- the rooms the Bot is in.
-* ``POST /api/member/self/rooms/send`` -- ``{room, message}``: post text to the room and
+* ``POST /api/member/self/rooms/send`` -- ``{room, message, reply_to?}``: post text to the room and
   wake the other members. Answers at once.
 
 Every post, refused ones included, writes one ``member/room_post`` event to the poster's
@@ -81,11 +81,13 @@ async def api_member_self_room_send(request: web.Request) -> web.Response:
         return got
     (sk, slug, member), cfg = got
     body = await _agent_body(request)
-    ref, message = body.get("room"), body.get("message")
+    ref, message, reply_to = body.get("room"), body.get("message"), body.get("reply_to")
     if not isinstance(ref, str) or not ref.strip():
         return _deny(400, "invalid_room", "name the room to post in (room_list shows the names)")
     if not isinstance(message, str) or not message.strip():
         return _deny(400, "invalid_message", "the message is empty")
+    if reply_to is not None and (isinstance(reply_to, bool) or not isinstance(reply_to, int)):
+        return _deny(400, "invalid_reply", "reply_to is a message number from the room")
     chars = len(message)
 
     async def answer(
@@ -183,7 +185,10 @@ async def api_member_self_room_send(request: web.Request) -> web.Response:
         )
     group_rooms.count_post(slot)
     text = member_goals.scrub_text(message).strip()
-    posted = await group_rooms.add_message(state, room_id, member, text, depth)
+    try:
+        posted = await group_rooms.add_message(state, room_id, member, text, depth, reply_to)
+    except group_rooms.RoomError as exc:
+        return await answer(exc.code, _deny(exc.status, exc.code, str(exc)), room_name, depth)
     woken = await group_rooms.wake_members(state, cfg, room_id, member, posted)
     return await answer(
         "posted",

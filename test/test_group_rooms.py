@@ -191,14 +191,125 @@ async def test_a_member_name_resolves_exactly_or_by_case_and_an_unknown_one_list
 
 
 @pytest.mark.asyncio
-async def test_a_room_name_is_required_unique_and_short(net):
-    assert (await net.make("", ["atlas", "bolt"]))[1]["code"] == "invalid_name"
+async def test_a_room_name_is_unique_and_short_and_an_empty_one_is_made_from_the_members(net):
     assert (await net.make("x" * (group_rooms.MAX_NAME_CHARS + 1), ["atlas", "bolt"]))[1][
         "code"
     ] == "invalid_name"
+    assert (await net.make(7, ["atlas", "bolt"]))[1]["code"] == "invalid_name"
     assert (await net.make("Lab", ["atlas", "bolt"]))[0] == 201
     status, answer = await net.make("  lab ", ["atlas", "cleo"])
     assert status == 409 and answer["code"] == "name_in_use"
+    # no name: the member names, and a number when that name is taken
+    assert (await net.make("", ["atlas", "cleo"]))[1]["room"]["name"] == "atlas, cleo"
+    assert (await net.make("  ", ["atlas", "cleo"]))[1]["room"]["name"] == "atlas, cleo 2"
+    net.body = {"members": ["bolt", "cleo"]}
+    made = await owner_side.api_rooms_create(net.request("/api/rooms"))
+    assert json.loads(made.text)["room"]["name"] == "bolt, cleo"
+
+
+def test_a_generated_name_is_cut_to_the_limit_and_stays_unique():
+    long_members = [f"member-number-{i:02d}" for i in range(6)]
+    name = group_rooms.default_name(long_members, set())
+    assert len(name) <= group_rooms.MAX_NAME_CHARS and name.endswith("…")
+    again = group_rooms.default_name(long_members, {name.casefold()})
+    assert len(again) <= group_rooms.MAX_NAME_CHARS and again != name and again.endswith(" 2")
+
+
+@pytest.mark.asyncio
+async def test_the_owner_renames_a_room_and_every_member_log_records_it(net):
+    room_id = await net.make_room("Lab", ("atlas", "bolt"))
+    await net.make_room("Other", ("cleo", "dana"))
+
+    async def rename(name, rid=room_id):
+        net.body = {"name": name}
+        got = await owner_side.api_room_rename(net.request(f"/api/rooms/{rid}", room_id=rid))
+        return got.status, json.loads(got.text)
+
+    status, answer = await rename("  Build   crew ")
+    assert status == 200 and answer["room"]["name"] == "Build crew"
+    assert [(e["type"], e["room"], e["old"]) for e in net.events] == [
+        ("member/room_rename", "Build crew", "Lab")
+    ] * 2
+    assert (await rename(""))[1]["code"] == "invalid_name"
+    assert (await rename("x" * (group_rooms.MAX_NAME_CHARS + 1)))[1]["code"] == "invalid_name"
+    assert (await rename("other"))[1]["code"] == "name_in_use"
+    assert (await rename("build CREW"))[0] == 200  # its own name, other spelling
+    assert (await rename("Fresh", "0" * 16))[0] == 404
+    # it is saved: a restart reads the new name
+    net.state._group_rooms = None
+    assert (await group_rooms.load(net.state))[room_id]["name"] == "build CREW"
+    net.owner = False
+    assert (await rename("Nope"))[0] == 403
+    net.owner = True
+    net.config = net.config_off
+    assert (await rename("Nope"))[1]["code"] == "group_rooms_off"
+
+
+@pytest.mark.asyncio
+async def test_a_reply_keeps_what_it_answers_and_shows_it_to_the_bots_inside_the_fence(net):
+    room_id = await net.make_room("Lab", ("atlas", "bolt", "cleo"))
+    await net.say(room_id, "What next?")
+    await net.post("atlas", "Lab", "Start with the build.")
+    net.body = {"message": "Why the build?", "reply_to": 2}
+    got = await owner_side.api_room_post(
+        net.request(f"/api/rooms/{room_id}/messages", room_id=room_id)
+    )
+    await net.settle()
+    for bot in ("atlas", "cleo"):  # busy with the first message until their turn ends
+        await net.finish(bot)
+    kept = json.loads(got.text)["message"]
+    assert kept["reply_to"] == 2
+    assert kept["quote"] == {"from": "atlas", "text": "Start with the build."}
+    prompt = net.wake_prompts("cleo")[-1]
+    reply_line = '(In reply to Bot atlas, message 2: "Start with the build.")'
+    fenced = prompt.split("Why the build?")[0]
+    assert reply_line in fenced and fenced.rindex(reply_line) > fenced.rindex("<<<")
+    # the Bot it answers is told, as with an @; the others are not
+    assert "replies to a message of yours" in net.wake_prompts("atlas")[-1]
+    assert "replies to a message of yours" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_a_bot_replies_by_number_and_a_bad_number_is_refused(net):
+    room_id = await net.make_room("Lab", ("atlas", "bolt"))
+    await net.say(room_id, "hello")
+    net.caller, net.body = "atlas", {"room": "Lab", "message": "hi back", "reply_to": 1}
+    ok = await bot_side.api_member_self_room_send(net.request("/api/member/self/rooms/send"))
+    assert ok.status == 200
+    log = (await group_rooms.load(net.state))[room_id]["messages"]
+    assert log[1]["reply_to"] == 1 and log[1]["quote"]["from"] == ""
+    for bad, code in ((99, "unknown_reply"), ("1", "invalid_reply"), (True, "invalid_reply")):
+        net.body = {"room": "Lab", "message": "x", "reply_to": bad}
+        got = await bot_side.api_member_self_room_send(net.request("/api/member/self/rooms/send"))
+        assert (got.status, json.loads(got.text)["code"]) == (400, code)
+    net.body = {"message": "x", "reply_to": "1"}
+    got = await owner_side.api_room_post(
+        net.request(f"/api/rooms/{room_id}/messages", room_id=room_id)
+    )
+    assert json.loads(got.text)["code"] == "invalid_reply"
+
+
+@pytest.mark.asyncio
+async def test_the_wake_numbers_each_message_so_a_bot_can_answer_one(net):
+    room_id = await net.make_room("Lab", ("atlas", "bolt"))
+    await net.say(room_id, "one")
+    assert "(message 1)" in net.wake_prompts("bolt")[0]
+
+
+@pytest.mark.asyncio
+async def test_a_room_message_wakes_a_real_slot_and_its_turn_end_clears_the_counters(net):
+    room_id = await net.make_room("Lab", ("atlas", "bolt"))
+    await net.say(room_id, "hi")
+    slot = net.slots["bolt"]
+    assert isinstance(slot, _ChatSlot) and net.wake_prompts("bolt")
+    assert (slot._room_depth, slot._room_sent) == (0, 0)
+    net.caller, net.body = "bolt", {"room": "Lab", "message": "hello"}
+    await bot_side.api_member_self_room_send(net.request("/api/member/self/rooms/send"))
+    assert (slot._room_depth, slot._room_sent) == (0, 1)
+    await net.finish("bolt")
+    assert (slot._room_depth, slot._room_sent) == (0, 0)
+    await net.say(room_id, "again")
+    assert (slot._room_depth, slot._room_sent) == (0, 0)
 
 
 @pytest.mark.asyncio
@@ -241,7 +352,7 @@ async def test_a_user_message_wakes_every_member_with_the_room_as_data(net):
     prompt = net.wake_prompts("bolt")[0]
     assert prompt.startswith('[Group chat: "Lab"]')
     assert (
-        "<<<room message from the user\nWhat should we build first?\n>>>end of room message"
+        "<<<room message from the user (message 1)\nWhat should we build first?\n>>>end of room message"
         in prompt
     )
     # The cue: reply with room_send if it adds something, otherwise end without sending.
@@ -250,13 +361,62 @@ async def test_a_user_message_wakes_every_member_with_the_room_as_data(net):
 
 
 @pytest.mark.asyncio
-async def test_a_user_message_to_an_unknown_room_or_empty_or_too_long_is_refused(net):
+async def test_a_user_message_to_an_unknown_room_or_an_empty_one_is_refused(net):
     room_id = await net.make_room()
     assert (await net.say("0" * 16, "hi"))[0] == 404
     assert (await net.say(room_id, "  "))[1]["code"] == "invalid_message"
-    cap = bot_messages.MAX_MESSAGE_CHARS
-    assert (await net.say(room_id, "x" * (cap + 1)))[1]["code"] == "message_too_long"
-    assert (await net.say(room_id, "x" * cap))[0] == 200
+
+
+@pytest.mark.asyncio
+async def test_the_user_has_no_length_limit_and_the_room_keeps_every_character(net):
+    room_id = await net.make_room()
+    long_text = "word " * 20_000
+    status, answer = await net.say(room_id, long_text)
+    assert status == 200 and answer["ok"]
+    kept = (await group_rooms.load(net.state))[room_id]["messages"][0]["text"]
+    assert kept == long_text.strip()
+
+
+@pytest.mark.asyncio
+async def test_a_long_user_message_is_shortened_for_the_wake_only_with_a_note(net):
+    room_id = await net.make_room()
+    cut = group_rooms.WAKE_MESSAGE_CHARS
+    await net.say(room_id, "a" * cut + "TAIL")
+    prompt = net.wake_prompts("bolt")[0]
+    assert "a" * cut in prompt and "TAIL" not in prompt
+    assert "[message shortened for this wake, full text in the room]" in prompt
+    # a message that fits carries no note: one note in all, for the one cut message
+    await net.say(room_id, "b" * cut)
+    assert "\n".join(net.wake_prompts("cleo")).count("message shortened") == 1
+    stored = (await group_rooms.load(net.state))[room_id]["messages"][0]["text"]
+    assert stored.endswith("TAIL")
+
+
+@pytest.mark.asyncio
+async def test_the_log_is_never_trimmed_and_is_paged_not_cut(net):
+    room_id = await net.make_room()
+    total = group_rooms.PAGE_SIZE * 2 + 5
+    for i in range(1, total + 1):
+        await group_rooms.add_message(net.state, room_id, "", f"m{i}", 0)
+    assert len((await group_rooms.load(net.state))[room_id]["messages"]) == total
+
+    async def page(query=""):
+        path = f"/api/rooms/{room_id}{query}"
+        got = await owner_side.api_room_get(net.request(path, room_id=room_id))
+        return got.status, json.loads(got.text)
+
+    status, newest = await page()
+    room = newest["room"]
+    assert status == 200 and room["has_more"] is True
+    assert [m["seq"] for m in room["messages"]] == list(range(total - 199, total + 1))
+    _, older = await page(f"?before={room['messages'][0]['seq']}")
+    assert [m["seq"] for m in older["room"]["messages"]] == list(range(total - 399, total - 199))
+    _, oldest = await page(f"?before={older['room']['messages'][0]['seq']}")
+    assert [m["seq"] for m in oldest["room"]["messages"]] == list(range(1, 6))
+    assert oldest["room"]["has_more"] is False
+    assert (await page("?limit=2"))[1]["room"]["messages"][-1]["seq"] == total
+    assert (await page("?before=abc"))[1]["code"] == "invalid_page"
+    assert (await page("?limit=0"))[0] == 400
 
 
 @pytest.mark.asyncio
@@ -288,7 +448,8 @@ async def test_a_bot_post_reaches_the_other_members_and_not_the_poster(net):
     assert net.wake_prompts("atlas") == []
     prompt = net.wake_prompts("cleo")[0]
     assert (
-        "<<<room message from Bot atlas\nI looked at the build.\n>>>end of room message" in prompt
+        "<<<room message from Bot atlas (message 1)\nI looked at the build.\n>>>end of room message"
+        in prompt
     )
     # The post is in the poster's crew log, with no text.
     assert net.events == [

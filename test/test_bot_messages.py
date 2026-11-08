@@ -417,3 +417,16 @@ def test_a_real_slot_carries_the_hop():
     slot = _ChatSlot("member-atlas")
     setattr(slot, bot_messages.HOP_ATTR, 2)
     assert bot_messages.hop_of(slot) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_bot_message_wakes_a_real_slot_with_its_hop_and_the_turn_end_clears_it(
+    net, dispatched
+):
+    status, _ = await net.send("atlas", "bolt", "ping")
+    assert status == 200 and len(dispatched) == 1
+    slot = net.slots["bolt"]
+    assert isinstance(slot, _ChatSlot)
+    assert slot._bot_message_hop == 1
+    wakes.note_turn_end(net.state, slot, "", quiet_end=True)
+    assert slot._bot_message_hop == 0
