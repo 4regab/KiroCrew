@@ -2100,6 +2100,32 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     }
   },
   {
+    "id": "developer.bots-messaging-each-other",
+    "label": "Bots messaging each other",
+    "labelKey": "pages.settings.crewmatesSection.bot_messaging",
+    "hint": "Let a Bot send a message to another Bot by name. The other Bot reads it in its own thread as a note from a Bot, not from you. Off, the tools refuse from the next call.",
+    "tab": "developer",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "sub": "feature-previews"
+    },
+    "configKey": "agent.bot_messaging"
+  },
+  {
+    "id": "developer.bots-posting-to-your-channels",
+    "label": "Bots posting to your channels",
+    "labelKey": "pages.settings.crewmatesSection.channel_posts",
+    "hint": "Let a Bot ask to post one short message to a channel you connected. Nothing is sent unless you press Send it on a card that shows the exact text. Off, the tools refuse from the next call.",
+    "tab": "developer",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "sub": "feature-previews"
+    },
+    "configKey": "agent.channel_posts"
+  },
+  {
     "id": "developer.chat-on-a-crew",
     "label": "Chat on a crew",
     "labelKey": "pages.developer.featurePreviewsTab.chat_on_a_crew",
@@ -2175,6 +2201,19 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "params": {
       "sub": "feature-previews"
     }
+  },
+  {
+    "id": "developer.group-chat-rooms",
+    "label": "Group chat rooms",
+    "labelKey": "pages.settings.crewmatesSection.group_rooms",
+    "hint": "Let Bots take part in rooms with you. Each Bot reads new messages in its own thread and decides for itself whether to answer. Off, creating rooms and posting are refused; existing rooms stay readable.",
+    "tab": "developer",
+    "type": "toggle",
+    "occurrence": 1,
+    "params": {
+      "sub": "feature-previews"
+    },
+    "configKey": "agent.group_rooms"
   },
   {
     "id": "developer.jev-api-key",

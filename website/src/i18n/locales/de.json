@@ -5623,7 +5623,7 @@
         "backup_others_on_drive": "Andere Installationen, die auf dieses Laufwerk sichern: {{count}}",
         "backup_show_others": "Archive von anderen Installationen einschließen",
         "backup_others_truncated": "Es werden nur die ersten {{max}} anderen Installationen angezeigt.",
-"backup_archives_truncated": "Einige Archive vom Typ {{kind}} konnten nicht aufgelistet werden. Die neuesten fehlen hier möglicherweise.",
+        "backup_archives_truncated": "Einige Archive vom Typ {{kind}} konnten nicht aufgelistet werden. Die neuesten fehlen hier möglicherweise.",
         "backup_shared_note": "Ein Laufwerk, das sich zwei Installationen teilen, bedeutet kein gemeinsames Gedächtnis und keine gemeinsamen Sitzungen. Jede Sicherung ist ein separates Archiv eines Zeitpunkts, und eine Wiederherstellung lädt diese Datei nur in einen Zwischenordner herunter — die Dateien ersetzt du selbst, bei gestopptem Gateway.",
         "backup_restore_foreign_confirm": "Dieses Archiv wurde von einer anderen Installation ({{install}}) hochgeladen. Es wiederherzustellen lädt die Daten jener Installation herunter, nicht die dieser Installation. Trotzdem herunterladen?",
         "backup_restore_unverified_confirm": "Dieses Archiv liegt im eigenen Ordner dieser Installation, aber diese Installation hat keinen Nachweis, es hochgeladen zu haben. Alles, was auf das Laufwerk schreiben kann, kann diesen Ordner anlegen, daher stammt es womöglich nicht von dieser Installation. Trotzdem herunterladen?",
@@ -11359,7 +11359,8 @@
     "settings": "Einstellungen",
     "task_runner": "Task Runner",
     "webhooks": "Webhooks",
-    "crew_members": "Bots"
+    "crew_members": "Bots",
+    "rooms": "Räume"
   },
   "pages": {
     "agentsPage": {
@@ -12491,7 +12492,7 @@
         "spec_choice_done_resuming": "Ab jetzt wird {{file}} für {{agent}} verwendet. Die Sitzung wird neu gestartet. Ändern kannst du das später mit kirocrew agent pin.",
         "spec_choice_done": "Ab jetzt wird {{file}} für {{agent}} verwendet. Sende deine Nachricht erneut, um zu starten. Ändern kannst du das später mit kirocrew agent pin.",
         "spec_choice_failed": "Die Auswahl konnte nicht gespeichert werden",
-      "hidden_scratch_folder": "Der Ordner dieses Chats war ein temporärer Ordner aus einem früheren Lauf und kann nicht mehr geöffnet werden. Der Chat arbeitet jetzt im Standardordner."
+        "hidden_scratch_folder": "Der Ordner dieses Chats war ein temporärer Ordner aus einem früheren Lauf und kann nicht mehr geöffnet werden. Der Chat arbeitet jetzt im Standardordner."
       },
       "folderPanel": {
         "clear_search": "Suche löschen",
@@ -18722,7 +18723,13 @@
         "reply_threads_desc": "Jede Nachricht im Chat eines Bot kann einen eigenen Antwort-Thread tragen, der im Seitenbereich aufgeht, während der Chat sichtbar bleibt. Aus: „Im Thread antworten“ wird nicht angeboten, und vorhandene Threads sind ausgeblendet, nicht gelöscht.",
         "failed_to_save": "Die Bot-Einstellung konnte nicht gespeichert werden. Versuch es noch einmal.",
         "failed_to_load": "Die Bot-Einstellungen konnten nicht geladen werden.",
-        "retry": "Erneut versuchen"
+        "retry": "Erneut versuchen",
+        "bot_messaging": "Bots schreiben einander",
+        "bot_messaging_desc": "Erlaubt einem Bot, einem anderen Bot per Namen eine Nachricht zu schicken. Der andere Bot liest sie in seinem eigenen Thread als Notiz eines Bots, nicht von dir. Ausgeschaltet, lehnen die Werkzeuge ab dem nächsten Aufruf ab.",
+        "group_rooms": "Gruppenchat-Räume",
+        "group_rooms_desc": "Erlaubt Bots, mit dir an Räumen teilzunehmen. Jeder Bot liest neue Nachrichten in seinem eigenen Thread und entscheidet selbst, ob er antwortet. Ausgeschaltet, werden Raum-Erstellung und Beiträge abgelehnt; bestehende Räume bleiben lesbar.",
+        "channel_posts": "Bots posten in deinen Kanälen",
+        "channel_posts_desc": "Erlaubt einem Bot, anzufragen, eine kurze Nachricht in einem von dir verbundenen Kanal zu posten. Es wird nichts gesendet, bis du auf einer Karte mit dem genauen Text „Send it“ drückst. Ausgeschaltet, lehnen die Werkzeuge ab dem nächsten Aufruf ab."
       },
       "developerPanel": {
         "developer_tools": "Entwicklerwerkzeuge",
@@ -21446,6 +21453,47 @@
     "layoutEditorHarness": {
       "title": "Layout-Editor-Testumgebung",
       "reset": "Layout zurücksetzen"
+    },
+    "roomsPage": {
+      "title": "Räume",
+      "subtitle": "Chatte an einem Ort mit zwei bis sechs Bots.",
+      "new_room": "Neuer Raum",
+      "list_label": "Räume",
+      "conversation_label": "Geöffneter Raum",
+      "pick_a_room": "Wähle einen Raum zum Lesen oder lege einen neuen an.",
+      "no_rooms": "Noch keine Räume",
+      "no_rooms_hint": "Ein Raum bringt dich und zwei bis sechs Bots in einem Chat zusammen. Jeder Bot entscheidet selbst, ob er antwortet.",
+      "retry": "Erneut versuchen",
+      "cancel": "Abbrechen",
+      "create": "Erstellen",
+      "create_title": "Neuer Raum",
+      "name_label": "Raumname",
+      "name_too_long": "Der Name darf höchstens {{max}} Zeichen lang sein.",
+      "need_more_members": "Wähle mindestens {{min}} Bots aus.",
+      "members_label": "Bots in diesem Raum",
+      "members_selected": "{{selected}} ausgewählt ({{min}} bis {{max}} wählen)",
+      "members_full": "Ein Raum fasst höchstens {{max}} Bots.",
+      "members_load_failed": "Die Bot-Liste konnte nicht geladen werden.",
+      "no_bots": "Noch keine Bots verfügbar. Öffne den Chat eines Bot einmal, damit dieser Bot einem Raum beitreten kann.",
+      "log_label": "Raumnachrichten",
+      "no_messages": "Noch keine Nachrichten",
+      "no_messages_hint": "Schreibe in den Raum. Jeder Bot entscheidet selbst, ob er antwortet.",
+      "you": "Du",
+      "message_label": "Nachricht an den Raum",
+      "message_placeholder": "Schreibe in den Raum. Tippe @, um einen Bot zu nennen.",
+      "mention_list": "Bots, die du erwähnen kannst",
+      "mention_everyone": "alle (der ganze Raum)",
+      "send": "Senden",
+      "char_count": "{{used}} / {{max}}",
+      "wrapping_up": "Dieser Raum geht zu Ende. Die Bots antworten nur, wenn es wesentlich ist.",
+      "rooms_off": "Gruppenchat-Räume sind ausgeschaltet. Schalte sie in den Einstellungen unter Entwickler ein.",
+      "rooms_off_short": "Räume sind ausgeschaltet.",
+      "delete_room": "Raum löschen",
+      "delete_title": "Diesen Raum löschen?",
+      "delete_body": "Der Raum und seine Nachrichten werden für alle darin entfernt. Das lässt sich nicht rückgängig machen.",
+      "delete": "Löschen",
+      "back_to_rooms": "Zurück zu den Räumen",
+      "room_gone": "Diesen Raum gibt es nicht mehr."
     }
   },
   "privacyDisclosure": {

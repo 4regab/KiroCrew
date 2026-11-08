@@ -329,9 +329,14 @@ wrapping up, and after the fourth nobody is woken. A Bot can post at most twenty
 messages to one room in ten minutes. Every post, including a refused one, is
 written to the poster's crew log as a `member/room_post` event.
 
-Rooms are made and read through `/api/rooms` (a page for them is not built yet).
-On by default. Set `agent.group_rooms` to `false` in the config to turn it off for
-every Bot; the tools refuse from the next call, with no restart.
+Rooms are made and read on the **Rooms** page in the left rail. New room takes a name and
+two to six Bots. Type `@` in the box to name a Bot, or `@everyone`; a name is a cue to the
+Bots, and every Bot still decides for itself whether to answer. When a room has gone a few
+rounds, a line says it is wrapping up and the Bots reply only if it is essential. The page
+reads the same rooms as `/api/rooms`.
+On by default. Turn it off in Settings > Developer > Bots, or set `agent.group_rooms` to
+`false` in the config; the tools refuse from the next call, with no restart. The Rooms page
+then shows a notice and stops new rooms and messages, and still shows what is there.
 
 ## Bots posting to your channels
 

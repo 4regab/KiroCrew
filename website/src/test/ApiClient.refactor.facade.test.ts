@@ -23,6 +23,7 @@ const NESTED: Record<string, string[]> = {
   teams: ['list', 'create', 'update', 'remove'],
   memberGoals: ['get', 'setGoal', 'removeGoal', 'restoreGoal', 'setKeyResults', 'removeKeyResult', 'restoreKeyResult', 'setSchedules'],
   appearances: ['list', 'detail', 'importBundle', 'remove'],
+  rooms: ['list', 'get', 'create', 'post', 'remove'],
 }
 
 describe('api singleton shape', () => {

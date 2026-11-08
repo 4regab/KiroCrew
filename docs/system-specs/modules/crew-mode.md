@@ -4521,8 +4521,19 @@ move.
 * **The user's routes** are owner-only (`require_owner_dashboard_request`): `GET /api/rooms`,
   `POST /api/rooms {name, members}`, `GET /api/rooms/{id}` (with messages),
   `POST /api/rooms/{id}/messages {message}` and `DELETE /api/rooms/{id}`. Reading is
-  allowed with the switch off; creating and posting are not. There is no dashboard page
-  yet; the room view is the user's to review before it is built.
+  allowed with the switch off; creating and posting are not. The dashboard's
+  **Rooms** page (`/rooms/:roomId?`, `website/src/pages/RoomsPage.tsx` and `pages/rooms/`, the
+  rail row `rooms`) is the only caller. It lists the rooms and opens one, and re-reads the list
+  every 15 s and the open room every 5 s (`api/rooms.ts` `ROOM_LIST_POLL_MS`, `ROOM_POLL_MS`;
+  the gateway has no push channel for rooms, and each poll of a room carries its whole log of at
+  most 200 messages). Create takes two to six Bots and blocks a one-Bot or seven-Bot room before
+  asking; only Bots with a pinned thread are offered, because only those can be woken. The page
+  knows rooms are off from the config read (`agent.group_rooms`) or from a 403 `group_rooms_off`
+  on create or post, and then disables New room and the composer while the log stays readable.
+  Rename and change-members are not offered: the gateway has no route for either. The page does
+  not speak for a Bot, and a message from the user is posted as typed (the gateway keeps it
+  unscrubbed). Settings > Developer > Bots holds the `agent.bot_messaging`, `agent.group_rooms` and
+  `agent.channel_posts` switches (`pages/settings/CrewmatesSection.tsx`).
 * **One switch.** `agent.group_rooms` (default on, no restart) is read on every call
   (`bot_messages.enabled(cfg, "group_rooms")`); off, or with the `agent` section degraded,
   the tools answer `group_rooms_off` and the user's create and post routes refuse. A wake

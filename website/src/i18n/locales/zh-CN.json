@@ -5468,7 +5468,7 @@
         "backup_others_on_drive": "备份到此云盘的其他安装实例：{{count}} 个",
         "backup_show_others": "包含其他安装实例的存档",
         "backup_others_truncated": "只显示前 {{max}} 个其他安装实例。",
-"backup_archives_truncated": "部分{{kind}}存档未能列出，最新的存档可能未显示。",
+        "backup_archives_truncated": "部分{{kind}}存档未能列出，最新的存档可能未显示。",
         "backup_shared_note": "两个安装实例共用一个云盘，并不意味着共享记忆或共享会话。每个备份都是某一时刻的独立存档，恢复只是把该文件下载到一个暂存文件夹 — 文件由你自己替换，且需在 gateway 停止时进行。",
         "backup_restore_foreign_confirm": "此存档由另一个安装实例（{{install}}）上传。恢复它会下载那个安装实例的数据，而不是此安装实例的数据。仍要下载吗？",
         "backup_restore_unverified_confirm": "此存档存放在此安装实例自己的文件夹里，但此安装实例没有上传它的记录。任何能写入云盘的东西都能创建那个文件夹，所以它未必来自此安装实例。仍要下载吗？",
@@ -11110,7 +11110,8 @@
     "settings": "设置",
     "task_runner": "Task Runner",
     "webhooks": "Webhook",
-    "crew_members": "Bot"
+    "crew_members": "Bot",
+    "rooms": "群聊"
   },
   "pages": {
     "agentsPage": {
@@ -12221,7 +12222,7 @@
         "spec_choice_done_resuming": "从现在起 {{agent}} 使用 {{file}}，正在重新启动会话。之后可用 kirocrew agent pin 更改。",
         "spec_choice_done": "从现在起 {{agent}} 使用 {{file}}。请重新发送消息以启动。之后可用 kirocrew agent pin 更改。",
         "spec_choice_failed": "无法保存所选文件",
-      "hidden_scratch_folder": "此聊天的文件夹是之前一次运行留下的临时文件夹，现在已无法打开。此聊天现在使用默认文件夹。"
+        "hidden_scratch_folder": "此聊天的文件夹是之前一次运行留下的临时文件夹，现在已无法打开。此聊天现在使用默认文件夹。"
       },
       "folderPanel": {
         "clear_search": "清除搜索",
@@ -18241,7 +18242,13 @@
         "reply_threads_desc": "让 Bot 对话里的任何消息都能带自己的回复话题，在侧栏打开，对话保持可见。关闭时不显示“在话题中回复”，已有话题会隐藏而不是删除。",
         "failed_to_save": "无法保存 Bot 设置。请再试一次。",
         "failed_to_load": "无法加载 Bot 设置。",
-        "retry": "重试"
+        "retry": "重试",
+        "bot_messaging": "Bot 之间互发消息",
+        "bot_messaging_desc": "允许 Bot 按名称给另一个 Bot 发消息。对方在自己的会话中把它当作来自 Bot 的便条阅读，而不是来自你。关闭后，这些工具从下一次调用起即被拒绝。",
+        "group_rooms": "群聊",
+        "group_rooms_desc": "允许 Bot 与你一起参与群聊。每个 Bot 在自己的会话中读取新消息，并自行决定是否回复。关闭后，新建群聊和发言都会被拒绝；已有群聊仍可查看。",
+        "channel_posts": "Bot 向你的频道发帖",
+        "channel_posts_desc": "允许 Bot 请求向你已连接的频道发送一条简短消息。除非你在显示完整文本的卡片上按下“Send it”，否则不会发送任何内容。关闭后，这些工具从下一次调用起即被拒绝。"
       },
       "developerPanel": {
         "developer_tools": "开发者工具",
@@ -20922,6 +20929,47 @@
     "layoutEditorHarness": {
       "title": "布局编辑器测试台",
       "reset": "重置布局"
+    },
+    "roomsPage": {
+      "title": "群聊",
+      "subtitle": "在一个地方与两到六个 Bot 交流。",
+      "new_room": "新建群聊",
+      "list_label": "群聊",
+      "conversation_label": "当前群聊",
+      "pick_a_room": "选择一个群聊查看，或新建一个。",
+      "no_rooms": "还没有群聊",
+      "no_rooms_hint": "群聊把你和两到六个 Bot 放在同一个对话里。每个 Bot 自己决定是否回复。",
+      "retry": "重试",
+      "cancel": "取消",
+      "create": "创建",
+      "create_title": "新建群聊",
+      "name_label": "群聊名称",
+      "name_too_long": "名称最多 {{max}} 个字符。",
+      "need_more_members": "至少选择 {{min}} 个 Bot。",
+      "members_label": "此群聊中的 Bot",
+      "members_selected": "已选 {{selected}} 个（需选 {{min}} 到 {{max}} 个）",
+      "members_full": "一个群聊最多容纳 {{max}} 个 Bot。",
+      "members_load_failed": "无法加载 Bot 列表。",
+      "no_bots": "暂无可用的 Bot。先打开一次某个 Bot 的聊天，它才能加入群聊。",
+      "log_label": "群聊消息",
+      "no_messages": "还没有消息",
+      "no_messages_hint": "在群聊里发言。每个 Bot 自己决定是否回复。",
+      "you": "你",
+      "message_label": "发给群聊的消息",
+      "message_placeholder": "在群聊里发言。输入 @ 可点名某个 Bot。",
+      "mention_list": "可提及的 Bot",
+      "mention_everyone": "所有人（整个群聊）",
+      "send": "发送",
+      "char_count": "{{used}} / {{max}}",
+      "wrapping_up": "此群聊即将结束。只有在必要时 Bot 才会回复。",
+      "rooms_off": "群聊已关闭。请在“设置”的“开发者”下打开。",
+      "rooms_off_short": "群聊已关闭。",
+      "delete_room": "删除群聊",
+      "delete_title": "删除此群聊？",
+      "delete_body": "群聊及其消息将对其中所有人移除，且无法撤销。",
+      "delete": "删除",
+      "back_to_rooms": "返回群聊列表",
+      "room_gone": "此群聊已不存在。"
     }
   },
   "privacyDisclosure": {

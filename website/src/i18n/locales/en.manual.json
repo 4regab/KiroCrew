@@ -5039,7 +5039,8 @@
     "settings": "Settings",
     "task_runner": "Task Runner",
     "webhooks": "Webhooks",
-    "crew_members": "Bots"
+    "crew_members": "Bots",
+    "rooms": "Rooms"
   },
   "pages": {
     "performanceTab": {
@@ -6072,7 +6073,7 @@
         "repair_images_failed": "Images can't be repaired twice in one chat. Start a fresh session to keep going — this chat is kept, and the assistant continues from a summary.",
         "repair_images_not_persistent": "Images can't be repaired in an Incognito or Temporary chat, because reloading it erases its history. Start a fresh session to keep going.",
         "repair_images_retry_hint": "Something went wrong this time, so your one repair wasn't used — press “Repair images and resume” to try again.",
-      "hidden_scratch_folder": "This chat's folder was a temporary folder from an earlier run and can't be opened anymore. The chat now works in the default folder."
+        "hidden_scratch_folder": "This chat's folder was a temporary folder from an earlier run and can't be opened anymore. The chat now works in the default folder."
       },
       "crewLog": {
         "section_status": "Status",
@@ -8508,7 +8509,13 @@
         "reply_threads_desc": "Let any message in a Bot's chat carry its own reply thread, opened in the side panel while the chat stays visible. Off, the Reply in thread control is not offered and existing threads are hidden, not deleted.",
         "failed_to_save": "Couldn't save the Bot setting. Try again.",
         "failed_to_load": "Couldn't load the Bot settings.",
-        "retry": "Retry"
+        "retry": "Retry",
+        "bot_messaging": "Bots messaging each other",
+        "bot_messaging_desc": "Let a Bot send a message to another Bot by name. The other Bot reads it in its own thread as a note from a Bot, not from you. Off, the tools refuse from the next call.",
+        "group_rooms": "Group chat rooms",
+        "group_rooms_desc": "Let Bots take part in rooms with you. Each Bot reads new messages in its own thread and decides for itself whether to answer. Off, creating rooms and posting are refused; existing rooms stay readable.",
+        "channel_posts": "Bots posting to your channels",
+        "channel_posts_desc": "Let a Bot ask to post one short message to a channel you connected. Nothing is sent unless you press Send it on a card that shows the exact text. Off, the tools refuse from the next call."
       },
       "developerPanel": {
         "feature_previews": "Feature Previews",
@@ -10174,6 +10181,47 @@
     "telemetryPanel": {
       "window_footer_shards_one": "OTEL sections · period: {{period}} · {{n}} shard · source: <dir/> · local-only, no egress",
       "window_footer_shards_other": "OTEL sections · period: {{period}} · {{n}} shards · source: <dir/> · local-only, no egress"
+    },
+    "roomsPage": {
+      "title": "Rooms",
+      "subtitle": "Talk with two to six Bots in one place.",
+      "new_room": "New room",
+      "list_label": "Rooms",
+      "conversation_label": "Open room",
+      "pick_a_room": "Pick a room to read it, or make a new one.",
+      "no_rooms": "No rooms yet",
+      "no_rooms_hint": "A room puts you and two to six Bots in one chat. Each Bot decides for itself whether to answer.",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "create": "Create",
+      "create_title": "New room",
+      "name_label": "Room name",
+      "name_too_long": "The name can be at most {{max}} characters.",
+      "need_more_members": "Pick at least {{min}} Bots.",
+      "members_label": "Bots in this room",
+      "members_selected": "{{selected}} selected (pick {{min}} to {{max}})",
+      "members_full": "A room holds at most {{max}} Bots.",
+      "members_load_failed": "The list of Bots could not be loaded.",
+      "no_bots": "No Bots are available yet. Open a Bot's chat once so it can join a room.",
+      "log_label": "Room messages",
+      "no_messages": "No messages yet",
+      "no_messages_hint": "Write to the room. Each Bot decides for itself whether to answer.",
+      "you": "You",
+      "message_label": "Message to the room",
+      "message_placeholder": "Write to the room. Type @ to name a Bot.",
+      "mention_list": "Bots you can mention",
+      "mention_everyone": "everyone (the whole room)",
+      "send": "Send",
+      "char_count": "{{used}} / {{max}}",
+      "wrapping_up": "This room is wrapping up. The Bots reply only if it is essential.",
+      "rooms_off": "Group chat rooms are turned off. Turn them on under Developer in Settings.",
+      "rooms_off_short": "Rooms are turned off.",
+      "delete_room": "Delete room",
+      "delete_title": "Delete this room?",
+      "delete_body": "The room and its messages are removed for everyone in it. This cannot be undone.",
+      "delete": "Delete",
+      "back_to_rooms": "Back to rooms",
+      "room_gone": "This room no longer exists."
     }
   },
   "privacyDisclosure": {

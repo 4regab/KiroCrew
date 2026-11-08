@@ -7,7 +7,7 @@
  * Order in this file = order in the rail (within each group). Add new
  * built-in surfaces here; do not add hardcoded badge logic to `App.tsx`.
  */
-import { MessageSquare, Bell, Component, CalendarDays, Settings, ClipboardCheck, Compass, Webhook, BookOpen, Link2, Library, MessageSquareText, Workflow, ScrollText, Bot } from 'lucide-react'
+import { MessageSquare, Bell, Component, CalendarDays, Settings, ClipboardCheck, Compass, Webhook, BookOpen, Link2, Library, MessageSquareText, Workflow, ScrollText, Bot, MessagesSquare } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { createSelector } from '@reduxjs/toolkit'
 import { KiroGhostMark } from '../components/KiroGhostMark'
@@ -58,6 +58,14 @@ registerBuiltinSurface({
   ...BUILTIN_SURFACE_NAV.members,
   icon: <CrewMemberMark />,
   badgeLabel: 'unread member threads',
+})
+
+// Group chat rooms: the user and two to six Bots in one room the gateway owns. A page
+// of its own (`/rooms/:roomId?`), not a chat slot, so it carries no `slotMode` and no
+// unread count.
+registerBuiltinSurface({
+  ...BUILTIN_SURFACE_NAV.rooms,
+  icon: <MessagesSquare size={16} />,
 })
 
 registerBuiltinSurface({

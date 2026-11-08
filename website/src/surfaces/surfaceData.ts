@@ -52,6 +52,10 @@ export const BUILTIN_SURFACE_NAV = {
     navId: 'members', route: '/members', label: surfaceMachineValue('Bots'), labelKey: 'nav.crew_members',
     group: surfaceMachineValue('Main'), slotMode: 'member',
   },
+  rooms: {
+    navId: 'rooms', route: '/rooms', label: surfaceMachineValue('Rooms'), labelKey: 'nav.rooms',
+    group: surfaceMachineValue('Main'),
+  },
   notifications: {
     navId: 'notifications', route: '/notifications', label: surfaceMachineValue('Notifications'),
     labelKey: 'nav.notifications', group: surfaceMachineValue('Main'), hiddenFromNav: true,
