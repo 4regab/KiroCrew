@@ -14,6 +14,9 @@
   (:func:`kiro_crew.dashboard.mate_thread_wakes.room_wake_prompt`), decides for itself
   whether to answer, and answers with ``room_send``. Ending the turn without sending
   is a normal move.
+* **A reply**: a message may carry ``reply_to`` (the ``seq`` of an earlier message) and a
+  ``quote`` snapshot. The wake shows the quote inside the message's fence, and a reply to a
+  Bot's message counts as naming that Bot, like an ``@`` (``mentioned``).
 * **The limits**: a Bot posts at most :data:`TURN_CAP` messages per turn. A reply to a
   reply is one level deeper (:data:`WRAP_DEPTH`, :data:`MAX_DEPTH`), so a room cannot
   loop: past the first :data:`WRAP_DEPTH` levels the wake tells the Bot the room is
@@ -45,7 +48,7 @@ MAX_MEMBERS = 6
 
 #: Rooms one gateway keeps. A room's log is never trimmed.
 MAX_ROOMS = 20
-MAX_NAME_CHARS = 60
+MAX_NAME_CHARS = 80
 
 #: Messages one ``GET /api/rooms/{id}`` page returns (the newest first); an older page is
 #: asked for with ``before``. A page size, not a cap: nothing in the log is dropped.
@@ -194,16 +197,56 @@ def public(
     return out
 
 
+def default_name(members: list[str], taken: set[str]) -> str:
+    """The member names joined by commas, cut to :data:`MAX_NAME_CHARS`, made unique with a number.
+
+    *taken* holds the case-folded names already in use.
+    """
+    base = ", ".join(members)
+    if len(base) > MAX_NAME_CHARS:
+        base = base[: MAX_NAME_CHARS - 1].rstrip(", ") + "…"
+    name, n = base, 1
+    while name.casefold() in taken:
+        n += 1
+        tail = f" {n}"
+        name = base[: MAX_NAME_CHARS - len(tail)].rstrip() + tail
+    return name
+
+
+async def rename(state: Any, room_id: str, name: Any) -> tuple[dict[str, Any], str]:
+    """Give the room a new name; return ``(room, old name)``. Raise :class:`RoomError`."""
+    clean = " ".join(name.split()) if isinstance(name, str) else ""
+    if not clean or len(clean) > MAX_NAME_CHARS:
+        raise RoomError(400, "invalid_name", f"name the room in 1 to {MAX_NAME_CHARS} characters")
+    rooms = await load(state)
+    async with _lock(state):
+        room = rooms.get(room_id)
+        if room is None:
+            raise RoomError(404, "unknown_room", "that room no longer exists")
+        if any(
+            r["id"] != room_id and r["name"].casefold() == clean.casefold() for r in rooms.values()
+        ):
+            raise RoomError(409, "name_in_use", f"a room named {clean!r} already exists")
+        old = room["name"]
+        room["name"] = clean
+        await asyncio.to_thread(_write, room)
+    return room, old
+
+
 async def create(
     state: Any, name: Any, member_refs: Any, reachable: dict[str, dict[str, str]]
 ) -> dict[str, Any]:
     """Make a room named *name* of the Bots *member_refs* names; raise :class:`RoomError`.
 
+    An empty or missing *name* becomes :func:`default_name`.
+
     *reachable* is :func:`bot_messages.reachable`: names resolve exactly or by their one
     case-insensitive match, and a name that matches no Bot is refused with the valid ones.
     """
+    if name is not None and not isinstance(name, str):
+        raise RoomError(400, "invalid_name", f"name the room in 1 to {MAX_NAME_CHARS} characters")
     clean = " ".join(name.split()) if isinstance(name, str) else ""
-    if not clean or len(clean) > MAX_NAME_CHARS:
+    if len(clean) > MAX_NAME_CHARS:
         raise RoomError(400, "invalid_name", f"name the room in 1 to {MAX_NAME_CHARS} characters")
     if not isinstance(member_refs, list) or not all(isinstance(m, str) for m in member_refs):
         raise RoomError(400, "invalid_members", "members must be a list of Bot names")
@@ -228,7 +271,10 @@ async def create(
     async with _lock(state):
         if len(rooms) >= MAX_ROOMS:
             raise RoomError(409, "too_many_rooms", f"this gateway keeps at most {MAX_ROOMS} rooms")
-        if any(r["name"].casefold() == clean.casefold() for r in rooms.values()):
+        taken = {r["name"].casefold() for r in rooms.values()}
+        if not clean:
+            clean = default_name(members, taken)
+        elif clean.casefold() in taken:
             raise RoomError(409, "name_in_use", f"a room named {clean!r} already exists")
         room: dict[str, Any] = {
             "id": secrets.token_hex(8),
@@ -255,10 +301,23 @@ async def delete(state: Any, room_id: str) -> bool:
     return True
 
 
+#: Characters of the replied-to message a reply keeps beside its id.
+QUOTE_CHARS = 160
+
+
 async def add_message(
-    state: Any, room_id: str, sender: str, text: str, depth: int
+    state: Any,
+    room_id: str,
+    sender: str,
+    text: str,
+    depth: int,
+    reply_to: int | None = None,
 ) -> dict[str, Any]:
     """Append one message to the room's log and save it; return the message.
+
+    *reply_to* is the ``seq`` of an earlier message in this room. The reply keeps it with
+    a short snapshot of that message (``quote``: who and the first :data:`QUOTE_CHARS`
+    characters), so a reader never needs the older page; an unknown ``seq`` is refused.
 
     ponytail: the member cursors (what each Bot has been shown) are saved with the room
     on every post, not on every wake, so a restart can show a Bot a few messages twice.
@@ -269,14 +328,25 @@ async def add_message(
         room = rooms.get(room_id)
         if room is None:
             raise RoomError(404, "unknown_room", "that room no longer exists")
+        quote = None
+        if reply_to is not None:
+            target = next((m for m in room["messages"] if m["seq"] == reply_to), None)
+            if target is None:
+                raise RoomError(
+                    400, "unknown_reply", "reply_to names a message that is not in this room"
+                )
+            quote = {"from": target["from"], "text": " ".join(target["text"].split())[:QUOTE_CHARS]}
         room["seq"] += 1
-        message = {
+        message: dict[str, Any] = {
             "seq": room["seq"],
             "from": sender,
             "text": text,
             "depth": depth,
             "ts": time.time(),
         }
+        if quote is not None:
+            message["reply_to"] = reply_to
+            message["quote"] = quote
         room["messages"].append(message)
         await asyncio.to_thread(_write, room)
     return message
@@ -373,7 +443,10 @@ def take_next(state: Any, key: str, member: str) -> dict[str, Any] | None:
             "messages": [dict(m) for m in shown],
             "omitted": len(new) - len(shown),
             "depth": depth,
-            "mentioned": any(mentions(m["text"], member) for m in shown),
+            "mentioned": any(
+                mentions(m["text"], member) or (m.get("quote") or {}).get("from") == member
+                for m in shown
+            ),
         }
     _wakes(state).pop(key, None)
     return None

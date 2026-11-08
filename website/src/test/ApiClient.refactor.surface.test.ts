@@ -216,7 +216,7 @@ const API_KEY_ORDER = [
 
 const NESTED_KEY_ORDER: Record<string, string[]> = {
   teams: ['list', 'create', 'update', 'remove'],
-  rooms: ['list', 'get', 'create', 'post', 'remove'],
+  rooms: ['list', 'get', 'create', 'rename', 'post', 'remove'],
   appearances: ['list', 'detail', 'importBundle', 'remove'],
 }
 

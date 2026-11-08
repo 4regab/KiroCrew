@@ -6,7 +6,7 @@
  * reads its log and posts the user's own messages, and each Bot speaks only
  * through its own `room_send` tool. The numbers below mirror
  * `kiro_crew/dashboard/group_rooms.py`; the gateway enforces them and says so
- * (`too_few_members`, `message_too_long`, ...), so this file only lets the form
+ * (`too_few_members`, `name_in_use`, ...), so this file only lets the form
  * stop a request the gateway would refuse.
  */
 
@@ -28,6 +28,9 @@ export interface RoomMessage {
   /** 0 for the user; a reply is one deeper than the message that woke it. */
   depth: number
   ts: number
+  /** The `seq` of the message this one answers, with a snapshot of it. */
+  reply_to?: number
+  quote?: { from: string; text: string }
 }
 
 export interface RoomDetail extends RoomSummary {
@@ -39,7 +42,7 @@ export interface RoomDetail extends RoomSummary {
 
 export const MIN_ROOM_MEMBERS = 2
 export const MAX_ROOM_MEMBERS = 6
-export const MAX_ROOM_NAME_CHARS = 60
+export const MAX_ROOM_NAME_CHARS = 80
 /** From this depth the gateway tells the Bots the room is wrapping up. */
 export const ROOM_WRAP_DEPTH = 3
 

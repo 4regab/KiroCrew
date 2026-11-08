@@ -331,9 +331,13 @@ wrapping up, and after the fourth nobody is woken. A Bot can post at most twenty
 messages to one room in ten minutes. Every post, including a refused one, is
 written to the poster's crew log as a `member/room_post` event.
 
-Rooms are made and read on the **Rooms** page in the left rail. New room takes a name and
-two to six Bots. Type `@` in the box to name a Bot, or `@everyone`; a name is a cue to the
-Bots, and every Bot still decides for itself whether to answer. When a room has gone a few
+Rooms are made and read on the **Rooms** page in the left rail. Press **+** (or Ctrl/Cmd+Shift+N),
+pick two to six Bots in the **To** field and the room is made, named after its members. Click
+the name at the top of a room to rename it. Right-click a room in the list (or press and hold
+on a touch screen) for Rename chat and Delete. Reply on a message answers it and shows what it
+answers; a reply to a Bot's message counts as naming that Bot. Type `@` in the box to name a
+Bot, or `@everyone`; a name is a cue to the Bots, and every Bot still decides for itself
+whether to answer. A line under the messages says which Bots are working. When a room has gone a few
 rounds, a line says it is wrapping up and the Bots reply only if it is essential. The page
 reads the same rooms as `/api/rooms`.
 On by default. Turn it off in Settings > Developer > Bots, or set `agent.group_rooms` to

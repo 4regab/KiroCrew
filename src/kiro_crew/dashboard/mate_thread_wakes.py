@@ -320,9 +320,20 @@ def room_wake_prompt(entry: dict[str, Any]) -> str:
     for message in entry["messages"]:
         who = f"Bot {message['from']}" if message["from"] != group_rooms.USER else "the user"
         text = message["text"]
+        lines.append(f"{_ROOM_BEGIN} {bot_messages.defang(who)} (message {message['seq']})")
+        quote = message.get("quote")
+        if quote:
+            quoted = "the user" if quote["from"] == group_rooms.USER else f"Bot {quote['from']}"
+            lines.append(
+                crewmate_prompts.fill(
+                    "room.reply",
+                    who=bot_messages.defang(quoted),
+                    seq=message["reply_to"],
+                    snippet=bot_messages.defang(quote["text"]),
+                )
+            )
         lines.extend(
             [
-                f"{_ROOM_BEGIN} {bot_messages.defang(who)}",
                 bot_messages.defang(text[: group_rooms.WAKE_MESSAGE_CHARS].rstrip()),
                 _ROOM_END,
             ]

@@ -555,6 +555,12 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "room": {"type": "string", "minLength": 1, "maxLength": MAX_SHORT_STRING},
                     "message": {"type": "string", "minLength": 1, "maxLength": 2000},
+                    "reply_to": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Optional: the number of the message you answer, as shown "
+                        "in the room wake. Your post then shows what it answers.",
+                    },
                 },
                 "required": ["room", "message"],
                 "additionalProperties": False,
@@ -763,7 +769,11 @@ def _call_tool_inner(name: str, args: dict[str, Any]) -> str:
     if name == "room_send":
         d = _post(
             "/api/member/self/rooms/send",
-            {"room": args.get("room", ""), "message": args.get("message", "")},
+            {
+                "room": args.get("room", ""),
+                "message": args.get("message", ""),
+                **({"reply_to": args["reply_to"]} if "reply_to" in args else {}),
+            },
             session_key=sk,
         )
         refused = _error_for(name, d)

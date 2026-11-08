@@ -746,6 +746,7 @@ MCP_MATE_SCHEMAS: dict[str, ToolSchema] = {
             FieldSpec("room", str, required=True, max_len=MAX_SHORT_STRING),
             # The gateway holds the real cap (bot_messages.MAX_MESSAGE_CHARS) and says so.
             FieldSpec("message", str, required=True, max_len=2000),
+            FieldSpec("reply_to", int, min_val=1),
         ],
     ),
     "channel_list": ToolSchema(tool_name="channel_list", fields=[]),

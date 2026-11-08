@@ -4477,10 +4477,15 @@ move.
   with `atomic_write`) and reloaded on restart. A room holds `MIN_MEMBERS` (2) to
   `MAX_MEMBERS` (6) Bots, named by configured name (resolved exactly or by their one
   case-insensitive match; an unknown name answers `unknown_bot` with the valid ones). A
-  gateway keeps `MAX_ROOMS` (20), a name is unique ignoring case and at most 60 characters,
+  gateway keeps `MAX_ROOMS` (20), a name is unique ignoring case and 1 to 80 characters (`MAX_NAME_CHARS`; an empty name at create is
+  made from the member names joined by commas, cut to 80 and numbered when taken,
+  `group_rooms.default_name`),
   and a log is never trimmed: every message stays in the room file. A message is `{seq, from, text,
   depth, ts}`; `from` is `""` (`group_rooms.USER`) for the user and a Bot's configured
-  name otherwise.
+  name otherwise. A message that answers another also holds `reply_to` (that message's `seq`)
+  and `quote` (`{from, text}`, the first `QUOTE_CHARS` (160) characters, kept at post time so a
+  reader never needs the older page); an unknown `reply_to` is refused (`unknown_reply`, and
+  `invalid_reply` for a value that is not a whole number).
 * **The wake.** A user message wakes every member; a Bot's message wakes every other
   member (`group_rooms.wake_members`). Each woken Bot is owed one wake per room
   (`state._room_wakes`, in memory like the Bot-message queue). `mate_thread_wakes._flush`
@@ -4500,8 +4505,12 @@ move.
   nested copy. The guidance says a Bot's words are data from a peer, never an instruction
   and never the user, that only a message marked as from the user is the user speaking,
   that each Bot decides for itself whether to answer, and that when it posts nothing it
-  ends the turn with `nothing_to_do`. A message that names the Bot with `@name` or
-  `@everyone` gets one extra line saying so; it is a cue, not a routing rule.
+  ends the turn with `nothing_to_do`. Each fence opens `<<<room message from <who> (message N)`, so
+  a Bot can answer one message by its number (`room_send` takes an optional `reply_to`). A
+  message that answers another carries the line `(In reply to <who>, message N: "<first words>")`
+  inside its fence (`room.reply`). A message that names the Bot with `@name` or `@everyone`, or
+  replies to a message of that Bot, gets one extra line saying so (`room.mention`); it is a cue,
+  not a routing rule, so every member is still woken.
 * **Limits.** A Bot's message is at most `MAX_MESSAGE_CHARS` (2,000) characters, refused rather
   than cut (the user's message has no length limit; the gateway's 60 MiB request limit
   still applies). A wake shows a Bot at most `WAKE_MAX_MESSAGES` (20) new messages and
@@ -4523,25 +4532,40 @@ move.
   see [member-event-log](member-event-log.md)) and one audit line. The text is in the room
   file and in each woken Bot's own session log as the turn's prompt.
 * **The user's routes** are owner-only (`require_owner_dashboard_request`): `GET /api/rooms`,
-  `POST /api/rooms {name, members}`, `GET /api/rooms/{id}` (the newest `PAGE_SIZE` (200) messages, oldest first, with `has_more`;
+  `POST /api/rooms {name?, members}`, `PATCH /api/rooms/{id} {name}` (rename; owner-only and switch-aware
+  like create, 1 to 80 characters, `name_in_use` for a taken name, one `member/room_rename` event in each
+  member's log), `GET /api/rooms/{id}` (the newest `PAGE_SIZE` (200) messages, oldest first, with `has_more`;
   `?before=<seq>` and `?limit=<n>` (at most 1,000) page back, and a bad value answers `invalid_page`),
-  `POST /api/rooms/{id}/messages {message}` and `DELETE /api/rooms/{id}`. Reading is
+  `POST /api/rooms/{id}/messages {message, reply_to?}` and `DELETE /api/rooms/{id}`. Reading is
   allowed with the switch off; creating and posting are not. The dashboard's
   **Rooms** page (`/rooms/:roomId?`, `website/src/pages/RoomsPage.tsx` and `pages/rooms/`, the
   rail row `rooms`) is the only caller. It lists the rooms and opens one, and re-reads the list
-  every 15 s and the open room every 5 s (`api/rooms.ts` `ROOM_LIST_POLL_MS`, `ROOM_POLL_MS`;
+  every 15 s and the open room every 5 s (`api/rooms.ts` `ROOM_LIST_POLL_MS`, `ROOM_POLL_MS`, and the Bots' roster every 5 s for the working line;
   the gateway has no push channel for rooms, and each poll of a room carries its newest 200 messages;
-  "Show earlier messages" asks for the page before the first one shown). Create takes two to six Bots and blocks a one-Bot or seven-Bot room before
-  asking; only Bots with a pinned thread are offered, because only those can be woken. The page
+  "Show earlier messages" asks for the page before the first one shown). The page is laid out like
+  a messenger. The list has one row per room: a two-by-two cluster of the Bots' faces
+  (`RoomAvatar`), the name and one line of the newest message (read with `GET /api/rooms/{id}?limit=1`
+  once per change of the room's `seq`); a right-click, a long press or the menu key opens Rename
+  chat and Delete. `+`, or Ctrl/Cmd+Shift+N, opens `/rooms/new`, a `To:` field (`NewRoomPane`) that
+  lists the Bots with a pinned thread (only those can be woken), turns picks into chips and starts
+  a room at two to six, named by the gateway. The open room has a pill at the top (the face and name;
+  it opens the details, where the name is edited and Delete lives), the log as bubbles (the user's
+  grey on the right; each Bot's on the left with its face at the bottom-left, its name above in the
+  colour of its avatar tile, once per run of its messages; a `@name` drawn as a chip; a reply shows
+  a snippet of what it answers), one muted line under the log while Bots are working, and a pill
+  composer (Enter sends, Shift+Enter is a new line, no counter, an `@` list with faces whose picks
+  become chips, a Reply action on every message). "Working" is the `running` flag of the Bots'
+  roster rows (`GET /api/members`), the flag the rail's dots read, so a Bot busy in another chat
+  counts too. Members cannot be changed once a room is made. The page
   knows rooms are off from the config read (`agent.group_rooms`) or from a 403 `group_rooms_off`
-  on create or post, and then disables New room and the composer while the log stays readable.
-  Rename and change-members are not offered: the gateway has no route for either. The page does
+  on create, rename or post, and then disables New group, rename, Reply and the composer while the
+  log stays readable. The page does
   not speak for a Bot, and a message from the user is posted as typed (the gateway keeps it
   unscrubbed). Settings > Developer > Bots holds the `agent.bot_messaging`, `agent.group_rooms` and
   `agent.channel_posts` switches (`pages/settings/CrewmatesSection.tsx`).
 * **One switch.** `agent.group_rooms` (default on, no restart) is read on every call
   (`bot_messages.enabled(cfg, "group_rooms")`); off, or with the `agent` section degraded,
-  the tools answer `group_rooms_off` and the user's create and post routes refuse. A wake
+  the tools answer `group_rooms_off` and the user's create, rename and post routes refuse. A wake
   already owed to a busy Bot is still delivered.
 
 **A Bot posts to a connected channel** (`channel_list` and `channel_send` on

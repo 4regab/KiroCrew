@@ -126,6 +126,7 @@ def register(app: web.Application) -> None:
     app.router.add_get("/api/rooms", rooms.api_rooms_list)
     app.router.add_post("/api/rooms", rooms.api_rooms_create)
     app.router.add_get("/api/rooms/{room_id}", rooms.api_room_get)
+    app.router.add_patch("/api/rooms/{room_id}", rooms.api_room_rename)
     app.router.add_post("/api/rooms/{room_id}/messages", rooms.api_room_post)
     app.router.add_delete("/api/rooms/{room_id}", rooms.api_room_delete)
 
