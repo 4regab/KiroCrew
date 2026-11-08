@@ -308,7 +308,9 @@ The limits keep a conversation between Bots from running away. A message is at
 most 2,000 characters. A chain of replies stops after three hops. One Bot can send
 another Bot at most six messages in ten minutes. A Bot cannot message itself.
 Every send, including a refused one, is written to the sender's crew log as a
-`member/bot_message` event.
+`member/bot_message` event. In each Bot's own chat a send, a receipt and a refusal show as a
+one-line row (for example "Ace sent a message to Four"); press it to read the text, which is
+shown as plain text. Rooms do the same for a post and for a wake that shows new messages.
 
 On by default. Set `agent.bot_messaging` to `false` in the config to turn it off
 for every Bot; the tools refuse from the next call, with no restart.

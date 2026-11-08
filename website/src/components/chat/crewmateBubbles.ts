@@ -35,6 +35,7 @@
  * reused by a reply-thread footer without dragging the pane along.
  */
 import { isSystemNoticeRow } from '../../pages/chat/CompactionCard'
+import { BOT_EVENT_KIND } from '../../lib/systemNotice'
 import { isWorkflowCompletionMessage } from '../../pages/chat/WorkflowCompletionCard'
 import { isSubagentCompletionMessage } from '../../pages/chat/subagentCompletion'
 import { REASONING_ROLES } from '../../pages/chat/groupDisplayItems'
@@ -106,10 +107,17 @@ export function isCrewmateSpeech(m: ChatMessage): boolean {
   return !isHiddenInvisibleAssistantRow(m) && !isSystemNoticeRow(m) && !isWorkflowCompletionMessage(m) && !isSubagentCompletionMessage(m)
 }
 
+/** A Bot event row (`kind: "bot_event"`): a Bot message or room post this crewmate sent, got or
+ *  was refused. The ONE system notice a crewmate's chat draws
+ *  (docs/decisions/2026-11-08-the-bot-chat-draws-bot-event-rows.md); it is not speech. */
+export function isBotEventRow(m: Pick<ChatMessage, 'role' | 'kind' | 'meta'>): boolean {
+  return m.role === 'assistant' && (m.kind ?? (m.meta?.kind as string | undefined)) === BOT_EVENT_KIND
+}
+
 /** Whether a row is drawn in a crewmate's chat at all. */
 export function isCrewmateChatRow(m: ChatMessage): boolean {
   if (MACHINERY_ROLES.has(m.role)) return false
-  if (m.role === 'assistant') return isCrewmateSpeech(m)
+  if (m.role === 'assistant') return isCrewmateSpeech(m) || isBotEventRow(m)
   // A stop card records the person's own Stop press, so it stays drawn.
   if (m.role === 'system') return isStopCard(m)
   // Runtime notices belong to Sessions, not the conversation with a person
@@ -200,6 +208,8 @@ export function awaitingCrewmateReply(all: ChatMessage[], sendId: string | undef
   for (let j = i + 1; j < all.length; j += 1) {
     const m = all[j]
     if (isPendingTransientNotice(m)) continue
+    // A Bot event row is the crewmate working (it sent or got a message), not its answer.
+    if (isBotEventRow(m)) continue
     if (m.role === 'assistant' || m.role === 'error' || m.role === CARD_ROW_ROLE || isStopCard(m)) return false
     if (m.role === 'permission' && !m.meta?.resolved) return false
   }

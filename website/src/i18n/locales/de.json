@@ -13782,6 +13782,24 @@
         "no_prompt_yet": "In dieser Sitzung wurde noch kein Prompt gesendet.",
         "retry": "Erneut versuchen",
         "starting": "Neue Entwurfssitzung wird geöffnet…"
+      },
+      "botEventCard": {
+        "sent": "{{me}} hat {{peer}} eine Nachricht gesendet",
+        "received": "Nachricht von {{peer}}",
+        "room_post": "{{me}} hat in {{room}} gepostet",
+        "room_wake": "Gruppenchat: {{room}} ({{n}} neu)",
+        "refused_bot": "Nicht an {{peer}} gesendet: {{reason}}",
+        "refused_room": "Nicht in {{room}} gepostet: {{reason}}",
+        "older_not_shown": "Ältere Nachrichten nicht angezeigt: {{n}}",
+        "queued_note": "{{peer}} war beschäftigt und liest die Nachricht, wenn der Zug endet",
+        "reason_rate_limited": "zu viele Nachrichten in kurzer Zeit",
+        "reason_chain_limit": "die Antwortkette hat ihr Limit erreicht",
+        "reason_turn_cap": "in diesem Zug wurde schon das Maximum gepostet",
+        "reason_no_match": "kein Bot und kein Raum hat diesen Namen",
+        "reason_self": "ein Bot kann sich nicht selbst schreiben",
+        "reason_unavailable": "der Thread ließ sich gerade nicht öffnen",
+        "reason_too_long": "die Nachricht ist zu lang",
+        "reason_other": "das Gateway hat es abgelehnt"
       }
     },
     "chatPage": {

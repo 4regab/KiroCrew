@@ -14102,6 +14102,24 @@
         "no_prompt_yet": "Aucun prompt n’a encore été envoyé dans cette session.",
         "retry": "Réessayer",
         "starting": "Ouverture d’une nouvelle session brouillon…"
+      },
+      "botEventCard": {
+        "sent": "{{me}} a envoyé un message à {{peer}}",
+        "received": "Message de {{peer}}",
+        "room_post": "{{me}} a publié dans {{room}}",
+        "room_wake": "Discussion de groupe : {{room}} ({{n}} nouveaux)",
+        "refused_bot": "Non envoyé à {{peer}} : {{reason}}",
+        "refused_room": "Non publié dans {{room}} : {{reason}}",
+        "older_not_shown": "Messages plus anciens non affichés : {{n}}",
+        "queued_note": "{{peer}} était occupé et le lira à la fin de son tour",
+        "reason_rate_limited": "trop de messages en peu de temps",
+        "reason_chain_limit": "la chaîne de réponses a atteint sa limite",
+        "reason_turn_cap": "ce tour a déjà publié le maximum autorisé",
+        "reason_no_match": "aucun bot ni salon ne porte ce nom",
+        "reason_self": "un bot ne peut pas s'écrire à lui-même",
+        "reason_unavailable": "le fil n'a pas pu être ouvert pour le moment",
+        "reason_too_long": "le message est trop long",
+        "reason_other": "la passerelle l'a refusé"
       }
     },
     "chatPage": {

@@ -6,7 +6,8 @@ import MarkdownRenderer from '../../components/MarkdownRenderer'
 import { fmtPercent } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 import { useLanguageGeneration } from '../../i18n/useLanguageGeneration'
-import { isSystemNoticeKind } from '../../lib/systemNotice'
+import { BOT_EVENT_KIND, isSystemNoticeKind } from '../../lib/systemNotice'
+import BotEventCard from './BotEventCard'
 import CompactionKeepLine from './CompactionKeepLine'
 import { decisionStripFieldOf, readCompactionKeepRecord } from './decisionRecord'
 import MarkdownDisclosureCard from './MarkdownDisclosureCard'
@@ -258,6 +259,9 @@ function MemoryChangeNotice({ message }: { message: ChatMessage }) {
 export function SystemNoticeRow({ message, disclosureKey }: { message: ChatMessage; disclosureKey?: string }) {
   if (noticeKindOf(message) === 'memory_change') {
     return <MemoryChangeNotice message={message} />
+  }
+  if (noticeKindOf(message) === BOT_EVENT_KIND) {
+    return <BotEventCard message={message} disclosureKey={disclosureKey} />
   }
   if (noticeKindOf(message) === 'compaction') {
     return (

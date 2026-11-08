@@ -23,7 +23,7 @@ from aiohttp import web
 
 from kiro_crew import member_goals
 from kiro_crew.config.loader import KiroCrewConfig
-from kiro_crew.dashboard import bot_messages, group_rooms
+from kiro_crew.dashboard import bot_events, bot_messages, group_rooms
 from kiro_crew.dashboard.handlers.guide import _audit
 from kiro_crew.dashboard.handlers.member_goals import _agent_body, _agent_member, _deny
 
@@ -110,6 +110,13 @@ async def api_member_self_room_send(request: web.Request) -> web.Response:
             },
         )
         _audit(sk, OP_ROOM_SEND, "ok" if response.status == 200 else "denied", outcome)
+        # The Bot's own chat shows what it posted, or why it was not posted.
+        event = (
+            bot_events.room_post(member, room, message)
+            if outcome == "posted"
+            else bot_events.refused(member, outcome, room=room or ref)
+        )
+        bot_events.record_for_session(request.app["state"], sk, event)
         return response
 
     if chars > bot_messages.MAX_MESSAGE_CHARS:

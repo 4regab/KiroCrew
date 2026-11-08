@@ -430,3 +430,52 @@ async def test_a_bot_message_wakes_a_real_slot_with_its_hop_and_the_turn_end_cle
     assert slot._bot_message_hop == 1
     wakes.note_turn_end(net.state, slot, "", quiet_end=True)
     assert slot._bot_message_hop == 0
+
+
+def _rows(slot) -> list[dict]:
+    """The Bot event rows in a real slot's transcript, oldest first."""
+    return [
+        m["meta"]["bot_event"]
+        for m in slot.messages
+        if m.get("meta", {}).get("kind") == "bot_event"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_send_leaves_a_row_in_the_senders_chat_and_one_in_the_receivers(net, dispatched):
+    status, _ = await net.send("atlas", "bolt", "ping")
+    assert status == 200 and len(dispatched) == 1
+    assert _rows(net.slots["atlas"]) == [
+        {"type": "sent", "me": "atlas", "peer": "bolt", "text": "ping", "queued": False}
+    ]
+    assert _rows(net.slots["bolt"]) == [
+        {"type": "received", "me": "bolt", "peer": "atlas", "text": "ping", "hop": 1}
+    ]
+    # nobody else's chat has one
+    assert _rows(net.slots["cleo"]) == []
+
+
+@pytest.mark.asyncio
+async def test_a_refused_send_leaves_a_row_saying_why_and_none_in_the_target(net, dispatched):
+    cap = bot_messages.MAX_MESSAGE_CHARS
+    await net.send("atlas", "nobody", "x")
+    await net.send("atlas", "atlas", "x")
+    await net.send("atlas", "bolt", "x" * (cap + 1))
+    reasons = [(r["type"], r["reason"], r["peer"]) for r in _rows(net.slots["atlas"])]
+    assert reasons == [
+        ("refused", "unknown_bot", "nobody"),
+        ("refused", "self_send", "atlas"),
+        ("refused", "message_too_long", "bolt"),
+    ]
+    assert dispatched == [] and _rows(net.slots["bolt"]) == []
+
+
+@pytest.mark.asyncio
+async def test_a_busy_target_is_marked_queued_and_a_rate_limited_send_is_a_refusal(net, dispatched):
+    net.slots["bolt"].task = asyncio.get_running_loop().create_future()  # bolt is mid-turn
+    for i in range(bot_messages.PAIR_LIMIT + 1):
+        net.clock[0] += 1
+        await net.send("atlas", "bolt", f"m{i}")
+    rows = _rows(net.slots["atlas"])
+    assert all(r["queued"] for r in rows[:-1])
+    assert rows[-1]["type"] == "refused" and rows[-1]["reason"] == "rate_limited"

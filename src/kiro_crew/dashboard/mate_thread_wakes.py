@@ -33,7 +33,7 @@ from typing import Any
 
 from kiro_crew import crewmate_prompts
 from kiro_crew import members as members_mod
-from kiro_crew.dashboard import bot_messages, group_rooms
+from kiro_crew.dashboard import bot_events, bot_messages, group_rooms
 
 logger = logging.getLogger(__name__)
 
@@ -519,6 +519,10 @@ async def _flush(state: Any, key: str) -> None:
             entry = bot_messages.take_next(state, key) if _idle(slot) else None
             if entry is not None:
                 setattr(slot, bot_messages.HOP_ATTR, entry["hop"])
+                bot_events.record(
+                    slot,
+                    bot_events.received(slot.agent, entry["from"], entry["text"], hop=entry["hop"]),
+                )
                 dispatch_hidden_turn(state, slot, bot_message_prompt(entry), human_seen=False)
                 logger.info("Bot message from %s woke %s", entry["from"], key)
                 return
@@ -526,6 +530,15 @@ async def _flush(state: Any, key: str) -> None:
             room_entry = group_rooms.take_next(state, key, slot.agent) if _idle(slot) else None
             if room_entry is not None:
                 group_rooms.begin_turn(slot, room_entry["depth"])
+                bot_events.record(
+                    slot,
+                    bot_events.room_wake(
+                        slot.agent,
+                        room_entry["room"],
+                        room_entry["messages"],
+                        room_entry["omitted"],
+                    ),
+                )
                 dispatch_hidden_turn(state, slot, room_wake_prompt(room_entry), human_seen=False)
                 logger.info("room wake on %s", key)
             return
