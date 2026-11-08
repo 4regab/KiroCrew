@@ -7,16 +7,11 @@
  */
 import { useId, useMemo, useRef, useState } from 'react'
 import { Send } from 'lucide-react'
-import { MAX_ROOM_MESSAGE_CHARS } from '../../api/rooms'
 import { Btn } from '../../components/ui'
 import { useAutoGrowTextarea } from '../../hooks/useAutoGrowTextarea'
 import { useImeGuard } from '../../hooks/useImeGuard'
-import { fmtNumber } from '../../i18n/format'
 import { i18nT } from '../../i18n/t'
 import { applyMention, EVERYONE, mentionCandidates, mentionQuery } from './roomLogic'
-
-/** The counter turns live (announced) this close to the cap. */
-const NEAR_LIMIT_CHARS = 100
 
 export default function RoomComposer({ members, disabled, disabledReason, sending, onSend }: {
   members: readonly string[]
@@ -34,7 +29,6 @@ export default function RoomComposer({ members, disabled, disabledReason, sendin
   const ref = useRef<HTMLTextAreaElement>(null)
   const ime = useImeGuard()
   const listId = useId()
-  const counterId = useId()
   useAutoGrowTextarea(ref, value, Math.round(window.innerHeight * 0.3))
 
   const query = dismissed ? null : mentionQuery(value, caret)
@@ -42,9 +36,7 @@ export default function RoomComposer({ members, disabled, disabledReason, sendin
   const open = candidates.length > 0
   const active = Math.min(selected, Math.max(candidates.length - 1, 0))
 
-  const over = value.length > MAX_ROOM_MESSAGE_CHARS
-  const near = value.length >= MAX_ROOM_MESSAGE_CHARS - NEAR_LIMIT_CHARS
-  const canSend = !disabled && !sending && value.trim().length > 0 && !over
+  const canSend = !disabled && !sending && value.trim().length > 0
 
   const track = (el: HTMLTextAreaElement) => {
     setCaret(el.selectionStart ?? el.value.length)
@@ -114,8 +106,6 @@ export default function RoomComposer({ members, disabled, disabledReason, sendin
           rows={1}
           disabled={disabled}
           aria-label={i18nT('pages.roomsPage.message_label')}
-          aria-describedby={counterId}
-          aria-invalid={over}
           role="combobox"
           aria-expanded={open}
           aria-controls={open ? listId : undefined}
@@ -168,14 +158,6 @@ export default function RoomComposer({ members, disabled, disabledReason, sendin
           <Send size={16} aria-hidden="true" />
           <span className="hidden md:inline">{i18nT('pages.roomsPage.send')}</span>
         </Btn>
-      </div>
-      <div
-        id={counterId}
-        aria-live={near ? 'polite' : 'off'}
-        className={`text-right text-[13px] ${over ? 'text-danger-text' : 'text-muted'}`}
-        data-testid="room-char-count"
-      >
-        {i18nT('pages.roomsPage.char_count', { used: fmtNumber(value.length), max: fmtNumber(MAX_ROOM_MESSAGE_CHARS) })}
       </div>
     </form>
   )

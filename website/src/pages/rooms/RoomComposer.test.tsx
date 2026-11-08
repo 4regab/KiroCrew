@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MAX_ROOM_MESSAGE_CHARS } from '../../api/rooms'
 import { i18nT } from '../../i18n/t'
 import RoomComposer from './RoomComposer'
 
@@ -102,7 +101,7 @@ describe('RoomComposer sending', () => {
     expect(box.value).toBe('keep me')
   })
 
-  it('will not send an empty message or one past the 2,000-character limit', async () => {
+  it('will not send an empty message, and sends a very long one whole', async () => {
     const user = userEvent.setup()
     const onSend = vi.fn(async () => true)
     const box = setup(onSend)
@@ -111,16 +110,14 @@ describe('RoomComposer sending', () => {
     await user.type(box, '   ')
     expect(send.disabled).toBe(true)
     await user.clear(box)
-    // paste, not type: 2,001 keystrokes would only test the keyboard
+    // paste, not type: 20,000 keystrokes would only test the keyboard
+    const long = 'x'.repeat(20_000)
     await user.click(box)
-    await user.paste('x'.repeat(MAX_ROOM_MESSAGE_CHARS + 1))
-    expect(send.disabled).toBe(true)
-    expect(box.getAttribute('aria-invalid')).toBe('true')
-    await user.keyboard('{Enter}')
-    expect(onSend).not.toHaveBeenCalled()
-    // at the limit it goes
-    await user.keyboard('{Backspace}')
+    await user.paste(long)
     expect(send.disabled).toBe(false)
+    expect(screen.queryByTestId('room-char-count')).toBeNull()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith(long))
   })
 
   it('is off, with the reason as its placeholder, when rooms are turned off', () => {

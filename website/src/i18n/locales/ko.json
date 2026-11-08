@@ -20960,7 +20960,7 @@
       "mention_list": "멘션할 수 있는 Bot",
       "mention_everyone": "모두 (대화방 전체)",
       "send": "보내기",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "이전 메시지 보기",
       "wrapping_up": "이 대화방은 마무리 중입니다. Bot은 꼭 필요할 때만 답합니다.",
       "rooms_off": "그룹 채팅 대화방이 꺼져 있습니다. 설정의 개발자에서 켜세요.",
       "rooms_off_short": "대화방이 꺼져 있습니다.",

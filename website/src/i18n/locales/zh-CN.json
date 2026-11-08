@@ -20960,7 +20960,7 @@
       "mention_list": "可提及的 Bot",
       "mention_everyone": "所有人（整个群聊）",
       "send": "发送",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "显示更早的消息",
       "wrapping_up": "此群聊即将结束。只有在必要时 Bot 才会回复。",
       "rooms_off": "群聊已关闭。请在“设置”的“开发者”下打开。",
       "rooms_off_short": "群聊已关闭。",

@@ -13,7 +13,7 @@ import { api } from '../../api/client'
 import type { MemberRosterRow } from '../../api/client/agents'
 import { isNotFoundError } from '../../api/apiError'
 import { errorCode } from '../../api/cards'
-import { ROOM_POLL_MS, roomQueryKey, roomsQueryKey, type RoomDetail } from '../../api/rooms'
+import { ROOM_POLL_MS, roomQueryKey, roomsQueryKey, type RoomDetail, type RoomMessage as RoomMessageRow } from '../../api/rooms'
 import CrewAvatar from '../../components/CrewAvatar'
 import ErrorNotice from '../../components/ErrorNotice'
 import { useConfirm } from '../../components/ConfirmDialog'
@@ -21,7 +21,7 @@ import { Btn, ContentSkeleton, EmptyState, IconButton } from '../../components/u
 import { i18nT } from '../../i18n/t'
 import RoomComposer from './RoomComposer'
 import RoomMessage from './RoomMessage'
-import { errText, isWrappingUp } from './roomLogic'
+import { errText, isWrappingUp, mergeMessages } from './roomLogic'
 
 /** Within this many px of the bottom counts as "reading the newest message". */
 const STICK_PX = 80
@@ -49,6 +49,20 @@ export default function RoomConversation({ roomId, roster, roomsOff, onBack, onD
     retry: (count, e) => !isNotFoundError(e) && count < 2,
   })
   const room: RoomDetail | undefined = roomQ.data
+  // Older pages the reader asked for, and whether yet older ones remain. The poll only
+  // carries the newest page, so everything seen is kept and merged by `seq`.
+  const [older, setOlder] = useState<{ rows: RoomMessageRow[]; more: boolean | null }>({ rows: [], more: null })
+  const [olderError, setOlderError] = useState('')
+  const messages = useMemo(() => mergeMessages(older.rows, room?.messages ?? []), [older.rows, room?.messages])
+  const hasEarlier = older.more ?? room?.has_more ?? false
+  const loadEarlier = useMutation({
+    mutationFn: async () => (await api.rooms.get(roomId, messages[0]?.seq)).room,
+    onSuccess: (page) => {
+      setOlderError('')
+      setOlder((prev) => ({ rows: mergeMessages(prev.rows, page.messages), more: page.has_more }))
+    },
+    onError: (e) => setOlderError(errText(e)),
+  })
   const byName = useMemo(() => new Map(roster.map((r) => [r.name, r])), [roster])
 
   const send = useMutation({
@@ -73,7 +87,7 @@ export default function RoomConversation({ roomId, roster, roomsOff, onBack, onD
     onError: (e) => setDeleteError(errText(e)),
   })
 
-  const count = room?.messages.length ?? 0
+  const count = messages.length
   useEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
@@ -158,7 +172,7 @@ export default function RoomConversation({ roomId, roster, roomsOff, onBack, onD
       >
         {!room && !roomQ.isError ? (
           <ContentSkeleton rows={4} />
-        ) : room && room.messages.length === 0 ? (
+        ) : room && messages.length === 0 ? (
           <EmptyState
             icon={<MessagesSquare size={20} />}
             title={i18nT('pages.roomsPage.no_messages')}
@@ -174,10 +188,18 @@ export default function RoomConversation({ roomId, roster, roomsOff, onBack, onD
             className="m-0 flex list-none flex-col gap-3 p-0 pb-2"
             data-testid="room-log"
           >
-            {room?.messages.map((m) => <RoomMessage key={m.seq} message={m} row={byName.get(m.from)} />)}
+            {hasEarlier && (
+              <li className="flex flex-col items-center gap-1 list-none">
+                <Btn onClick={() => loadEarlier.mutate()} disabled={loadEarlier.isPending} data-testid="room-load-earlier">
+                  {i18nT('pages.roomsPage.load_earlier')}
+                </Btn>
+                {olderError && <span className="text-[13px] text-danger-text" role="alert">{olderError}</span>}
+              </li>
+            )}
+            {messages.map((m) => <RoomMessage key={m.seq} message={m} row={byName.get(m.from)} />)}
           </ol>
         )}
-        {room && isWrappingUp(room.messages) && (
+        {room && isWrappingUp(messages) && (
           <p className="m-0 py-2 text-center text-[13px] text-muted" role="note" data-testid="room-wrapping-up">
             {i18nT('pages.roomsPage.wrapping_up')}
           </p>

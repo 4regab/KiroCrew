@@ -10212,7 +10212,7 @@
       "mention_list": "Bots you can mention",
       "mention_everyone": "everyone (the whole room)",
       "send": "Send",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "Show earlier messages",
       "wrapping_up": "This room is wrapping up. The Bots reply only if it is essential.",
       "rooms_off": "Group chat rooms are turned off. Turn them on under Developer in Settings.",
       "rooms_off_short": "Rooms are turned off.",

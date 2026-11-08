@@ -20960,7 +20960,7 @@
       "mention_list": "メンションできる Bot",
       "mention_everyone": "全員（ルーム全体）",
       "send": "送信",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "以前のメッセージを表示",
       "wrapping_up": "このルームは終わりに近づいています。Bot は必要な場合のみ返信します。",
       "rooms_off": "グループチャットのルームはオフです。設定の「開発者」でオンにしてください。",
       "rooms_off_short": "ルームはオフです。",

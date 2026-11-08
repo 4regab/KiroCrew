@@ -31,20 +31,22 @@ export interface RoomMessage {
 }
 
 export interface RoomDetail extends RoomSummary {
+  /** The newest page of the log, oldest first. */
   messages: RoomMessage[]
+  /** Whether older messages than the first one here remain on the gateway. */
+  has_more: boolean
 }
 
 export const MIN_ROOM_MEMBERS = 2
 export const MAX_ROOM_MEMBERS = 6
 export const MAX_ROOM_NAME_CHARS = 60
-export const MAX_ROOM_MESSAGE_CHARS = 2000
 /** From this depth the gateway tells the Bots the room is wrapping up. */
 export const ROOM_WRAP_DEPTH = 3
 
 /**
  * ponytail: the open room and the list are re-read on a timer; the gateway has no
- * push channel for rooms. Every tick of the open room carries its whole log (at
- * most 200 messages), so this is fine for a handful of rooms. Upgrade path: a
+ * push channel for rooms. Every tick of the open room carries its newest 200
+ * messages, so this is fine for a handful of rooms. Upgrade path: a
  * `since=<seq>` parameter on `GET /api/rooms/{id}`, then a WebSocket event.
  */
 export const ROOM_POLL_MS = 5_000

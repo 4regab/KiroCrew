@@ -22008,7 +22008,7 @@
       "mention_list": "Bot che puoi menzionare",
       "mention_everyone": "tutti (l'intera stanza)",
       "send": "Invia",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "Mostra i messaggi precedenti",
       "wrapping_up": "Questa stanza sta per chiudersi. I Bot rispondono solo se è essenziale.",
       "rooms_off": "Le stanze di chat di gruppo sono disattivate. Attivale in Impostazioni, sotto Sviluppatore.",
       "rooms_off_short": "Le stanze sono disattivate.",

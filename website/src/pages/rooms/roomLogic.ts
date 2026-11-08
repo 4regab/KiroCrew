@@ -86,3 +86,11 @@ export function isWrappingUp(messages: readonly RoomMessage[]): boolean {
 export function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
+
+/** Two runs of the log as one: unique by `seq`, oldest first. */
+export function mergeMessages(a: readonly RoomMessage[], b: readonly RoomMessage[]): RoomMessage[] {
+  const bySeq = new Map<number, RoomMessage>()
+  for (const m of a) bySeq.set(m.seq, m)
+  for (const m of b) bySeq.set(m.seq, m)
+  return [...bySeq.values()].sort((x, y) => x.seq - y.seq)
+}

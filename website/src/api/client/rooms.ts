@@ -14,7 +14,8 @@ export function createRoomsEndpoints({ get, post, del, j }: ClientTransport) {
     requests: {
       rooms: {
         list: () => get('/api/rooms').then(j) as Promise<{ rooms: RoomSummary[] }>,
-        get: (id: string) => get(path(id)).then(j) as Promise<{ room: RoomDetail }>,
+        get: (id: string, before?: number) =>
+          get(path(id) + (before ? `?before=${before}` : '')).then(j) as Promise<{ room: RoomDetail }>,
         create: (body: { name: string; members: string[] }) =>
           post('/api/rooms', body).then(j) as Promise<{ ok: boolean; room: RoomSummary }>,
         post: (id: string, message: string) =>

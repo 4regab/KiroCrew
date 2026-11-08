@@ -81,7 +81,18 @@ async def api_room_get(request: web.Request) -> web.Response:
     room = rooms.get(request.match_info["room_id"])
     if room is None:
         return web.json_response({"error": "no such room", "code": "unknown_room"}, status=404)
-    return web.json_response({"room": group_rooms.public(room, messages=True)})
+    page = {"before": 0, "limit": group_rooms.PAGE_SIZE}
+    for name, low, high in (("before", 0, None), ("limit", 1, group_rooms.MAX_PAGE_SIZE)):
+        raw = request.query.get(name)
+        if raw is None:
+            continue
+        if not raw.isdecimal() or int(raw) < low or (high is not None and int(raw) > high):
+            return web.json_response(
+                {"error": f"{name} must be a whole number from {low}", "code": "invalid_page"},
+                status=400,
+            )
+        page[name] = int(raw)
+    return web.json_response({"room": group_rooms.public(room, messages=True, **page)})
 
 
 async def api_room_post(request: web.Request) -> web.Response:
@@ -100,17 +111,9 @@ async def api_room_post(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": "the message is empty", "code": "invalid_message"}, status=400
         )
-    if len(message) > bot_messages.MAX_MESSAGE_CHARS:
-        return web.json_response(
-            {
-                "error": f"the message is {len(message)} characters; the limit is "
-                f"{bot_messages.MAX_MESSAGE_CHARS}",
-                "code": "message_too_long",
-            },
-            status=400,
-        )
     try:
-        # The user's own words are kept as typed; only a Bot's text is scrubbed.
+        # The user's own words are kept as typed, whatever their length (the request
+        # size limit of the gateway still applies); only a Bot's text is scrubbed and capped.
         posted = await group_rooms.add_message(state, room_id, group_rooms.USER, message.strip(), 0)
     except group_rooms.RoomError as exc:
         return _fail(exc)

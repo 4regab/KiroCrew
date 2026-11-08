@@ -43,10 +43,14 @@ logger = logging.getLogger(__name__)
 MIN_MEMBERS = 2
 MAX_MEMBERS = 6
 
-#: Rooms one gateway keeps, and what one room keeps.
+#: Rooms one gateway keeps. A room's log is never trimmed.
 MAX_ROOMS = 20
 MAX_NAME_CHARS = 60
-MAX_LOG = 200
+
+#: Messages one ``GET /api/rooms/{id}`` page returns (the newest first); an older page is
+#: asked for with ``before``. A page size, not a cap: nothing in the log is dropped.
+PAGE_SIZE = 200
+MAX_PAGE_SIZE = 1000
 
 #: Messages one Bot may post in one turn.
 TURN_CAP = 3
@@ -62,6 +66,10 @@ POST_LIMIT = 20
 
 #: New messages one wake shows; older ones are counted, not shown.
 WAKE_MAX_MESSAGES = 20
+
+#: Longest message text one wake shows a Bot. The room keeps the whole text; a longer one
+#: is cut for the wake only, with a note, so one long message cannot fill a Bot's context.
+WAKE_MESSAGE_CHARS = 4000
 
 #: The "from" of a message the user typed. A Bot's is its configured name.
 USER = ""
@@ -163,9 +171,15 @@ def find(rooms: dict[str, dict[str, Any]], ref: Any, member: str | None = None) 
     return same[0] if len(same) == 1 else None
 
 
-def public(room: dict[str, Any], *, messages: bool = False) -> dict[str, Any]:
-    """The room as the dashboard and the tools see it (never the cursors)."""
-    out = {
+def public(
+    room: dict[str, Any], *, messages: bool = False, before: int = 0, limit: int = PAGE_SIZE
+) -> dict[str, Any]:
+    """The room as the dashboard and the tools see it (never the cursors).
+
+    With *messages*, the newest *limit* messages older than seq *before* (all of the log
+    when *before* is 0), oldest first, and ``has_more`` when older ones remain.
+    """
+    out: dict[str, Any] = {
         "id": room["id"],
         "name": room["name"],
         "members": list(room["members"]),
@@ -173,7 +187,10 @@ def public(room: dict[str, Any], *, messages: bool = False) -> dict[str, Any]:
         "seq": room["seq"],
     }
     if messages:
-        out["messages"] = [dict(m) for m in room["messages"]]
+        older = [m for m in room["messages"] if not before or m["seq"] < before]
+        page = older[-limit:]
+        out["messages"] = [dict(m) for m in page]
+        out["has_more"] = len(older) > len(page)
     return out
 
 
@@ -261,7 +278,6 @@ async def add_message(
             "ts": time.time(),
         }
         room["messages"].append(message)
-        del room["messages"][:-MAX_LOG]
         await asyncio.to_thread(_write, room)
     return message
 

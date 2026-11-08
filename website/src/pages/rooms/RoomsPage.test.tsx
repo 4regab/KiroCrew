@@ -40,7 +40,7 @@ const LAB: RoomSummary = { id: 'a'.repeat(16), name: 'Lab', members: ['Atlas', '
 const NOTES: RoomSummary = { id: 'b'.repeat(16), name: 'Notes', members: ['Cleo', 'Dana'], created: 2, seq: 0 }
 
 const message = (seq: number, from: string, text: string, depth = 0): RoomMessage => ({ seq, from, text, depth, ts: 1_700_000_000 + seq })
-const detail = (room: RoomSummary, messages: RoomMessage[]): RoomDetail => ({ ...room, messages })
+const detail = (room: RoomSummary, messages: RoomMessage[], has_more = false): RoomDetail => ({ ...room, messages, has_more })
 
 function Where() {
   return <span data-testid="where">{useLocation().pathname}</span>
@@ -94,6 +94,21 @@ describe('the room list and the open room', () => {
     expect(within(log).getByText(i18nT('pages.roomsPage.you'))).toBeTruthy()
     expect(within(log).getByText('Atlas')).toBeTruthy()
     expect(screen.getAllByTestId('room-member-chip')).toHaveLength(2)
+  })
+
+  it('pages in older messages on request and keeps them when the poll returns only the newest', async () => {
+    const user = userEvent.setup()
+    rooms.get.mockImplementation(async (_id: string, before?: number) => ({
+      room: before
+        ? detail(LAB, [message(1, '', 'first'), message(2, 'Atlas', 'second')], false)
+        : detail(LAB, [message(3, '', 'third'), message(4, 'Bolt', 'fourth')], true),
+    }))
+    mount(`/rooms/${LAB.id}`)
+    await user.click(await screen.findByTestId('room-load-earlier'))
+    await waitFor(() => expect(screen.queryByTestId('room-load-earlier')).toBeNull())
+    expect(rooms.get).toHaveBeenLastCalledWith(LAB.id, 3)
+    const log = screen.getByTestId('room-log')
+    expect(within(log).getAllByRole('paragraph').map((p) => p.textContent)).toEqual(['first', 'second', 'third', 'fourth'])
   })
 
   it('goes back to the list with the back arrow', async () => {

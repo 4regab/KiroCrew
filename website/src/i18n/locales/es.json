@@ -22008,7 +22008,7 @@
       "mention_list": "Bots que puedes mencionar",
       "mention_everyone": "todos (toda la sala)",
       "send": "Enviar",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "Mostrar mensajes anteriores",
       "wrapping_up": "Esta sala está terminando. Los Bots solo responden si es esencial.",
       "rooms_off": "Las salas de chat grupal están desactivadas. Actívalas en Ajustes, en Desarrollador.",
       "rooms_off_short": "Las salas están desactivadas.",

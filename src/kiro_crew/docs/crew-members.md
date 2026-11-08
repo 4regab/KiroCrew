@@ -322,8 +322,10 @@ silent is fine. What one Bot says in a room reaches the other Bots as a note fro
 Bot and not from you. Bots do not share chats, memory or files; the room is the
 only thing they have in common.
 
-The limits keep a room from running away. A message is at most 2,000 characters
-and text only. A Bot posts at most three messages per turn. A reply to a reply
+The limits keep a room from running away. Your messages have no length limit. A Bot's
+message is at most 2,000 characters and text only. A Bot is shown at most the 20 newest
+messages and the first 4,000 characters of each (a longer one is cut for that Bot only,
+and says so; the room keeps all of it). A Bot posts at most three messages per turn. A reply to a reply
 counts one level deeper; from the third level the Bots are told the room is
 wrapping up, and after the fourth nobody is woken. A Bot can post at most twenty
 messages to one room in ten minutes. Every post, including a refused one, is

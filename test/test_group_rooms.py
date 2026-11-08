@@ -250,13 +250,62 @@ async def test_a_user_message_wakes_every_member_with_the_room_as_data(net):
 
 
 @pytest.mark.asyncio
-async def test_a_user_message_to_an_unknown_room_or_empty_or_too_long_is_refused(net):
+async def test_a_user_message_to_an_unknown_room_or_an_empty_one_is_refused(net):
     room_id = await net.make_room()
     assert (await net.say("0" * 16, "hi"))[0] == 404
     assert (await net.say(room_id, "  "))[1]["code"] == "invalid_message"
-    cap = bot_messages.MAX_MESSAGE_CHARS
-    assert (await net.say(room_id, "x" * (cap + 1)))[1]["code"] == "message_too_long"
-    assert (await net.say(room_id, "x" * cap))[0] == 200
+
+
+@pytest.mark.asyncio
+async def test_the_user_has_no_length_limit_and_the_room_keeps_every_character(net):
+    room_id = await net.make_room()
+    long_text = "word " * 20_000
+    status, answer = await net.say(room_id, long_text)
+    assert status == 200 and answer["ok"]
+    kept = (await group_rooms.load(net.state))[room_id]["messages"][0]["text"]
+    assert kept == long_text.strip()
+
+
+@pytest.mark.asyncio
+async def test_a_long_user_message_is_shortened_for_the_wake_only_with_a_note(net):
+    room_id = await net.make_room()
+    cut = group_rooms.WAKE_MESSAGE_CHARS
+    await net.say(room_id, "a" * cut + "TAIL")
+    prompt = net.wake_prompts("bolt")[0]
+    assert "a" * cut in prompt and "TAIL" not in prompt
+    assert "[message shortened for this wake, full text in the room]" in prompt
+    # a message that fits carries no note: one note in all, for the one cut message
+    await net.say(room_id, "b" * cut)
+    assert "\n".join(net.wake_prompts("cleo")).count("message shortened") == 1
+    stored = (await group_rooms.load(net.state))[room_id]["messages"][0]["text"]
+    assert stored.endswith("TAIL")
+
+
+@pytest.mark.asyncio
+async def test_the_log_is_never_trimmed_and_is_paged_not_cut(net):
+    room_id = await net.make_room()
+    total = group_rooms.PAGE_SIZE * 2 + 5
+    for i in range(1, total + 1):
+        await group_rooms.add_message(net.state, room_id, "", f"m{i}", 0)
+    assert len((await group_rooms.load(net.state))[room_id]["messages"]) == total
+
+    async def page(query=""):
+        path = f"/api/rooms/{room_id}{query}"
+        got = await owner_side.api_room_get(net.request(path, room_id=room_id))
+        return got.status, json.loads(got.text)
+
+    status, newest = await page()
+    room = newest["room"]
+    assert status == 200 and room["has_more"] is True
+    assert [m["seq"] for m in room["messages"]] == list(range(total - 199, total + 1))
+    _, older = await page(f"?before={room['messages'][0]['seq']}")
+    assert [m["seq"] for m in older["room"]["messages"]] == list(range(total - 399, total - 199))
+    _, oldest = await page(f"?before={older['room']['messages'][0]['seq']}")
+    assert [m["seq"] for m in oldest["room"]["messages"]] == list(range(1, 6))
+    assert oldest["room"]["has_more"] is False
+    assert (await page("?limit=2"))[1]["room"]["messages"][-1]["seq"] == total
+    assert (await page("?before=abc"))[1]["code"] == "invalid_page"
+    assert (await page("?limit=0"))[0] == 400
 
 
 @pytest.mark.asyncio

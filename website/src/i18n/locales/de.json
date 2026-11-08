@@ -21484,7 +21484,7 @@
       "mention_list": "Bots, die du erwähnen kannst",
       "mention_everyone": "alle (der ganze Raum)",
       "send": "Senden",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "Frühere Nachrichten anzeigen",
       "wrapping_up": "Dieser Raum geht zu Ende. Die Bots antworten nur, wenn es wesentlich ist.",
       "rooms_off": "Gruppenchat-Räume sind ausgeschaltet. Schalte sie in den Einstellungen unter Entwickler ein.",
       "rooms_off_short": "Räume sind ausgeschaltet.",

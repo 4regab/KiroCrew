@@ -22008,7 +22008,7 @@
       "mention_list": "Bots que vous pouvez mentionner",
       "mention_everyone": "tout le monde (tout le salon)",
       "send": "Envoyer",
-      "char_count": "{{used}} / {{max}}",
+      "load_earlier": "Afficher les messages précédents",
       "wrapping_up": "Ce salon touche à sa fin. Les Bots ne répondent que si c'est essentiel.",
       "rooms_off": "Les salons de discussion de groupe sont désactivés. Activez-les dans Paramètres, sous Développeur.",
       "rooms_off_short": "Les salons sont désactivés.",

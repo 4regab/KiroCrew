@@ -4478,7 +4478,7 @@ move.
   `MAX_MEMBERS` (6) Bots, named by configured name (resolved exactly or by their one
   case-insensitive match; an unknown name answers `unknown_bot` with the valid ones). A
   gateway keeps `MAX_ROOMS` (20), a name is unique ignoring case and at most 60 characters,
-  and a log keeps the newest `MAX_LOG` (200) messages. A message is `{seq, from, text,
+  and a log is never trimmed: every message stays in the room file. A message is `{seq, from, text,
   depth, ts}`; `from` is `""` (`group_rooms.USER`) for the user and a Bot's configured
   name otherwise.
 * **The wake.** A user message wakes every member; a Bot's message wakes every other
@@ -4502,8 +4502,12 @@ move.
   that each Bot decides for itself whether to answer, and that when it posts nothing it
   ends the turn with `nothing_to_do`. A message that names the Bot with `@name` or
   `@everyone` gets one extra line saying so; it is a cue, not a routing rule.
-* **Limits.** A message is at most `MAX_MESSAGE_CHARS` (2,000) characters, refused rather
-  than cut. A Bot posts at most `TURN_CAP` (3) messages per turn (`turn_cap`; the count
+* **Limits.** A Bot's message is at most `MAX_MESSAGE_CHARS` (2,000) characters, refused rather
+  than cut (the user's message has no length limit; the gateway's 60 MiB request limit
+  still applies). A wake shows a Bot at most `WAKE_MAX_MESSAGES` (20) new messages and
+  at most `WAKE_MESSAGE_CHARS` (4,000) characters of each; a longer one is cut for the wake
+  only and followed by the line `[message shortened for this wake, full text in the room]`
+  (`room.cut`), while the room keeps the whole text. A Bot posts at most `TURN_CAP` (3) messages per turn (`turn_cap`; the count
   is the slot's `_room_sent`, cleared at every turn end, so a new turn is a new
   allowance). A user message is depth 0 and a reply is one deeper than the wake that
   started the turn (`group_rooms.depth_of`, the slot's `_room_depth`, set when the wake
@@ -4519,14 +4523,15 @@ move.
   see [member-event-log](member-event-log.md)) and one audit line. The text is in the room
   file and in each woken Bot's own session log as the turn's prompt.
 * **The user's routes** are owner-only (`require_owner_dashboard_request`): `GET /api/rooms`,
-  `POST /api/rooms {name, members}`, `GET /api/rooms/{id}` (with messages),
+  `POST /api/rooms {name, members}`, `GET /api/rooms/{id}` (the newest `PAGE_SIZE` (200) messages, oldest first, with `has_more`;
+  `?before=<seq>` and `?limit=<n>` (at most 1,000) page back, and a bad value answers `invalid_page`),
   `POST /api/rooms/{id}/messages {message}` and `DELETE /api/rooms/{id}`. Reading is
   allowed with the switch off; creating and posting are not. The dashboard's
   **Rooms** page (`/rooms/:roomId?`, `website/src/pages/RoomsPage.tsx` and `pages/rooms/`, the
   rail row `rooms`) is the only caller. It lists the rooms and opens one, and re-reads the list
   every 15 s and the open room every 5 s (`api/rooms.ts` `ROOM_LIST_POLL_MS`, `ROOM_POLL_MS`;
-  the gateway has no push channel for rooms, and each poll of a room carries its whole log of at
-  most 200 messages). Create takes two to six Bots and blocks a one-Bot or seven-Bot room before
+  the gateway has no push channel for rooms, and each poll of a room carries its newest 200 messages;
+  "Show earlier messages" asks for the page before the first one shown). Create takes two to six Bots and blocks a one-Bot or seven-Bot room before
   asking; only Bots with a pinned thread are offered, because only those can be woken. The page
   knows rooms are off from the config read (`agent.group_rooms`) or from a 403 `group_rooms_off`
   on create or post, and then disables New room and the composer while the log stays readable.

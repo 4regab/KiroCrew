@@ -5,6 +5,7 @@ import {
   createBlock,
   EVERYONE,
   isWrappingUp,
+  mergeMessages,
   mentionCandidates,
   mentionQuery,
   toggleMember,
@@ -81,5 +82,13 @@ describe('isWrappingUp', () => {
     expect(isWrappingUp([msg(4)])).toBe(true)
     // A new user message (depth 0) after a long exchange starts a fresh round.
     expect(isWrappingUp([msg(3), msg(0)])).toBe(false)
+  })
+})
+
+describe('mergeMessages', () => {
+  it('joins pages oldest first and keeps one copy of a repeated message', () => {
+    const at = (seq: number): RoomMessage => ({ seq, from: '', text: String(seq), depth: 0, ts: 0 })
+    expect(mergeMessages([at(3), at(4)], [at(1), at(2), at(3)]).map((m) => m.seq)).toEqual([1, 2, 3, 4])
+    expect(mergeMessages([], [])).toEqual([])
   })
 })
