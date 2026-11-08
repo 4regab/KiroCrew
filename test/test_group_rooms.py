@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from aiohttp.test_utils import make_mocked_request
@@ -23,45 +24,32 @@ from kiro_crew.dashboard import bot_messages, group_rooms
 from kiro_crew.dashboard import mate_thread_wakes as wakes
 from kiro_crew.dashboard.handlers import member_rooms as bot_side
 from kiro_crew.dashboard.handlers import rooms as owner_side
+from kiro_crew.dashboard.state import DashboardState, _ChatSlot
 from kiro_crew.eventlog.types import ALL_EVENT_TYPES, MEMBER_ROOM_POST
 
 NAMES = ("atlas", "bolt", "cleo", "dana", "eve", "fay", "gus")
 
 
-class _Slot:
-    def __init__(self, name: str):
-        self.key = f"member-{name}"
-        self.mode = members_mod.DM_SLOT_MODE
-        self.agent = name
-        self.executor = ""
-        self.task = None
-        self._queue: list = []
-        self._turn_admission_reserved = False
-        self._created_by = ""
-        self._lineage_minted = False
-        self._reports_to_creator = False
-        self.display_title = name
-
-    @property
-    def running(self) -> bool:
-        busy = self.task is not None and not self.task.done()
-        return busy or self._turn_admission_reserved
+def _Slot(name: str) -> _ChatSlot:
+    """A Bot's pinned thread: the real slot class, which declares ``__slots__``."""
+    return _ChatSlot(f"member-{name}", agent=name, mode=members_mod.DM_SLOT_MODE)
 
 
-class _State:
-    def __init__(self, *slots: _Slot):
-        self._slots = {s.key: s for s in slots}
-
-    def get_slot(self, key: str):
-        return self._slots.get(key)
+def _real_state(monkeypatch, tmp_path, *slots: _ChatSlot) -> DashboardState:
+    monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+    state = DashboardState(
+        sessions=MagicMock(count=0), crons=MagicMock(), lessons=MagicMock(), start_time=0.0
+    )
+    state._slots.update({s.key: s for s in slots})
+    return state
 
 
 class _Rooms:
     """Seven Bots on one gateway, the handlers' collaborators faked, one caller at a time."""
 
-    def __init__(self, monkeypatch):
+    def __init__(self, monkeypatch, tmp_path):
         self.slots = {n: _Slot(n) for n in NAMES}
-        self.state = _State(*self.slots.values())
+        self.state = _real_state(monkeypatch, tmp_path, *self.slots.values())
         self.events: list[dict] = []
         self.dispatched: list[dict] = []
         self.clock = [1000.0]
@@ -163,8 +151,8 @@ class _Rooms:
 
 
 @pytest.fixture
-def net(monkeypatch) -> _Rooms:
-    return _Rooms(monkeypatch)
+def net(monkeypatch, tmp_path) -> _Rooms:
+    return _Rooms(monkeypatch, tmp_path)
 
 
 # -- who can be in a room ----------------------------------------------------- #
@@ -430,13 +418,13 @@ async def test_a_room_of_chatty_bots_settles_because_replies_get_one_level_deepe
 @pytest.mark.asyncio
 async def test_a_message_at_the_last_depth_wakes_nobody_and_one_past_it_is_refused(net):
     await net.make_room("Lab", ("atlas", "bolt"))
-    net.slots["atlas"].__dict__[group_rooms.DEPTH_ATTR] = group_rooms.MAX_DEPTH - 1
+    setattr(net.slots["atlas"], group_rooms.DEPTH_ATTR, group_rooms.MAX_DEPTH - 1)
 
     status, answer = await net.post("atlas", "Lab", "last word")
     assert status == 200 and answer["depth"] == group_rooms.MAX_DEPTH and answer["woke"] == []
     assert net.dispatched == []
 
-    net.slots["atlas"].__dict__[group_rooms.DEPTH_ATTR] = group_rooms.MAX_DEPTH
+    setattr(net.slots["atlas"], group_rooms.DEPTH_ATTR, group_rooms.MAX_DEPTH)
     status, answer = await net.post("atlas", "Lab", "one more")
     assert status == 409 and answer["code"] == "round_limit"
     assert net.events[-1]["outcome"] == "round_limit"
@@ -450,7 +438,7 @@ async def test_the_wake_says_the_room_is_wrapping_up_once_the_round_budget_is_sp
     await net.finish("atlas")
     await net.finish("bolt")
 
-    net.slots["atlas"].__dict__[group_rooms.DEPTH_ATTR] = group_rooms.WRAP_DEPTH - 1
+    setattr(net.slots["atlas"], group_rooms.DEPTH_ATTR, group_rooms.WRAP_DEPTH - 1)
     await net.post("atlas", "Lab", "getting long")
     prompt = net.wake_prompts("bolt")[-1]
     assert "The room is wrapping up: post only if it is essential" in prompt
@@ -658,3 +646,16 @@ def test_the_post_is_a_known_event_the_member_log_accepts():
         {"room": "Lab", "chars": 3, "depth": 1, "outcome": "posted"},
     )
     assert landed is True
+
+
+def test_a_real_slot_carries_the_turn_counters():
+    # `_ChatSlot` declares `__slots__`, so a counter it does not list raises AttributeError.
+    # The stand-in slot above takes any attribute and cannot see that.
+    from kiro_crew.dashboard.state import _ChatSlot
+
+    slot = _ChatSlot("member-atlas")
+    group_rooms.begin_turn(slot, 2)
+    group_rooms.count_post(slot)
+    assert (group_rooms.depth_of(slot), group_rooms.sent_in_turn(slot)) == (2, 1)
+    group_rooms.end_turn(slot)
+    assert (group_rooms.depth_of(slot), group_rooms.sent_in_turn(slot)) == (0, 0)

@@ -359,7 +359,18 @@ class _ChatSlot:
         "_question_pending",
         "_embed_question_polled_at",
         "_welcomed_agent",
+        # Set by ``dashboard/bot_messages.py`` and ``dashboard/group_rooms.py``
+        # through ``setattr``; unset reads as 0 (``getattr`` default).
+        "_bot_message_hop",
+        "_room_depth",
+        "_room_sent",
     )
+
+    # Not initialised: a turn sets them (``bot_messages.HOP_ATTR``,
+    # ``group_rooms.DEPTH_ATTR`` and ``SENT_ATTR``).
+    _bot_message_hop: int
+    _room_depth: int
+    _room_sent: int
 
     # Initialised by state_parts/source_links.py.
     _projection: SlotProjection
