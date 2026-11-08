@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from aiohttp.test_utils import make_mocked_request
@@ -21,43 +22,25 @@ from kiro_crew import members as members_mod
 from kiro_crew.dashboard import bot_messages
 from kiro_crew.dashboard import mate_thread_wakes as wakes
 from kiro_crew.dashboard.handlers import member_messages as handler
+from kiro_crew.dashboard.state import DashboardState, _ChatSlot
 from kiro_crew.eventlog.types import ALL_EVENT_TYPES, MEMBER_BOT_MESSAGE
 
 
-class _Slot:
-    def __init__(self, name: str):
-        self.key = f"member-{name}"
-        self.mode = members_mod.DM_SLOT_MODE
-        self.agent = name
-        self.executor = ""
-        self.task = None
-        self._queue: list = []
-        self._turn_admission_reserved = False
-        self._created_by = ""
-        self._lineage_minted = False
-        self._reports_to_creator = False
-        self.display_title = name
-
-    @property
-    def running(self) -> bool:
-        busy = self.task is not None and not self.task.done()
-        return busy or self._turn_admission_reserved
-
-
-class _State:
-    def __init__(self, *slots: _Slot):
-        self._slots = {s.key: s for s in slots}
-
-    def get_slot(self, key: str):
-        return self._slots.get(key)
+def _Slot(name: str) -> _ChatSlot:
+    """A Bot's pinned thread: the real slot class, which declares ``__slots__``."""
+    return _ChatSlot(f"member-{name}", agent=name, mode=members_mod.DM_SLOT_MODE)
 
 
 class _Net:
     """Four Bots on one gateway, the handler's collaborators faked, one sender at a time."""
 
-    def __init__(self, monkeypatch, dispatched: list):
+    def __init__(self, monkeypatch, tmp_path, dispatched: list):
         self.slots = {n: _Slot(n) for n in ("atlas", "bolt", "cleo", "dana")}
-        self.state = _State(*self.slots.values())
+        monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
+        self.state = DashboardState(
+            sessions=MagicMock(count=0), crons=MagicMock(), lessons=MagicMock(), start_time=0.0
+        )
+        self.state._slots.update({s.key: s for s in self.slots.values()})
         self.events: list[dict] = []
         self.clock = [1000.0]
         self.caller = "atlas"
@@ -122,8 +105,8 @@ def dispatched() -> list:
 
 
 @pytest.fixture
-def net(monkeypatch, dispatched) -> _Net:
-    return _Net(monkeypatch, dispatched)
+def net(monkeypatch, tmp_path, dispatched) -> _Net:
+    return _Net(monkeypatch, tmp_path, dispatched)
 
 
 # -- who can be reached ------------------------------------------------------ #
@@ -425,3 +408,12 @@ def test_the_send_is_a_known_event_the_member_log_accepts():
         {"to": "bolt", "chars": 3, "hop": 1, "outcome": "sent"},
     )
     assert landed is True
+
+
+def test_a_real_slot_carries_the_hop():
+    # `_ChatSlot` declares `__slots__`; the stand-in slot above takes any attribute.
+    from kiro_crew.dashboard.state import _ChatSlot
+
+    slot = _ChatSlot("member-atlas")
+    setattr(slot, bot_messages.HOP_ATTR, 2)
+    assert bot_messages.hop_of(slot) == 2
