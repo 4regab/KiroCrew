@@ -24,12 +24,19 @@ DM_TARGET_PREFIX = "user:"
 
 @dataclass(frozen=True)
 class ConfiguredChannelTarget:
-    """A user-configured destination exposed to the dashboard."""
+    """A user-configured destination exposed to the dashboard.
+
+    ``learned`` marks a destination the transport added from inbound traffic rather
+    than from anything the user configured (a WeCom peer who messaged the bot under
+    ``wecom.allow_all_users``). It may still be offered and sent to, but it never
+    names the channel's owner: :func:`sole_direct_target` skips it.
+    """
 
     target_id: str
     label: str
     available: bool = True
     unavailable_reason: str = ""
+    learned: bool = False
 
     def to_dict(self, channel_type: str) -> dict[str, Any]:
         return {
@@ -42,16 +49,18 @@ class ConfiguredChannelTarget:
 
 
 def sole_direct_target(targets: Iterable[Any]) -> str:
-    """The ONE available direct target id among *targets*, or ``""``.
+    """The ONE configured direct target id among *targets*, if available, or ``""``.
 
     The single rule by which a channel NAMES its owner. No channel carries an
     owner field the way Slack's ``owner_id`` does, and an allow-list is a list of
     people permitted to talk to the agent rather than a claim that any of them is
     the operator — so an owner can only be inferred, and this refuses to infer one
     from an ambiguous list: a target is returned only when the channel advertises
-    exactly one available ``user:`` target. Unavailable targets (WeCom may only
-    reply to an inbound message) and thread or room targets (a wider audience than
-    a DM) are not candidates.
+    exactly one ``user:`` target and that target is available. An unavailable
+    target still counts: WeCom and Teams reach only someone who has written to
+    the bot, so skipping a configured person who has not would name the other
+    one the owner. Thread or room targets (a wider audience than a DM) and
+    ``learned`` targets (someone who merely messaged the bot) are not counted.
 
     Shared by the proactive owner DM (``send_message``'s channel ``session``) and
     by session control's owner-DM audience predicate, so the two cannot disagree
@@ -60,12 +69,14 @@ def sole_direct_target(targets: Iterable[Any]) -> str:
     duck-typed equivalent.
     """
     direct = [
-        str(getattr(target, "target_id", "") or "")
+        target
         for target in targets
         if str(getattr(target, "target_id", "") or "").startswith(DM_TARGET_PREFIX)
-        and getattr(target, "available", False)
+        and not getattr(target, "learned", False)
     ]
-    return direct[0] if len(direct) == 1 else ""
+    if len(direct) != 1 or not getattr(direct[0], "available", False):
+        return ""
+    return str(getattr(direct[0], "target_id", "") or "")
 
 
 @dataclass

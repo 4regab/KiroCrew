@@ -26,6 +26,7 @@ import {
   localeLanguage,
   nextTranscribeLanguages,
   PROVIDER_LOCAL,
+  PROVIDER_CODEX,
   PROVIDER_TRANSCRIBE,
   providerLabel,
   unavailableMessage,
@@ -79,6 +80,8 @@ interface SttConfig {
   submit_on_release?: boolean
   slide_to_send?: boolean
   dictation_panel?: boolean
+  /** End a message holding dictated words with a note telling the agent so. Off by default. */
+  dictation_note?: boolean
   transcribe_region?: string
   transcribe_profile?: string
   /** Amazon Transcribe custom vocabulary name; '' for none. */
@@ -317,7 +320,7 @@ interface SttVocabularies {
 /** The only vocabulary state Amazon Transcribe opens a stream with. */
 const VOCABULARY_READY = 'READY'
 
-/** The listing's refusal code with an IAM fix of its own, from `transcribe.py`. */
+/** The listing's refusal code with an IAM fix of its own, from `transcribe_aws.py`. */
 const VOCABULARIES_ACCESS_DENIED = 'stt_vocabularies_access_denied'
 
 /**
@@ -463,6 +466,7 @@ function TranscribeVocabularyPicker({
         <ErrorNotice
           variant="inline"
           className="-mt-1 mb-1"
+          actionPlacement="below-on-phone"
           testId="stt-vocabularies-error"
           report={reportForError(listError)}
           message={accessDenied
@@ -718,7 +722,7 @@ function PushToTalkConfig() {
         onChange={v => patch({ enabled: v })}
       />
       {saveError && (
-        <ErrorNotice variant="inline" message={saveError} askAgent testId="ptt-save-error" className="my-1" />
+        <ErrorNotice variant="inline" message={saveError} askAgent testId="ptt-save-error" className="my-1" actionPlacement="below-on-phone" />
       )}
 
       <SettingsSelect
@@ -822,6 +826,9 @@ export default function SttSettings({ cardIndex }: {
   // Which row the refusal is about, so that row is marked invalid: its box keeps
   // the refused text for correction, and must not read as saved.
   const [customErrField, setCustomErrField] = useState<'path' | 'sha' | ''>('')
+  // Held by identity: the status query keeps an unchanged `download` object across
+  // re-reads, so only a new answer shows the failure row again.
+  const [dismissedDownload, setDismissedDownload] = useState<SttDownload>()
 
   // Microphone input-device picker (browser-local; persisted in localStorage,
   // applied via getUserMedia constraints). Device labels are blank until the
@@ -969,8 +976,13 @@ export default function SttSettings({ cardIndex }: {
     mutationFn: (model: string) => api.sttPrepare(model),
     onMutate: () => setErr(''),
     // The transfer outlives the request, so the response only says it started.
-    // Progress arrives through the polled status query.
-    onSettled: () => qc.invalidateQueries({ queryKey: ['sttStatus'] }),
+    // Progress arrives through the polled status query. A retry can fail the same
+    // way before any poll sees it running, leaving that answer unchanged, so the
+    // dismissal ends once the re-read lands.
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: ['sttStatus'] })
+      setDismissedDownload(undefined)
+    },
     onError: (e: Error) => setErr(e.message || i18nT('pages.settings.sttSettings.download_failed')),
   })
   const [restarting, setRestarting] = useState(false)
@@ -1015,6 +1027,7 @@ export default function SttSettings({ cardIndex }: {
         <ErrorNotice
           message={errMessage(sttQ.error) || i18nT('pages.settings.sttSettings.config_load_failed')}
           askAgent
+          actionPlacement="below-on-phone"
         />
       ) : (
         <FormSkeleton rows={['toggle', 'info', 'field', 'field', 'field', 'info']} />
@@ -1195,6 +1208,7 @@ export default function SttSettings({ cardIndex }: {
         onDismiss={() => setErr('')}
         className="mb-4 animate-rise"
         askAgent={awsDraftsSaved}
+        actionPlacement="below-on-phone"
       />
       <SettingsCard index={cardIndex}>
         <SettingsToggle label={i18nT('pages.settings.sttSettings.enabled')} hint={i18nT('pages.settings.sttSettings.transcribe_voice_into_the_message_box_when_you_c')} checked={stt.enabled} onChange={v => set({ enabled: v })} disabled={saving} />
@@ -1248,7 +1262,7 @@ export default function SttSettings({ cardIndex }: {
             disabled state is status text. */}
         {!available && unavailableText && !providerNotice && (
           INSTALLED_BUT_REFUSED_CODES.has(status?.code ?? '')
-            ? <ErrorNotice variant="inline" className="-mt-1 mb-1" message={unavailableText} askAgent={awsDraftsSaved} testId="stt-unavailable-error" />
+            ? <ErrorNotice variant="inline" className="-mt-1 mb-1" actionPlacement="below-on-phone" message={unavailableText} askAgent={awsDraftsSaved} testId="stt-unavailable-error" />
             : <p className="text-[12px] text-muted -mt-1 mb-1">{unavailableText}</p>
         )}
         {/* The probe itself failed: the badge above is then showing the config's
@@ -1258,6 +1272,7 @@ export default function SttSettings({ cardIndex }: {
           <ErrorNotice
             variant="inline"
             className="-mt-1 mb-1"
+            actionPlacement="below-on-phone"
             message={errMessage(statusQ.error) || i18nT('pages.settings.sttSettings.status_unavailable')}
             askAgent
           />
@@ -1387,6 +1402,7 @@ export default function SttSettings({ cardIndex }: {
                       <ErrorNotice
                         variant="inline"
                         className="mt-1"
+                        actionPlacement="below-on-phone"
                         message={selectedModel?.error ?? ''}
                         askAgent
                         testId="stt-custom-model-missing"
@@ -1454,6 +1470,7 @@ export default function SttSettings({ cardIndex }: {
                   <ErrorNotice
                     variant="inline"
                     className="-mt-1 mb-1"
+                    actionPlacement="below-on-phone"
                     id={CUSTOM_MODEL_ERROR_ID}
                     message={customErr}
                     askAgent
@@ -1490,20 +1507,22 @@ export default function SttSettings({ cardIndex }: {
             ) : null}
             {/* A finished-and-failed transfer (the job's own `error`). Status
                 panel with nothing editable in this block → hand-off on. */}
-            {download?.step === DOWNLOAD_STEP_FAILED && download.error && (
+            {download?.step === DOWNLOAD_STEP_FAILED && download.error && download !== dismissedDownload && (
               <ErrorNotice
                 variant="inline"
                 className="-mt-1 mb-1"
+                actionPlacement="below-on-phone"
                 message={download.model === CUSTOM_MODEL
                   ? download.error
                   : i18nT('pages.settings.sttSettings.download_failed_reason', { error: download.error })}
                 askAgent
+                onDismiss={() => setDismissedDownload(download)}
               />
             )}
           </>
         )}
 
-        <SettingsSelect configKey="stt.language_code" label={i18nT('pages.settings.sttSettings.language')} hint={i18nT('pages.settings.sttSettings.bcp_47_language_code_for_speech_recognition')} value={stt.language_code || defaultLanguage} options={languageOptions} optionLabels={languageOptions.map(code => code === 'auto' ? i18nT('pages.settings.sttSettings.language_auto') : languageOptionLabel(code))} onChange={v => set({ language_code: v })} disabled={saving} />
+        {provider !== PROVIDER_CODEX && <SettingsSelect configKey="stt.language_code" label={i18nT('pages.settings.sttSettings.language')} hint={i18nT('pages.settings.sttSettings.bcp_47_language_code_for_speech_recognition')} value={stt.language_code || defaultLanguage} options={languageOptions} optionLabels={languageOptions.map(code => code === 'auto' ? i18nT('pages.settings.sttSettings.language_auto') : languageOptionLabel(code))} onChange={v => set({ language_code: v })} disabled={saving} />}
         {/* Still editable: voice messages and dictation with streaming off keep
             using it, so the line says where it applies rather than greying it out. */}
         {mixedLanguagesOn && (
@@ -1594,6 +1613,8 @@ export default function SttSettings({ cardIndex }: {
           <SettingsToggle label={i18nT('pages.settings.sttSettings.slide_to_send')} hint={i18nT('pages.settings.sttSettings.slide_to_send_desc')} checked={!!stt.slide_to_send} onChange={v => set({ slide_to_send: v })} disabled={saving || !!stt.submit_on_release} configKey="stt.slide_to_send" />
 
           <SettingsToggle label={i18nT('pages.settings.sttSettings.dictation_panel')} hint={i18nT('pages.settings.sttSettings.show_an_animated_panel_while_recording_instead_of')} checked={stt.dictation_panel !== false} onChange={v => set({ dictation_panel: v })} disabled={saving} />
+
+          <SettingsToggle label={i18nT('pages.settings.sttSettings.dictation_note')} hint={i18nT('pages.settings.sttSettings.dictation_note_desc')} checked={!!stt.dictation_note} onChange={v => set({ dictation_note: v })} disabled={saving} configKey="stt.dictation_note" />
 
           {/* The thread picker is the local provider's alone: the others run their
               recogniser somewhere this setting cannot reach. Its options come from

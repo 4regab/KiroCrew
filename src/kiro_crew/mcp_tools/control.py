@@ -659,7 +659,10 @@ _sys.modules[__name__].__class__ = _facade_mirror.MirroredModule
 __all__ = sorted(n for n in set(globals()) | set(_EXPORTS) if not n.startswith("_"))
 
 if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and IDEs
-    from kiro_crew.mcp_tools.control_parts.directive import _emit_directive  # noqa: F401
+    from kiro_crew.mcp_tools.control_parts.directive import (  # noqa: F401
+        QUIET_END_AFTER_TEXT_REMINDER,
+        _emit_directive,
+    )
     from kiro_crew.mcp_tools.control_parts.monitor import (  # noqa: F401
         _arming_preflight_refusal,
         _compact_monitor_inspection,
@@ -680,10 +683,7 @@ if TYPE_CHECKING:  # names the owners import from elsewhere in kiro_crew, still 
     from kiro_crew import autonudge, session_directive  # noqa: F401
     from kiro_crew.autonudge_judge import ending_phrase, screen_phrase  # noqa: F401
     from kiro_crew.config.loader import KiroCrewConfig  # noqa: F401
-    from kiro_crew.mcp_tools._limits import (  # noqa: F401
-        _MONITOR_DEFAULT_MAX_CYCLES,
-        _MONITOR_DEFAULT_MAX_RUNTIME_SECS,
-    )
+    from kiro_crew.mcp_tools._limits import _MONITOR_DEFAULT_MAX_CYCLES  # noqa: F401
     from kiro_crew.monitoring.limits import (  # noqa: F401
         DEFAULT_RUNTIME_CEILING_SECS,
         runtime_ceiling_secs,

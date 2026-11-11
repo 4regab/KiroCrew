@@ -44,6 +44,7 @@ from kiro_crew.dashboard.chat_folders import (  # noqa: F401
     api_chat_folder_reorder,
     api_chat_folder_update,
     api_chat_folders,
+    api_chat_folders_collapse_all,
     api_chat_pinned_order,
     api_chat_slot_folder,
     api_chat_slot_mode,
@@ -52,7 +53,10 @@ from kiro_crew.dashboard.chat_folders import (  # noqa: F401
     api_chat_slot_pin,
     load_pinned_order_after_listen,
 )
-from kiro_crew.dashboard.chat_fork import api_chat_slot_fork  # noqa: F401
+from kiro_crew.dashboard.chat_fork import (  # noqa: F401
+    api_chat_slot_fork,
+    api_chat_slot_promote,
+)
 from kiro_crew.dashboard.chat_handlers import (  # noqa: F401
     MAX_COLOR_INDEX,
     api_chat,
@@ -66,6 +70,7 @@ from kiro_crew.dashboard.chat_handlers import (  # noqa: F401
     api_chat_slot_create,
     api_chat_slot_delete,
     api_chat_slot_detail,
+    api_chat_slot_discard,
     api_chat_slot_end_wait,
     api_chat_slot_followup,
     api_chat_slot_interrupt,
@@ -88,6 +93,7 @@ from kiro_crew.dashboard.chat_handlers import (  # noqa: F401
     api_chat_slot_summary,
     api_chat_slot_summary_generate,
     api_chat_slot_turn_timeout,
+    api_chat_slot_ultracode,
     api_chat_slot_workspace,
     api_chat_slots,
     api_chat_slots_cleanup,

@@ -289,6 +289,17 @@ def _encode(content: str | bytes, *, newline: str | None) -> bytes:
     return buffer.getvalue()
 
 
+def text_bytes(content: str) -> bytes:
+    """The exact bytes :func:`atomic_write` puts on disk for text *content* on this platform.
+
+    For a writer that must also keep a copy of what it published (the keystone endorsed
+    copies, ``config.loosening_provenance``): encode once with this and hand
+    :func:`atomic_write` the same ``bytes``, so the copy equals the file on Windows too,
+    where text mode writes ``\\r\\n``.
+    """
+    return _encode(content, newline=None)
+
+
 def _write_all(fd: int, data: bytes, path: Path) -> None:
     """Write every byte of *data* to *fd*, or raise.
 
@@ -318,6 +329,7 @@ def append_line(
     *,
     fsync: bool = False,
     opener: Callable[[str, int], int] | None = None,
+    check_tail: bool = True,
 ) -> None:
     """Append *line* and a line ending to *path*, or leave the file as it was.
 
@@ -336,7 +348,9 @@ def append_line(
     (each caller holds a per-file lock), because the truncate would otherwise
     cut a row a concurrent writer appended. *opener* replaces ``os.open`` the
     way ``open(..., opener=)`` does; without it a new file gets ``0o666``
-    masked by the umask, as the builtin gives it.
+    masked by the umask, as the builtin gives it. ``check_tail=False`` skips
+    the one-byte tail read, for a caller that knows the file ends in a newline
+    because it wrote that end itself and the file is unchanged since.
     """
     target = Path(path)
     data = _encode(line + "\n", newline=None)
@@ -347,7 +361,7 @@ def append_line(
         fd = os.open(target, flags, 0o666)
     try:
         size = os.fstat(fd).st_size
-        if size:
+        if size and check_tail:
             os.lseek(fd, size - 1, os.SEEK_SET)
             if os.read(fd, 1) != b"\n":
                 data = _encode("\n", newline=None) + data
@@ -1582,7 +1596,7 @@ def _stage_temp(
                 # cannot act on; the destination is the file whose permissions
                 # they need to check.
                 logger.warning(
-                    "atomic_write: could not apply owner-only permissions to %s; "
+                    "SECURITY: atomic_write: could not apply owner-only permissions to %s; "
                     "writing it anyway per restrict_on_error='warn' — the file "
                     "may be readable by other users",
                     path,

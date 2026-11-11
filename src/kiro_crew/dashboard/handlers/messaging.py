@@ -84,6 +84,11 @@ from kiro_crew.dashboard.handlers._shared import (  # noqa: F401
     string_field_error,
 )
 from kiro_crew.dashboard.handlers.core import _hot_apply_after_write  # noqa: F401
+from kiro_crew.dashboard.handlers.spawn_resume import (  # noqa: F401
+    INVALID_WAIT_CODE,
+    MAX_HOLD_SECS,
+    _wait_secs,
+)
 from kiro_crew.dashboard.kiro_relay.caller import is_relay_teammate  # noqa: F401
 from kiro_crew.dashboard.kiro_relay.ingress import refuse_relayed  # noqa: F401
 from kiro_crew.dashboard.kiro_relay.limits import APPS_OFF_FOR_TEAMMATES  # noqa: F401
@@ -130,6 +135,8 @@ from kiro_crew.dashboard.messaging_api.channel_delivery import (  # noqa: F401
     _cron_job_for,
     _deliver_channel_dm,
     _deliver_to_channel,
+    _fresh_governance,
+    _generation_now,
     _owner_dm_target,
     _send_to_channel_target,
     _vet_app_messaging,
@@ -231,6 +238,7 @@ from kiro_crew.dashboard.messaging_api.slack_settings import (  # noqa: F401
     api_slack_config_get,
     api_slack_config_save,
     api_slack_manifest_status,
+    api_slack_reconnect,
 )
 from kiro_crew.dashboard.messaging_api.slack_workspace import (  # noqa: F401
     _missing_scope_message,
@@ -245,8 +253,10 @@ from kiro_crew.dashboard.messaging_api.spawn import (  # noqa: F401
     _backend_name,
     _chain_note,
     _continue_on_loop,
-    _enterprise_kiro_successor,
     _failover_backend,
+    _inherited_backend_name,
+    _lts_kiro_successor,
+    _parent_run_is_silent,
     _qualified_model_refusal,
     _requested_backend,
     _slot_for_parent,
@@ -331,7 +341,7 @@ from kiro_crew.notifications.bus import (  # noqa: F401
     NotificationPayload,
     NotificationValidationError,
 )
-from kiro_crew.parent_turns import ledger_of, settles_at_release  # noqa: F401
+from kiro_crew.parent_turns import ledger_of  # noqa: F401
 from kiro_crew.platform.context import redact_via_context  # noqa: F401
 from kiro_crew.platform.governance_profiles import HOST_SESSION_KEY  # noqa: F401
 from kiro_crew.platform_compat import IS_MACOS  # noqa: F401
@@ -360,6 +370,8 @@ from kiro_crew.subagent import (  # noqa: F401
     effort_pending_note,
     parent_project_dirs,
     parent_template_allowlists,
+    parent_template_spawn_policy,
+    wait_done,
 )
 from kiro_crew.subagent_manager.admission.types import (  # noqa: F401
     QueuedReadUnavailable,
@@ -371,6 +383,7 @@ from kiro_crew.subagent_persistence import (  # noqa: F401
     DISMISSAL_NO_FOLDER,
     PanelRecords,
     _agent_dir,
+    agent_dir_for_display,
     classify_persisted_ending,
     read_panel_records,
     read_state,

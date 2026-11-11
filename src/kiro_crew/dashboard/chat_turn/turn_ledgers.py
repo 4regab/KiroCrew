@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     )
     from kiro_crew.dashboard.chat_turn.file_changes import _turn_line_changes
     from kiro_crew.dashboard.chat_turn.queue_drain import (
+        _RECOVERED_WAKE_KEY,
         _RECOVERY_TURN_META_KEY,
         _REPLAYS_COMPLETION_KEY,
         TURN_ACTOR_META_KEY,
@@ -171,6 +172,12 @@ def _queue_recovery(
         # The same holds for a BACKGROUND start a bulk Resume asked for: nobody
         # waits on its retry either, so the retry starts BACKGROUND too.
         _recovery_meta[START_BACKGROUND_META_KEY] = True
+    if turn._card_origin:
+        # A recovery is a second turn of the SAME card reply: it stays untrusted,
+        # or a retry would run the page's words with the thread's auto-approval.
+        from kiro_crew.dashboard.card_send import CARD_ORIGIN_META_KEY
+
+        _recovery_meta[CARD_ORIGIN_META_KEY] = True
     if payload == RecoveryPayload.ORIGINAL and isinstance(_current_replay_message, dict):
         # ORIGINAL replays must preserve the triggering row's attachment
         # lists. The provider prompt already carries the full markers, but
@@ -221,6 +228,12 @@ def _queue_recovery(
         for _entry in slot._queue:
             if _entry.get("id") == _recovery_qid:
                 _entry[_REPLAYS_COMPLETION_KEY] = True
+                break
+    if turn._wake_cycle:
+        # A loop's own cycle retried is still that cycle: its fault charges the loop.
+        for _entry in slot._queue:
+            if _entry.get("id") == _recovery_qid:
+                _entry[_RECOVERED_WAKE_KEY] = turn._wake_cycle
                 break
     if turn._is_refusal_retry_turn and index == 0 and _replays_this_turn:
         # A verbatim requeue of the refusal retry's own message REPLACES

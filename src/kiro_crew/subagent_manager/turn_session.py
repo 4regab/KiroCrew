@@ -158,7 +158,12 @@ async def resolve_parent_policy(self: RunEventCoordinator, info: SubagentInfo) -
         else:
             lineage = (*(founder_lineage or ()), *lineage)
     # Explicit approval_mode from spawn caller (e.g. Mochi bg agent)
-    if not parent_policy and info.approval_mode == "auto":
+    # A spawn's own or the config's ``auto`` is a session Trust: a policy that denies
+    # ``trust`` refuses both, and the child asks instead.
+    from kiro_crew.approval_mode_policy import session_mode_permitted
+
+    trust_ok = session_mode_permitted("trust")
+    if not parent_policy and info.approval_mode == "auto" and trust_ok:
         parent_policy = "auto"
         _sa.sel().log_api_access(
             caller=info.parent_session_key or f"subagent:{info.id}",
@@ -176,7 +181,7 @@ async def resolve_parent_policy(self: RunEventCoordinator, info: SubagentInfo) -
             source="subagent",
             resources=f"subagent_id={info.id}",
         )
-    if not parent_policy and self._manager._global_approval_mode == "auto":
+    if not parent_policy and self._manager._global_approval_mode == "auto" and trust_ok:
         # Apply global config as fallback only when parent is absent or
         # confirmed garbage-collected (absent from the session store).
         # If parent session still exists but returned no policy, deny by
@@ -649,11 +654,14 @@ async def fire_prompt_hooks(
     task: str,
     fresh_session: bool,
     spec: Any,
+    client: Any,
 ) -> str:
     """Fire the child's prompt-start hooks and return the ``[Hook context]`` prefix."""
     _sa = _facade()
     from kiro_crew.subagent_manager.prompt_hooks import prompt_hook_prefix
 
+    # The child's own ACP session id, for its spec hooks only.
+    _acp_sid = getattr(client, "session_id", "") if spec.hooks else ""
     # Before the first stream, as a dashboard turn fires them before its own.
     # Hook time is not the runtime's silence: the reaper's startup, first-prompt
     # and stall checks skip the run while they run, the startup clock does not
@@ -669,6 +677,7 @@ async def fire_prompt_hooks(
             fresh_session=fresh_session,
             spec_hooks=spec.hooks,
             spec_hooks_cwd=spec.cwd,
+            acp_session_id=_acp_sid if isinstance(_acp_sid, str) and _acp_sid else None,
         )
     finally:
         info._prompt_hooks_secs += _sa.time.monotonic() - _hooks_t0

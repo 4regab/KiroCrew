@@ -612,7 +612,9 @@ class TestWithholdWarningNamesTheCause:
                 encoding="utf-8",
             )
         if cause == "permission-mode":
-            kw["permission_mode"] = "auto"
+            # A mode the pin neither sets nor moves away (``auto`` is pinned to
+            # ``default`` and keeps the array).
+            kw["permission_mode"] = "plan"
         client = AcpClient(
             work_dir=tmp_path, agent="kirocrew", acp_backend=ACP_BACKEND_CLAUDE, **kw
         )
@@ -628,7 +630,7 @@ class TestWithholdWarningNamesTheCause:
         ]
         expected = {
             "old-adapter": "Upgrade with 'npm i -g ",
-            "permission-mode": "requested permission mode 'auto'",
+            "permission-mode": "requested permission mode 'plan'",
             "hooks": "sets hooks or sandbox settings",
             "link": "is a symlink or resolves to a sensitive path",
         }[cause]
@@ -1329,7 +1331,9 @@ class TestLocalSettingsSeed:
 
         with mock.patch.object(client_mod.os, "read", side_effect=counting_read):
             assert client._claude_settings_is_still_ours() is True
-        assert sizes == [len(written.encode("utf-8")) + 1]
+        # One byte past the payload, then the one-byte read that finds the end of the file.
+        payload = len(written.encode("utf-8"))
+        assert sizes == [payload + 1, 1]
 
     def test_reset_reads_the_ownership_flag_defensively(self, tmp_path):
         """``_reset_state`` runs on clients built without ``__init__``.

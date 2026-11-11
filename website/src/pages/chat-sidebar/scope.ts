@@ -236,6 +236,10 @@ export interface SidebarScope {
   filterCounts: SidebarRows['statusCounts']
   boardLaneActive: boolean
   flatLaneActive: boolean
+  /** The flat lane is drawn for an active search: rows in relevance order. */
+  searchLaneActive: boolean
+  /** The count / clear-filters line above the search lane's rows; null otherwise. */
+  searchHeader: React.ReactNode
   folderRowsDrawn: boolean
   setLaneScrollEl: (el: HTMLDivElement | null) => void
   rowAnimEnabled: boolean
@@ -494,6 +498,7 @@ export interface SidebarScope {
   createFolderMutation: ReturnType<typeof useFolderMutations>['createFolderMutation']
   updateFolderMutation: ReturnType<typeof useFolderMutations>['updateFolderMutation']
   toggleCollapse: ReturnType<typeof useFolderMutations>['toggleCollapse']
+  collapseAllFolders: ReturnType<typeof useFolderMutations>['collapseAllFolders']
 
   // From `useHoldPinnedHeaderOnCollapse`
   armHold: ReturnType<typeof useHoldPinnedHeaderOnCollapse>['armHold']

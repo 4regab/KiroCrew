@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from kiro_crew.dashboard.state import DashboardState, _ChatSlot
+    from kiro_crew.dashboard.transcript_binding import TranscriptBinding
     from kiro_crew.history import ConversationLog
 
 logger = logging.getLogger("kiro_crew.dashboard.chat_persistence")
@@ -659,8 +660,12 @@ def paired_window_snapshot(
     return window, queue_snapshot, queue_candidates, disk_older
 
 
-def routing_snapshot(slot: _ChatSlot) -> tuple[str, str]:
-    """``(live_session, history_key)``, both taken from ONE observation of the routing."""
+def routing_snapshot(slot: _ChatSlot) -> tuple[str, str, TranscriptBinding]:
+    """``(live_session, history_key, binding)``, all from ONE observation of the routing.
+
+    *binding* is ``slot._binding`` as of that same observation (see
+    ``metadata_line.autocompact_fold``).
+    """
     # Authorization and the write target must come from ONE observation of the
     # routing. Both keys derive from ``slot.linked_session_key``, which the event
     # loop rebinds with no running gate, so reading it per row -- or again when
@@ -674,9 +679,10 @@ def routing_snapshot(slot: _ChatSlot) -> tuple[str, str]:
         routing = getattr(slot, "linked_session_key", "")
         live_session = effective_session_key(slot)
         history_key = slot_history_key(slot)
+        binding = slot._binding
         if getattr(slot, "linked_session_key", "") == routing:
             break
-    return live_session, history_key
+    return live_session, history_key, binding
 
 
 def drop_notes_authorized_elsewhere(
@@ -957,9 +963,8 @@ def delete_won(
             return False
         # The observed file is gone or recreated: the write target drifted away
         # from a session the user permanently deleted. Log at WARNING so the
-        # refused merge into the drifted target is visible — the drift's cause
-        # (why ``linked_session_key`` lapses) is not yet understood, so this line
-        # is the only operator signal that it happened.
+        # refused merge into the drifted target is visible: this line is the
+        # only operator signal that it happened.
         logger.warning(
             "Skipping history save for %s (slot=%s): write target drifted from "
             "deleted session %s; refusing to merge its rows into the new target",

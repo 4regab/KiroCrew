@@ -73,7 +73,7 @@ from kiro_crew.messaging.transport import (
     TransportCapabilities,
 )
 from kiro_crew.sel import sel
-from kiro_crew.whatsapp.attachments import ingest_media
+from kiro_crew.whatsapp.attachments import attachment_for, ingest_media
 from kiro_crew.whatsapp.client import WhatsAppClient
 from kiro_crew.whatsapp.commands import parse_command
 from kiro_crew.whatsapp.echo import EchoTracker
@@ -265,12 +265,12 @@ class WhatsAppTransport(MessagingTransport):
         #: a channel-neutral shape and a WhatsApp stanza id means nothing to the
         #: others, so it rides here rather than widening the shared contract.
         self.pending_message_id: dict[int, str] = {}
-        #: ``(text as the user sent it, media count)`` captured BEFORE ingestion
+        #: ``(text as the user sent it, its media's names)`` captured BEFORE ingestion
         #: rewrites ``msg.text`` with attachment context and temp paths: the
         #: inbound spool quotes it back in a restart notice, and the ingested form
         #: would name temp files that do not survive the restart. Same keying and
         #: lifetime as the three tables above.
-        self.pending_original: dict[int, tuple[str, int]] = {}
+        self.pending_original: dict[int, tuple[str, tuple[str, ...]]] = {}
         #: The inbound messages that were voice notes, so the dispatcher can answer
         #: one in kind. Same keying and lifetime as the tables above.
         self.pending_voice_note: set[int] = set()
@@ -396,6 +396,13 @@ class WhatsAppTransport(MessagingTransport):
             data,
             mimetype=mimetype,
             on_sent=lambda message_id: self.echo.remember(jid, message_id),
+        )
+
+    async def edit_text(self, conversation_id: str, message_id: str, text: str) -> bool:
+        """Edit a message this channel sent, echo-tracking the edit's own id."""
+        jid = normalize_jid(conversation_id)
+        return await self._client.edit_text(
+            jid, message_id, text, on_sent=lambda edit_id: self.echo.remember(jid, edit_id)
         )
 
     async def react(
@@ -754,8 +761,9 @@ class WhatsAppTransport(MessagingTransport):
         # the number trigger an authenticated download on the operator's host,
         # which is a remote-triggered fetch with no authorization behind it.
         temp_paths: list[str] = []
-        # The user's own text and media count, before either is rewritten below.
-        self.pending_original[id(msg)] = (msg.text, 1 if desc.has_media else 0)
+        # The user's own text and media name, before either is rewritten below.
+        media_names = (attachment_for(desc, message_id).name,) if desc.has_media else ()
+        self.pending_original[id(msg)] = (msg.text, media_names)
         if desc.has_media and not self._may_fetch_media(msg, is_group=is_group):
             # Refusing is said out loud: silence reads as the agent ignoring a
             # photo the sender believes it received.

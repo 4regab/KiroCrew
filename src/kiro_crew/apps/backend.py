@@ -61,6 +61,7 @@ from kiro_crew.sandbox import (
     RLIMIT_PROFILE_TOOL,
     _md_notebook_degraded_mask_dirs,
     app_backend_visible_targets,
+    app_declared_mask_targets,
     carveout_shadowed_by_foreign_mask,
     cgroup_scope_argv,
     popen_limited,
@@ -779,7 +780,7 @@ def _start_app_backend_body(app_name: str, manifest: Any) -> AppProcess | None:
     # start an app on a host that is running perfectly well.
     if central_ceiling_installed():
         _platform_extra[POLICY_CACHE_ONLY_ENV] = "1"
-        # An enterprise child adopts only the cache for the profile this gateway is
+        # An LTS child adopts only the cache for the profile this gateway is
         # pinned to; minimal_env() would otherwise drop the pin it inherits.
         from kiro_crew.platform.enterprise_policy_fetch import PROFILE_PIN_ENV
 
@@ -895,19 +896,23 @@ def _start_app_backend_body(app_name: str, manifest: Any) -> AppProcess | None:
     # an inherited or spoofed env value. The proof is injected ONLY when the
     # secret is readable AND the origin was injected above; a missing
     # .app_secret is tolerated as before and yields neither the secret nor the
-    # proof (a secret-less legacy backend gets the origin only).
-    try:
-        _proxy_secret = (root / ".app_secret").read_text().strip()
-        if _proxy_secret:
-            env["KIROCREW_PROXY_SECRET"] = _proxy_secret
-            if gateway_origin:
-                env["KIROCREW_GATEWAY_ORIGIN_PROOF"] = hmac.new(
-                    _proxy_secret.encode("utf-8"),
-                    gateway_origin.encode("utf-8"),
-                    hashlib.sha256,
-                ).hexdigest()
-    except OSError:
-        pass
+    # proof (a secret-less legacy backend gets the origin only). This env var is the
+    # backend's ONLY channel for its secret: the gateway keeps it where no sandbox,
+    # the backend's own included, can read it (``token_auth.read_app_secret``).
+    # circular import: token_auth -> app_secret_store -> manager -> backend
+    # An app an older version left a folder secret gets a new one here, the one place
+    # it is handed over (``token_auth.replace_legacy_app_secret``).
+    from kiro_crew.dashboard.token_auth import replace_legacy_app_secret
+
+    _proxy_secret = replace_legacy_app_secret(app_name)
+    if _proxy_secret:
+        env["KIROCREW_PROXY_SECRET"] = _proxy_secret
+        if gateway_origin:
+            env["KIROCREW_GATEWAY_ORIGIN_PROOF"] = hmac.new(
+                _proxy_secret.encode("utf-8"),
+                gateway_origin.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
     # Expose the provisioned deps dir (pip --target, above) to the child.
     # PYTHONPATH rather than an interpreter switch: it is honored identically
     # by the app's own venv interpreter and the gateway fallback, on every
@@ -1221,6 +1226,10 @@ def _start_app_backend_body(app_name: str, manifest: Any) -> AppProcess | None:
     _visible: tuple[str, ...] = ()
     if is_builtin_app(app_root=execution_path, app_name=app_name):
         _visible = app_backend_visible_targets(app_name)
+    # The masks this app declares in ``credentialMasks`` hide its own files, under its own
+    # data directory, from every other spawn; its backend is their reader. Only the
+    # declaration of the code this spawn executes is lifted, on the same provenance.
+    _visible = _visible + app_declared_mask_targets(app_name, builtin=_admitted_builtin)
     if _shipped_md_notebook:
         # Move legacy Notes state into the state directory before the backend reads it.
         # Spawn prep runs the same move on sandboxed hosts; this call covers a host with no

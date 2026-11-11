@@ -70,6 +70,7 @@ import { revealComposer } from '../pages/chat/composerFocus'
 import { api } from '../api/client'
 import { releaseUnobservedPaneSlot, slotMessagesQueryKey } from '../api/slotMessagesQuery'
 import { Composer, type ComposerHandle, type ComposerVoiceOptions } from '../chat-core/composer/Composer'
+import { PANE_DICTATION_SCOPE, markDictated, noteComposerEdit } from '../chat-core/composer/dictationProvenance'
 import { slotApprovalMode } from '../utils/slotApprovalMode'
 import { isUntitledSession, sessionDisplayTitle } from '../utils/sessionDisplayTitle'
 import { isComposerSendHeld } from '../utils/composerSendHolds'
@@ -122,6 +123,7 @@ export default function ChatPane({
   openSideChat,
   leading,
   onFileOpen,
+  onFolderOpen,
   onOpenCrewTab,
   onArtifactOpen,
   busyMode = 'split',
@@ -202,9 +204,9 @@ export default function ChatPane({
   const streamState = useAppSelector((s) => selectSlotStreamState(s, slotKey))
   const running = streamState !== 'idle'
   // Per-slot context-window usage for the input-bar ring (mirrors ChatPage; the
-  // store keys these by slot). Default 0 so the ring always renders, exactly
-  // like single chat.
-  const contextPct = useAppSelector((s) => s.chat.slotContextPct[slotKey] ?? 0)
+  // store keys these by slot). Undefined until the slot has a reading: the ring
+  // still renders, as unknown rather than a measured 0%.
+  const contextPct = useAppSelector((s) => s.chat.slotContextPct[slotKey])
   const contextTokens = useAppSelector((s) => s.chat.slotContextTokens?.[slotKey])
   // Prefer the warm's value: this pane's own query is staleTime:Infinity, so its
   // has_more freezes at mount while a later bounded warm can truncate the cache.
@@ -280,6 +282,9 @@ export default function ChatPane({
   const composerVoiceOptions = useMemo<ComposerVoiceOptions>(() => ({
     onAutoSubmit: () => { autoSubmitRef.current?.() },
     pushToTalk,
+    // The pane's draft is its own, apart from the main chat's for the same
+    // session, so its dictation record is too.
+    dictationScope: PANE_DICTATION_SCOPE,
   }), [pushToTalk])
   // Shared composer-busy rule (chatSlice.selectComposerBusy): main turn
   // streaming OR sub-agents running (dual signal). Drives the queue affordance
@@ -476,8 +481,11 @@ export default function ChatPane({
   // setInput directly, not this handler, so they are unaffected.
   const handleUserInput = useCallback((next: string | ((prev: string) => string)) => {
     followUpInsertedRef.current = null
+    // An emptied composer holds no dictated words, so this slot's next message
+    // starts unmarked (`dictationProvenance`).
+    if (typeof next === 'string') noteComposerEdit(slotKey, next, PANE_DICTATION_SCOPE)
     setInput(next)
-  }, [setInput])
+  }, [setInput, slotKey])
   const followUpOptionsKey = followUpOptions.join('\x00')
   // A single-select offer is keyed on its source row too: a newer reply can repeat
   // the same labels, and a single-select pick must not replace text the user picked
@@ -596,6 +604,20 @@ export default function ChatPane({
       setHydratedSlot(slotKey)
     }
   }, [slotDetail, slotKey, dispatch, hydrateLimit, paneIsActive])
+  // Whether this pane's transcript is its loaded page, for the footer's stall
+  // watch: the active slot's page comes from the slot switch; a background
+  // slot's is any page the store has described (its `slotPaneHasMore` marker),
+  // written by the hydrate above, a warm, or the park of a once-active
+  // transcript, so the watch does not drop when the active slot moves away.
+  const activePageLoaded = useAppSelector((s) => !s.chat.slotLoading && s.chat.slotSwitchTarget !== slotKey)
+  const transcriptLoaded = paneIsActive ? activePageLoaded : warmHasMore !== undefined
+  // A turn this pane sent is watched without a loaded page. Kept after the
+  // send is confirmed, which clears the row's `optimistic` mark.
+  // Dropped when the pane moves to another slot, as the footer resets per session.
+  const sentSlotRef = useRef<string | null>(null)
+  if (sentSlotRef.current !== slotKey) sentSlotRef.current = null
+  if (turnSentHere(messages)) sentSlotRef.current = slotKey
+  const paneSentTurn = sentSlotRef.current === slotKey
   // `slotHydrated` means "a pane shows this slot NOW": set at mount (or by the
   // hydrate above), cleared once the last pane showing the slot is gone, so
   // `boundSlotWindow` reaches a monitor pane that was opened and then left in
@@ -691,6 +713,7 @@ export default function ChatPane({
     slot: slotKey,
     allQueued: allQueuedMessages,
     visibleQueued: queuedMessages,
+    dictationScope: PANE_DICTATION_SCOPE,
     // Adapter: the hook's third argument is the queued send's mention-alias
     // snapshot, which only ChatPage's composer can re-adopt (pendingFileTokens
     // and the reconciliation effect live there). This pane's composer has no
@@ -713,7 +736,7 @@ export default function ChatPane({
   // The slot whose playback the browser blocked, as the crewmate's
   // VoicePlaybackNotice reports it; its replies reveal their action rows.
   const [voiceRecoverySlot, setVoiceRecoverySlot] = useState<string | null>(null)
-  const { listMessages, renderers } = useChatPaneRenderers({ slotKey, busyMode, onFileOpen, onOpenCrewTab, crewmate, crewmateTranscript, onSessionOpen, sessions, activeSession, messages, foldBefore, resume, revealActions: voiceRecoverySlot === slotKey })
+  const { listMessages, renderers } = useChatPaneRenderers({ slotKey, busyMode, onFileOpen, onFolderOpen, onOpenCrewTab, crewmate, crewmateTranscript, onSessionOpen, sessions, activeSession, messages, foldBefore, resume, revealActions: voiceRecoverySlot === slotKey })
 
   // The composer dock floats over the bottom of the scroller (ChatPage's
   // layout, shared measurement): `dockH` is what the scroller pays below its
@@ -728,6 +751,7 @@ export default function ChatPane({
 
   const currentPaneSlot = useCallback(() => slotKeyRef.current, [slotKeyRef])
   const restorePaneSend = useCallback((forSlot: string, sent: PaneSentRestore) => {
+    if (sent.dictated) markDictated(forSlot, PANE_DICTATION_SCOPE)
     restoreIntoComposer(recoverQuoteInto(sent.text, sent.quote, mountedRef.current && forSlot === slotKeyRef.current), sent.files, sent.pastes, forSlot)
   }, [restoreIntoComposer, recoverQuoteInto, mountedRef, slotKeyRef])
   const deliveryStrip = useDeliveryWarningStrip<PaneSentRestore>({
@@ -924,6 +948,7 @@ export default function ChatPane({
             onAsk={onAsk}
             threads={threads}
             onFileOpen={onFileOpen}
+            onFolderOpen={onFolderOpen}
             onArtifactOpen={onArtifactOpen}
             transcript={{
               sessionId: `pane:${slotKey}`,
@@ -999,7 +1024,7 @@ export default function ChatPane({
                           : 0
                       }
                       // Not while only preparing a catch-up: that is no turn to stop.
-                      activityKey={running || paneSlot?.running ? transcriptActivityKey(messages) : undefined}
+                      activityKey={(running || paneSlot?.running) && (transcriptLoaded || paneSentTurn) ? transcriptActivityKey(messages) : undefined}
                       sentHere={turnSentHere(messages)}
                       browserSessionKey={slotKey}
                       waitingOnUser={!!paneSlot?.pending_approval || !!paneSlot?.needs_input}
@@ -1241,6 +1266,7 @@ export default function ChatPane({
           // cases the newest error card handles with a remedy of its own.
           continuable={resume.composerResume}
           continueIsRecovery={resume.interrupted}
+          resumeAfterSignIn={resume.resumeAfterSignIn}
           // A crewmate's chat has no queue card to send (`withQueuedAsBubbles`).
           restoredQueueCount={crewmate ? 0 : queuedMessages.filter(m => m.meta?.restored === true).length}
           onContinue={resume.onContinue}
@@ -1283,7 +1309,9 @@ export default function ChatPane({
           // See ComposerDockView: the slot's RAW model, because `shownModel` substitutes
           // the served id and would hide every routed turn.
           modelIsJevRouted={jevRouteOn && isUnpinnedModel(paneSlot?.model)}
-          contextPct={contextPct}
+          harnessBackend={selectionCapabilitiesQ.data?.models_backend}
+          contextPct={contextPct ?? 0}
+          contextUnknown={contextPct === undefined && contextTokens?.used == null}
           contextUsedTokens={contextTokens?.used}
           contextWindowTokens={contextTokens?.window || provider.getContextWindow(shownModel)}
           derivePctFromUsed={contextTokens?.used != null && contextTokens.window == null}

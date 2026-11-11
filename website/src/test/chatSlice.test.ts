@@ -312,6 +312,21 @@ describe('chatSlice reducers', () => {
       expect(state.messages.at(-1)?.role).toBe('assistant')
     })
 
+    it('a "not running" Stop answer and an idle snapshot leave the transcript `_done` leaves, a "…" row included (#34426)', () => {
+      let state = active('chat-1')
+      for (const slot of ['chat-1', 'chat-2']) {
+        state = reducer(state, sseChatMessage({ slot, role: 'chunk', content: '…', seq: 1 }))
+      }
+      const end = (s: typeof state, slot: string) => reducer(s, sseChatMessage({ slot, role: '_done', content: '' }))
+      const viaDone = end(end(state, 'chat-1'), 'chat-2')
+      const viaStop = reducer(reducer(state, settleStopNotRunning({ slot: 'chat-1' })), settleStopNotRunning({ slot: 'chat-2' }))
+      const viaSnapshot = reducer(state, syncSlotRunningFromServer({ slot: 'chat-2', running: false, stopping: false }))
+      expect(viaDone.messages.at(-1)).toMatchObject({ role: 'assistant', content: '…' })
+      expect(viaStop.messages).toEqual(viaDone.messages)
+      expect(viaStop.slotMessages['chat-2']).toEqual(viaDone.slotMessages['chat-2'])
+      expect(viaSnapshot.slotMessages['chat-2']).toEqual(viaDone.slotMessages['chat-2'])
+    })
+
     it('settleStopNotRunning does not settle the active slot while a local turn is pending', () => {
       // Send → Stop before the backend registered the turn → "not running".
       // Settling here would reopen the composer mid-send and invite a
@@ -367,6 +382,24 @@ describe('switchSlot.pending', () => {
     expect(state.slotMessages['old']).toHaveLength(1)
     expect(state.messages).toEqual([])
     expect(state.slotLoading).toBe(true)
+  })
+
+  it('records only switches that ask to leave Split View', () => {
+    let state = reducer(initial, {
+      type: 'chat/switchSlot/pending',
+      meta: { arg: { key: 'new', leaveSplit: true }, requestId: 'r1', requestStatus: 'pending' },
+    })
+    expect(state.leaveSplitSeq).toBe(1)
+    state = reducer(state, {
+      type: 'chat/switchSlot/pending',
+      meta: { arg: { key: 'other' }, requestId: 'r2', requestStatus: 'pending' },
+    })
+    expect(state.leaveSplitSeq).toBe(1)
+    const ordinary = reducer(initial, {
+      type: 'chat/switchSlot/pending',
+      meta: { arg: 'other', requestId: 'r3', requestStatus: 'pending' },
+    })
+    expect(ordinary.leaveSplitSeq).toBeUndefined()
   })
 
   it('gates sseChatMessage from old slot after pending', () => {

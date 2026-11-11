@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useEffect, useCallback, useContext, useSyncExternalStore, type ReactNode } from 'react'
 import { ReactReduxContext } from 'react-redux'
 import { parseSessionSeed, seedSender, type SeedRow, type SeedSender } from '../../lib/crewSeed'
-import { MessageByline } from './shared-crew/MessageByline'
+import { AppSenderByline, MessageByline } from './shared-crew/MessageByline'
 import { QueuedSendLabel } from './shared-crew/QueuedSendLabel'
 import { readRelay, withoutRelayEnvelope } from './sessionRelay'
 import SenderAvatar from './SenderAvatar'
@@ -261,6 +261,7 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
     && !!(meta && (meta as { steer?: boolean }).steer)
     && steerState !== 'written'
     && steerState !== 'requeued'
+    && steerState !== 'superseded'
     && !(steerOptimistic && !steerState)
   // The two honest intermediate states get their own MUTED treatment (#8069),
   // so a steer never looks identical to an ordinary send while unconfirmed.
@@ -276,7 +277,10 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
   // confirmed badge: "Steering…" and "runs as its own message" are the same
   // steer/queue vocabulary the steer-only surface exists to hide.
   const pendingSteer = !hideSteerBadge && steerMeta && !!slotRunning && (steerState === 'written' || (steerOptimistic && !steerState))
-  const requeuedSteer = !hideSteerBadge && steerMeta && steerState === 'requeued'
+  // `superseded` keeps the requeued label: the shared turn grouping skips that
+  // row, and a surface that still draws it shows what main showed.
+  const requeuedSteer = !hideSteerBadge && steerMeta
+    && (steerState === 'requeued' || steerState === 'superseded')
   // These rows run as their own message, not as a steer into a running turn: a
   // steer the turn ended before confirming (`requeued`, then `superseded` once
   // its new row lands), or a row with no `meta.steer` that carries the receipt
@@ -818,6 +822,8 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
           <div className="inline-flex items-center gap-1 text-[12px] leading-5 font-semibold text-accent mb-1 pr-1">
             <Target size={12} className="shrink-0" /> {i18nT('pages.chat.userMessage.steered_into_the_running_turn')}
           </div>
+          {/* WHICH app sent it, when one did: a steered answer is still not the owner's typing. */}
+          <AppSenderByline meta={meta} />
           {/* WHO chose this, when the sender did not. Below the badge that says
               what happened, because the badge is the outcome and this is the
               decision behind it. */}
