@@ -232,6 +232,18 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
             ),
         },
     }
+    # Shared by spawn_run and spawn_sub_agents so the rule cannot drift between
+    # them, like the context-scope switches above.
+    _SILENT_DESC = (
+        "Default false. Set true when YOU collect the results yourself (polling "
+        "spawn status, a blocking wait) and the user should not be notified per "
+        "completion: it drops the completion notifications (the dashboard bell "
+        "note, and under a cron the channel post of the cron's reply) — "
+        "failed and cancelled completions included. Delivery is unchanged — "
+        "results still arrive and remain readable — and approval and "
+        "injection-failure alerts still ring. Spawns under a silent cron are "
+        "always silent, with or without this flag."
+    )
     return [
         {
             "name": "spawn_run",
@@ -367,7 +379,9 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
                             "missing), never replaced by the default. Pass 'model' as an "
                             "id from THAT backend's list. Batch-wide; a tasks[] object can "
                             "override it per task. A spawn_continue follow-up asks for the "
-                            "run's backend."
+                            "run's backend. Omitted in a session that was created on a "
+                            "harness (session_create `backend`), the run starts on that "
+                            "same harness, unless it names `crew`."
                         ),
                     },
                     "reasoning_effort": {
@@ -405,6 +419,10 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
                             "several hours upfront. Use for a run you know is "
                             "a long-lived delegation workstream."
                         ),
+                    },
+                    "silent": {
+                        "type": "boolean",
+                        "description": _SILENT_DESC,
                     },
                     **_context_group_props,
                 },
@@ -613,6 +631,10 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
                             "Optional absolute path to launch sub-agents in. "
                             "Must be under a configured subagent_cwd_allowed_roots entry."
                         ),
+                    },
+                    "silent": {
+                        "type": "boolean",
+                        "description": _SILENT_DESC,
                     },
                     **_context_group_props,
                 },

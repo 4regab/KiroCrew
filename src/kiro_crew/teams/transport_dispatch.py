@@ -36,13 +36,18 @@ import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
-from kiro_crew.agent_switch_command import ChannelAgentPicks, handle_channel_agent_command
+from kiro_crew.agent_switch_command import (
+    ChannelAgentPicks,
+    LiveDefaultAgent,
+    handle_channel_agent_command,
+)
 from kiro_crew.config import live
 from kiro_crew.config.sections import _normalize_threshold_pair
 from kiro_crew.history import mint_row_mid
 from kiro_crew.messaging.attachments import IngestLimits
 from kiro_crew.messaging.attachments import cleanup as cleanup_attachments
 from kiro_crew.messaging.commands import (
+    COMPACT_ACCOUNT_CHANGED_TEXT,
     YOLO_PHRASING_MARKDOWN,
     compact_unsupported_backend,
     compact_unsupported_reply,
@@ -140,12 +145,6 @@ if TYPE_CHECKING:
     from kiro_crew.teams.transport import TeamsTransport
 
 logger = logging.getLogger(__name__)
-
-# Canonical kiro-cli agent fallback so Teams sessions load kirocrew-core
-# (spawn_run etc.) instead of kiro-cli's bare built-in default when neither an
-# explicit override nor agent.default_agent is configured. Mirrors the Slack /
-# Telegram / WeCom / Webex paths' _DEFAULT_KIROCREW_AGENT.
-_DEFAULT_KIROCREW_AGENT = "kirocrew"
 
 # Keep a collapsed drain within the shared ingest layer's per-turn file cap, so a
 # burst of uploads is answered across turns instead of having its surplus refused.
@@ -385,7 +384,8 @@ class TeamsDispatcher:
         # construction cycle forbids doing it here); the config applier pushes
         # the reloaded allow-list at it.
         self.transport: "TeamsTransport | None" = None
-        self._conv = ConversationState(seed_fn=self._seed_gen)
+        self._default_agent = LiveDefaultAgent()
+        self._conv = ConversationState(seed_fn=self._seed_gen, bucket_fn=self._resolve_agent)
         # Per-person agent picked with /agent, keyed like _conv (the sender
         # identity), because the agent is part of the session key.
         self._agent_picks: ChannelAgentPicks[str] = ChannelAgentPicks()
@@ -487,11 +487,6 @@ class TeamsDispatcher:
         its model-written label into a session that never asked the question.
         """
         assert self.client is not None, "TeamsDispatcher.client must be set"
-        # Inbound channels-governance gate (off-loop) — recheck per message so a
-        # host-profile deny added after connect stops dispatch without a restart
-        # (the startup gate only blocks CONNECTING). Silently drop on deny.
-        if not await inbound_permitted("teams"):
-            return
         # The ONE reader of the identity in this module. Re-deriving it with a fixed
         # preference order is what made a turn key on the UPN while a card click keyed on
         # the object id, for a user the allow-list authorized by object id: the approval
@@ -528,6 +523,24 @@ class TeamsDispatcher:
             restricted=_refused_turn_restricted,
         ):
             return
+        # A FILE-bearing message is never a command. Teams puts the caption in
+        # ``text``, so "/stop here is the log" would otherwise cancel the turn AND
+        # discard the file; and a caption is prose the user wrote about the upload,
+        # not an instruction to this dispatcher. Discord and Telegram draw the line
+        # in the same place. The body echo is not a file (see ``files`` above). A
+        # card click is not a command either, whatever text rides along with it.
+        cmd = (
+            parse_command(text)
+            if (interpret_commands and not files and not inbound.is_card_action)
+            else None
+        )
+        # Inbound channels-governance gate (off-loop) — recheck per message so a
+        # host-profile deny added after connect stops dispatch without a restart
+        # (the startup gate only blocks CONNECTING). Silently drop on deny. Only
+        # a message this dispatcher acts on as /stop claims the pure-cancel
+        # exemption, so a halt stays reachable on a denied channel.
+        if not await inbound_permitted("teams", text=text if cmd == "stop" else ""):
+            return
         logger.info(
             "Teams inbound from %s: %d chars",
             email[:3] + "***" if email else "?",
@@ -542,12 +555,6 @@ class TeamsDispatcher:
             return
 
         override_mode: str | None = None
-        # A FILE-bearing message is never a command. Teams puts the caption in
-        # ``text``, so "/stop here is the log" would otherwise cancel the turn AND
-        # discard the file; and a caption is prose the user wrote about the upload,
-        # not an instruction to this dispatcher. Discord and Telegram draw the line
-        # in the same place. The body echo is not a file (see ``files`` above).
-        cmd = parse_command(text) if (interpret_commands and not files) else None
         # Resume routing runs BEFORE the intercept, and its answer is used by the
         # commands below. `/compact` and `/stop` act on the RESOLVED session, so after a
         # binding was destroyed they would compact or cancel the native Teams session
@@ -652,7 +659,17 @@ class TeamsDispatcher:
                     drain=drain,
                 )
                 return
-            await self._handle_busy(inbound, session_key, text, override_mode)
+            # A fallback re-entry keeps this call's flags, so a drained "/new"
+            # that finds the lease free again still reaches the model as text.
+            await self._handle_busy(
+                inbound,
+                session_key,
+                text,
+                override_mode,
+                rerun=lambda: self.handle_message(
+                    inbound, interpret_commands=interpret_commands, drain=drain
+                ),
+            )
             return
 
         await self._run_admitted(
@@ -782,7 +799,17 @@ class TeamsDispatcher:
         # on a conversation's first turn.
         self._bind_origin_mirror(session_key, inbound)
 
-        self._active_renderers[session_key] = renderer
+        # Only an EMPTY slot here; the turn takes the slot once it holds its session
+        # (``_bind_provider``), so a message admitted mid-turn cannot steal it.
+        self._active_renderers.setdefault(session_key, renderer)
+        bound = False
+
+        def _bind_provider(provider: Any) -> None:
+            nonlocal bound
+            bound = True
+            self._active_renderers[session_key] = renderer
+            renderer.authorize_scratch_root(str(getattr(provider, "work_scratch_dir", None) or ""))
+
         try:
             await drive_turn(
                 ChannelTurn(
@@ -823,9 +850,7 @@ class TeamsDispatcher:
                     # The runtime's own `$KIROCREW_SCRATCH`, where the agent is
                     # told to stage screenshots, admitted beside the cwd root.
                     # Only the live provider knows it, so it is bound here.
-                    bind_provider=lambda p: renderer.authorize_scratch_root(
-                        str(getattr(p, "work_scratch_dir", None) or "")
-                    ),
+                    bind_provider=_bind_provider,
                     audit_caller=f"teams:{email}",
                     after_persist=_surface_new_session,
                 ),
@@ -844,8 +869,21 @@ class TeamsDispatcher:
             # are tapped after on_done, and without the renderer every tap reads as
             # stale. Bounded: one renderer per session, replaced by the next turn.
             # An approval card resolves while the turn still waits on the decider.
-            if not renderer.has_pending_choices:
-                self._active_renderers.pop(session_key, None)
+            # Identity-checked: a second message admitted before this turn acquired
+            # the session publishes its own renderer under the same key.
+            if (
+                not renderer.has_pending_choices
+                and self._active_renderers.get(session_key) is renderer
+            ):
+                del self._active_renderers[session_key]
+            elif (
+                renderer.has_pending_choices
+                and not bound
+                and not self.sessions.is_busy(session_key)
+            ):
+                # A reply that never held the session (an on_message hook answered
+                # it) still owns its chips; no running turn holds the slot.
+                self._active_renderers[session_key] = renderer
 
         # Answer anything that arrived mid-turn. Runs after the semaphore is
         # released so the drained turn can acquire it.
@@ -999,6 +1037,11 @@ class TeamsDispatcher:
         # queue mode, a /queue override, or steer unavailable.
         if not await self._enqueue_with_receipt(session_key, inbound, text):
             await (rerun() if rerun is not None else self.handle_message(inbound))
+        else:
+            # A turn Teams did not start ends without draining this queue.
+            drain_when_free(
+                channel=_CHANNEL, session_key=session_key, is_busy=self.sessions.is_busy
+            )
 
     # ── Adaptive Card clicks ───────────────────────────────────────────────
 
@@ -1670,9 +1713,15 @@ class TeamsDispatcher:
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
+    def _configured_agent(self, identity: str | None = None) -> str:
+        """The agent *identity*'s current conversation runs with no ``/agent`` pick."""
+        return self.agent or self._default_agent.for_route(
+            self._conv, identity, self.cfg, self._live_cfg
+        )
+
     def _resolve_agent(self, identity: str | None = None) -> str:
         """The agent *identity*'s conversation runs: its ``/agent`` pick, else the default."""
-        configured = self.agent or self.cfg.agent.default_agent or _DEFAULT_KIROCREW_AGENT
+        configured = self._configured_agent(identity)
         return self._agent_picks.resolve(identity, configured)
 
     async def _handle_agent(
@@ -1697,7 +1746,8 @@ class TeamsDispatcher:
                 email,
                 command_argument(text),
                 conv=self._conv,
-                configured=self._resolve_agent(),
+                configured=self._configured_agent(),
+                running_default=self._configured_agent(email),
                 sessions=self.sessions,
                 session_key=lambda: self._session_key(email),
             ),
@@ -1846,7 +1896,9 @@ class TeamsDispatcher:
         assert self.client is not None
         session_key = resumed_key or self._session_key(self._identity(inbound))
         if not await self.sessions.try_acquire(session_key):
-            if self.sessions.has_session(session_key):
+            if self.sessions.is_retiring(session_key):
+                await self._reply(inbound, f"ℹ️ {COMPACT_ACCOUNT_CHANGED_TEXT}")
+            elif self.sessions.has_session(session_key):
                 await self._reply(
                     inbound,
                     "⏳ Still working on the previous message — try `/compact` again shortly.",

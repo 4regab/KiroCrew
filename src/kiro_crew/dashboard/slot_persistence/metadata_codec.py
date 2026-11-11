@@ -68,6 +68,7 @@ from kiro_crew.dashboard.slot_queue_repository import (
     queue_persist_signature,
     sanitize_restored_queue,
 )
+from kiro_crew.history import transcript_stem
 from kiro_crew.memory_stores import named_store_or_empty
 from kiro_crew.messaging.link import is_channel_session_key
 from kiro_crew.validation import ARTIFACT_SLUG_RE, normalize_theme_consent_sha
@@ -218,6 +219,8 @@ class SaveFolds:
     # clears the session's limit): ``None`` here means "nothing staged, read the
     # live slot", ``(value,)`` means "write *value*".
     turn_timeout_secs: tuple[int | None] | None = None
+    # Staged ``autocompact_pct`` for the threshold endpoint, the same shape.
+    autocompact_pct: tuple[float | None] | None = None
 
 
 @dataclass
@@ -424,9 +427,19 @@ def _read_model(r: _Read) -> None:
 
 def _read_autocompact_pct(r: _Read) -> None:
     from kiro_crew.dashboard import chat_persistence as cp  # circular import: facade imports owners
+    from kiro_crew.dashboard.transcript_binding import seed_autocompact_from_disk
 
-    if r.meta.get("autocompact_pct") is not None:
-        r.slot.autocompact_pct = cp._validate_autocompact_pct(r.meta["autocompact_pct"])
+    seed_autocompact_from_disk(
+        r.state, r.slot, cp._validate_autocompact_pct(r.meta.get("autocompact_pct"))
+    )
+
+
+def _staged_autocompact(slot: Any, folds: SaveFolds) -> float | None:
+    """The threshold a save writes: the endpoint's staged value, else the slot's."""
+    if folds.autocompact_pct is not None:
+        return folds.autocompact_pct[0]
+    value: float | None = slot.autocompact_pct
+    return value
 
 
 def _read_turn_timeout_secs(r: _Read) -> None:
@@ -483,6 +496,19 @@ def _read_agent_kind(r: _Read) -> None:
     # Only the two known values are honoured.
     if r.meta.get("agent_kind") in ("member", "template"):
         r.slot.agent_kind = r.meta["agent_kind"]
+
+
+def _read_backend(r: _Read) -> None:
+    # The harness the session was created on. Restored as stored and published
+    # to the selection's in-memory pick table, so the first turn after a restart
+    # allocates on it. A value governance has since denied still reads back: the
+    # selection gate degrades it with the reason in the log.
+    value = r.meta.get("backend")
+    if isinstance(value, str) and value and len(value) <= 64:
+        from kiro_crew import members as members_mod  # members imports artifacts: see cp
+
+        r.slot.backend = value
+        members_mod.note_session_backend_pick(r.slot.key, value)
 
 
 def _read_crew_mode_agent(r: _Read) -> None:
@@ -892,8 +918,8 @@ FIELDS: tuple[Field, ...] = (
         "autocompact_pct",
         _ALL,
         attr="autocompact_pct",
-        line=_always(lambda s: s.autocompact_pct),
-        merge=_always(lambda s: s.autocompact_pct),
+        line=_staged_autocompact,
+        merge=_staged_autocompact,
         read=_read_autocompact_pct,
     ),
     Field(
@@ -954,6 +980,17 @@ FIELDS: tuple[Field, ...] = (
         line=_truthy(lambda s: s.agent_kind),
         merge=_always(lambda s: s.agent_kind),
         read=_read_agent_kind,
+    ),
+    Field(
+        "backend",
+        _ALL,
+        attr="backend",
+        line=_truthy(lambda s: s.backend),
+        # Truthy in the merge too, and not slot-owned (``SLOT_OWNED_META_KEYS``):
+        # the pick is set once, at creation, and never cleared, so a carried-forward
+        # copy is always current and a line without one stays byte-identical to main's.
+        merge=_truthy(lambda s: s.backend),
+        read=_read_backend,
     ),
     Field(
         "crew_mode_agent",
@@ -1115,10 +1152,7 @@ FIELDS: tuple[Field, ...] = (
         attr="_origin",
         line=_truthy(lambda s: s._origin),
         merge=_truthy(lambda s: s._origin),
-        why=(
-            "applied at construction (``slot_args``), as ``str(...)``: a null origin "
-            'reads as the string "None" (#17026)'
-        ),
+        why="applied at construction (``slot_args``); a null origin reads as no origin",
     ),
     # The artifact companion binding: a bound session restored after a gateway
     # restart comes back as the artifact's active bound session.
@@ -1297,7 +1331,7 @@ FIELDS: tuple[Field, ...] = (
         line=_truthy(lambda s: s.linked_session_key),
         merge=_truthy(lambda s: s.linked_session_key),
         read=_read_linked_session_key,
-        why="RESUME does not restore it (a hooked revive restores it after the build)",
+        why="RESUME binds only a cron transcript's own key (slot_args); a hooked revive the rest",
     ),
     # Durable provenance: a name is not evidence, so this flag is what tells a
     # later boot the tab was adopted from a channel conversation.
@@ -1384,6 +1418,7 @@ LINE_ORDER: tuple[str, ...] = (
     "workspace",
     "memory_store",
     "agent_kind",
+    "backend",
     "crew_mode_agent",
     "app_agent_owner",
     "project",
@@ -1446,6 +1481,7 @@ MERGE_ORDER: tuple[str, ...] = (
     "workspace",
     "memory_store",
     "agent_kind",
+    "backend",
     "crew_mode_agent",
     "app_agent_owner",
     "project",
@@ -1497,6 +1533,13 @@ def encode(slot: _ChatSlot, *, folds: SaveFolds, merge: bool = False) -> dict:
     return out
 
 
+def own_cron_link(meta: Mapping[str, Any], history_key: str) -> str:
+    """The line's ``cron:`` link when it names *history_key*'s own file, else ``""``."""
+    link = str(meta.get("linked_session_key") or "")
+    same_file = transcript_stem(link) == transcript_stem(history_key)
+    return link if link.startswith("cron:") and same_file else ""
+
+
 def slot_args(meta: dict[str, Any], purpose: Purpose) -> dict[str, Any]:
     """The ``get_or_create_slot`` keywords *purpose* takes from *meta*.
 
@@ -1515,6 +1558,9 @@ def slot_args(meta: dict[str, Any], purpose: Purpose) -> dict[str, Any]:
         # Resuming a channel transcript adopts that conversation, so the tab is
         # channel-origin even when the session map cannot name its session.
         args["channel_origin"] = is_channel_session_key(purpose.history_key)
+        # Unbound, a cron transcript's slot would save to a second ``dashboard:`` file.
+        if link := own_cron_link(meta, purpose.history_key):
+            args["linked_session_key"] = link
     else:
         args["app"] = meta.get("app", "")
         if purpose.purpose == RESTORE:
@@ -1522,7 +1568,7 @@ def slot_args(meta: dict[str, Any], purpose: Purpose) -> dict[str, Any]:
             args["channel_origin"] = bool(meta.get("channel_origin")) or bool(
                 meta.get("linked_session_key")
             )
-    args["origin"] = str(meta.get("origin", ""))
+    args["origin"] = str(meta.get("origin") or "")
     return args
 
 

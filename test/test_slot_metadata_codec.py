@@ -61,6 +61,7 @@ _POPULATED: dict = {
     "workspace": "ws",
     "memory_store": "silo",
     "agent_kind": "member",
+    "backend": "claude",
     "crew_mode_agent": "kirocrew-conductor",
     "app_agent_owner": "pr-bulk-ops/agent-a",
     "project": "/srv/p",
@@ -130,6 +131,7 @@ _BASE_LINE_ORDER = (
     "workspace",
     "memory_store",
     "agent_kind",
+    "backend",
     "crew_mode_agent",
     "app_agent_owner",
     "project",
@@ -189,6 +191,7 @@ _BASE_MERGE_ORDER = (
     "workspace",
     "memory_store",
     "agent_kind",
+    "backend",
     "crew_mode_agent",
     "app_agent_owner",
     "project",
@@ -500,6 +503,12 @@ def test_slot_args_take_each_purposes_construction_inputs():
 
 
 @pytest.mark.parametrize("purpose", sorted(codec.PURPOSES))
+def test_a_null_origin_reads_as_no_origin(purpose):
+    """A JSON ``null`` origin is no origin, never the string ``"None"``."""
+    assert codec.slot_args({"origin": None}, _purpose(purpose, name="x"))["origin"] == ""
+
+
+@pytest.mark.parametrize("purpose", sorted(codec.PURPOSES))
 def test_a_member_pin_keeps_the_bindings_agent_and_mode(purpose, tmp_path, monkeypatch):
     state = _state(tmp_path, monkeypatch)
     meta = {"agent": "line-agent", "mode": "focus"}
@@ -735,6 +744,7 @@ def _saved_merge_card(index: int) -> dict:
             "session": f"dashboard:fork-{index}",
             "slot": f"fork-{index}",
             "title": f"Fork {index}",
+            "createdAt": "2026-01-01T00:00:00+00:00",
             "after": "",
             "through": f"message-{index}",
             "digest": f"{index:064x}",

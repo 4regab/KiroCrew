@@ -249,6 +249,7 @@ def spawn_run(name: str, args: dict[str, Any]) -> str | DeferredTool:
     backend = args.get("backend") or ""
     label = normalize_spawn_label(args.get("label"))
     keep = bool(args.get("keep"))
+    silent = args.get("silent") is True
     # Context scope: absent ⇒ true, so a parent that passes nothing gets the
     # same context a normal session would.
     inc_memory = args.get("include_memory", True) is not False
@@ -372,6 +373,10 @@ def spawn_run(name: str, args: dict[str, Any]) -> str | DeferredTool:
             body["label"] = t_label
         if keep:
             body["keep"] = True
+        if silent:
+            # Forwarded, not just accepted: a schema field the handler drops
+            # makes the documented flag a silent no-op (the `crew` rule above).
+            body["silent"] = True
         if not inc_memory:
             body["include_memory"] = False
         if not inc_lessons:
@@ -896,7 +901,9 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         render_session_memory,
     )
     from kiro_crew.mcp_tools.spawn_parts.wave import (  # noqa: F401
+        _HELD_READS,
         _OWNER_UNRESOLVED_PREFIX,
+        _TASK_STORE_UNAVAILABLE_CODE,
         RESUME_HOLD_SECS,
         _audit_owner,
         _carried_in_reply,
@@ -912,6 +919,7 @@ if TYPE_CHECKING:  # names the owners import from elsewhere in kiro_crew, still 
     )
     from kiro_crew.context_management import COMPLETION_KEEP_DEFAULT_CHARS  # noqa: F401
     from kiro_crew.execution_context import read_session_execution  # noqa: F401
+    from kiro_crew.mcp_shared import DEFERRED_STEP_WORKERS  # noqa: F401
     from kiro_crew.platform import redact_via_context as redact  # noqa: F401
     from kiro_crew.security import redact_credentials, redact_exfiltration_urls  # noqa: F401
     from kiro_crew.spawn_label import SPAWN_LABEL_MAX_CHARS  # noqa: F401
@@ -922,7 +930,6 @@ if TYPE_CHECKING:  # names the owners import from elsewhere in kiro_crew, still 
         parent_spawn_allowlists,
         visible_agent_names,
     )
-    from kiro_crew.subagent_persistence import agent_dir_for_display  # noqa: F401
     from kiro_crew.subagent_read_collected import post_mark_collected  # noqa: F401
     from kiro_crew.subagent_wait_reasons import queued_wait_text  # noqa: F401
     from kiro_crew.validation import (  # noqa: F401

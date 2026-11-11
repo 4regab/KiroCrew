@@ -50,6 +50,7 @@ from kiro_crew.history import (
 
 if TYPE_CHECKING:
     from kiro_crew.dashboard.state import _ChatSlot
+    from kiro_crew.dashboard.transcript_binding import TranscriptBinding
     from kiro_crew.history import ConversationLog
 
 logger = logging.getLogger("kiro_crew.dashboard.chat_persistence")
@@ -61,6 +62,10 @@ logger = logging.getLogger("kiro_crew.dashboard.chat_persistence")
 #: row derives nothing, and an owned key's absence would erase a valid stamp.
 #: Unowned means ``carry_unowned_metadata`` keeps the stored value instead.
 _META_LAST_USER_AT = "last_user_at"
+
+
+#: The line's record of which agent the chat runs on, kept together.
+_AGENT_BINDING_KEYS = ("agent", "agent_kind", "crew_mode_agent")
 
 
 def _latest_stamp(*candidates: str) -> str:
@@ -444,6 +449,22 @@ def close_identity(closed: bool) -> str:
     return secrets.token_hex(8) if closed else ""
 
 
+def keeps_own_close(slot: _ChatSlot, closed: bool, existing_meta: dict) -> bool:
+    """Whether an open-shaped full save of *slot* keeps the close on its line.
+
+    True once the slot's own close archived the line (``note_close_recorded``)
+    while the close fence still stands. Such a save -- a turn that outlived the
+    close's cancel wait -- reads open only because it is stale: a reopen is a new
+    slot object, and a close that puts its slot back releases the fence.
+    """
+    return (
+        not closed
+        and bool(existing_meta.get("closed"))
+        and getattr(slot, "_close_recorded", False) is True
+        and bool(getattr(slot, "is_closing", False))
+    )
+
+
 def merge_empty_window(
     conv_log: ConversationLog,
     slot: _ChatSlot,
@@ -460,6 +481,9 @@ def merge_empty_window(
     after_commit_under_lock: Callable[[], None] | None = None,
     queue_deferred_under_lock: Callable[[dict], bool] | None = None,
     turn_timeout_override: tuple[int | None] | None = None,
+    autocompact_override: tuple[float | None] | None = None,
+    after_commit_on_transcript: Callable[[], None] | None = None,
+    routed_binding: TranscriptBinding,
 ) -> str | None:
     """Commit a forced or closing save of a message-less slot as a metadata merge.
 
@@ -473,6 +497,13 @@ def merge_empty_window(
     on disk and does not move the queue witness, so a snapshot older than a
     queue another writer committed cannot overwrite it, and the queue stays
     owed for the next save.
+
+    ``after_commit_under_lock`` acts on *slot*, so it is skipped when the slot was
+    rebound while the merge ran. ``after_commit_on_transcript`` acts on the
+    transcript the merge targets, so it runs under the same lock after every
+    commit, and for a line-less tab, whose slot then holds the only copy.
+    ``routed_binding`` is the binding the save read with its routing
+    (:func:`autocompact_fold`).
 
     Raises ``OSError`` when the record is unreadable, so a close or an
     acknowledged edit is never reported durable on a merge that did not happen.
@@ -529,6 +560,10 @@ def merge_empty_window(
             # live queue itself.
             if slot_history_key(slot) == history_key:
                 slot._queue_persisted_sig = queue_persist_signature(queue_snapshot)
+            if after_commit_on_transcript is not None:
+                # The slot holds the transcript's only copy, so the save that
+                # creates the line must already read it.
+                after_commit_on_transcript()
             return False
         if refusal_under_lock is not None:
             refusal = refusal_under_lock(meta)
@@ -575,8 +610,11 @@ def merge_empty_window(
             # here would write the stale live flag.
             mutes_opened=mutes_opened_override,
             muted=muted_override,
-            # The turn-time-limit endpoint's staged value, the same way.
+            # The turn-time-limit and threshold endpoints' staged values, the same way.
             turn_timeout_secs=_turn_timeout_fold(slot, turn_timeout_override, meta),
+            autocompact_pct=autocompact_fold(
+                slot, autocompact_override, routed_binding, history_key
+            ),
         )
         merged_fields.update(cp._metadata_codec.encode(slot, merge=True, folds=folds))
         if queue_deferred_under_lock is not None and queue_deferred_under_lock(meta):
@@ -587,6 +625,8 @@ def merge_empty_window(
 
     def _after_commit_under_lock() -> None:
         _record_pending_memory_mode(pending_mode_target, merged_fields["memory_mode"])
+        if after_commit_on_transcript is not None:
+            after_commit_on_transcript()
         # The queued prompts this merge committed are now durable, so the
         # flush's drift check must stop reporting them as owed. Set inside the
         # lock, like the full save's witness: a writer that commits a newer
@@ -697,6 +737,33 @@ def _stamp_delivered_merge_cards(entries: Iterable[dict], window_note_ids: set[s
     ]
 
 
+# Thresholds the threshold endpoint committed to a transcript (by history key) and
+# has not yet published to its live slots; it drops each once published.
+autocompact_commits: dict[str, tuple[float | None]] = {}
+
+
+def autocompact_fold(
+    slot: _ChatSlot,
+    override: tuple[float | None] | None,
+    routed: TranscriptBinding,
+    history_key: str,
+) -> tuple[float | None]:
+    """The ``autocompact_pct`` a save writes to *history_key*, under its lock.
+
+    The endpoint's staged value wins, then one it committed and has not yet
+    published (``autocompact_commits``). Otherwise the threshold is the binding's, and
+    a slot rebound while the save waited for the lock holds another transcript's,
+    so a slot that moved writes *routed*, the binding read with its routing.
+    """
+    if override is not None:
+        return override
+    committed = autocompact_commits.get(history_key)
+    if committed is not None:
+        return committed
+    live = slot._binding  # read before the key, so a rebind between them reads as moved
+    return ((live if slot_history_key(slot) == history_key else routed).autocompact_pct,)
+
+
 def build_full_line(
     slot: _ChatSlot,
     existing_meta: dict,
@@ -712,6 +779,7 @@ def build_full_line(
     mutes_opened_override: bool | None = None,
     muted_override: bool | None = None,
     turn_timeout_override: tuple[int | None] | None = None,
+    autocompact_override: tuple[float | None] | None = None,
 ) -> tuple[dict, str, list[dict], set[str], str | None]:
     """The line a full save writes: ``(line, mode, queue, retired note ids, tab_id)``.
 
@@ -877,6 +945,13 @@ def build_full_line(
     # repeatedly regenerating a reply cannot re-bill a failing
     # consolidation turn on each gesture.
     rotation = int(existing_meta.get("rotation_generation", 0) or 0) + 1 if rewrite else None
+    closed_id = close_identity(closed)
+    if keeps_own_close(slot, closed, existing_meta):
+        # Written back verbatim, ``closed_id`` included, so the close still
+        # answers to the compare-and-clear keyed on the stamp it wrote.
+        closed = True
+        closed_at = existing_meta.get("closed_at")
+        closed_id = str(existing_meta.get("closed_id") or "")
     # Preserve history-layer-owned metadata this dashboard save does NOT
     # manage: the save is authoritative only for the slot fields it writes
     # (SLOT_OWNED_META_KEYS), where an absent field means "cleared"; every
@@ -890,7 +965,7 @@ def build_full_line(
             last_consolidated=existing_meta.get("last_consolidated", 0),
             closed=closed,
             closed_at=closed_at,
-            closed_id=close_identity(closed),
+            closed_id=closed_id,
             dismissed_source_links=dismissed,
             deferred_notes=surviving_hold,
             queued_prompts=_durable_queue,
@@ -904,6 +979,7 @@ def build_full_line(
             mutes_opened=mutes_opened_override,
             muted=muted_override,
             turn_timeout_secs=_turn_timeout_fold(slot, turn_timeout_override, existing_meta),
+            autocompact_pct=autocompact_override,
         ),
     )
     # The drop records this write retires are CONSUMED only after the
@@ -1003,6 +1079,14 @@ def build_full_line(
         _tighten_carried_execution(meta_line, _mode)
     else:
         carry_unowned_metadata(meta_line, existing_meta, SLOT_OWNED_META_KEYS)
+        if not slot.agent and existing_meta.get("agent"):
+            # A slot holding no agent never chose one: a pick always stamps a
+            # name, the default template included. Its full save must not erase
+            # the agent binding the line already records (a slot built on this
+            # key without restoring the line would otherwise strip it).
+            for meta_key in _AGENT_BINDING_KEYS:
+                if meta_key in existing_meta:
+                    meta_line[meta_key] = existing_meta[meta_key]
         # The durable execution record is carried, not owned, and it
         # holds a ``memory_mode`` of its own. The line's mode was just
         # ratcheted above; the record must never read looser than it.

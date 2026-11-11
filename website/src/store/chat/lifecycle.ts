@@ -163,7 +163,7 @@ export const createSlot = createAsyncThunk<
       try {
         await api.setSlotColorHex(slot.key, explicitHex)
       } catch (err) {
-        await api.deleteChatSlot(slot.key).catch(() => {})
+        await api.deleteChatSlot(slot.key, slot.incarnation).catch(() => {})
         throw err
       }
     } else {
@@ -178,7 +178,7 @@ export const createSlot = createAsyncThunk<
           try {
             await api.setSlotColor(slot.key, ci)
           } catch (err) {
-            await api.deleteChatSlot(slot.key).catch(() => {})
+            await api.deleteChatSlot(slot.key, slot.incarnation).catch(() => {})
             throw err
           }
         } else {
@@ -213,7 +213,7 @@ export const createSlot = createAsyncThunk<
       try {
         await api.chatSlotProject(slot.key, project)
       } catch (err) {
-        await api.deleteChatSlot(slot.key).catch(() => {})
+        await api.deleteChatSlot(slot.key, slot.incarnation).catch(() => {})
         throw err
       }
     }
@@ -414,6 +414,37 @@ export const forkSlot = createAsyncThunk(
       throw e
     }
     if (d.ok) dispatch(listForkedSlot(d))
+    return d
+  },
+)
+
+// "Keep this chat": promotes an ephemeral (incognito/temporary) slot to
+// persistent by forking its WHOLE transcript into a new persistent slot, and
+// leaves the ephemeral original open and unchanged. The server always makes
+// the new slot persistent, which is addSlotOptimistic's default, so no
+// memory_mode is passed. A refusal rejects with a value so the caller can read
+// the gateway's `code` (see forkSlot).
+export const promoteSlot = createAsyncThunk(
+  'chat/promoteSlot',
+  async ({ slot }: { slot: string }, { dispatch, rejectWithValue }) => {
+    let d
+    try {
+      d = await api.promoteChatSlot(slot)
+    } catch (e) {
+      const status = (e as { status?: unknown } | null)?.status
+      const body = (e as { body?: unknown } | null)?.body
+      if (typeof status === 'number') {
+        return rejectWithValue({
+          status,
+          message: errMessage(e),
+          code: parseErrorCode(typeof body === 'string' ? body : undefined),
+        })
+      }
+      throw e
+    }
+    if (d.ok) {
+      dispatch(addSlotOptimistic({ key: d.key, title: d.title || d.key, messages: d.messages || 0, running: false, folder_id: d.folder_id, ...(d.pinned ? { pinned: true } : {}) }))
+    }
     return d
   },
 )

@@ -33,6 +33,7 @@ from kiro_crew.mcp_dashboard_session_runs import (
     _run_session_send,
     _run_session_set_color,
     _run_session_set_model,
+    _run_session_set_note,
     _run_session_status,
     _run_session_stop,
     _run_session_summary,
@@ -134,6 +135,24 @@ def _session_tools() -> tuple[Tool, ...]:
                             "the model's default."
                         ),
                     },
+                    "backend": {
+                        "type": "string",
+                        "description": (
+                            "Harness (agent backend) the new session runs on, spelled as "
+                            "spawn_run's `backend` takes it, e.g. 'kiro', 'claude', 'codex'. "
+                            "Kept for the session's whole life: every turn, restart, reset "
+                            "and compaction runs on it, and a spawn_run from that session "
+                            "with no `backend` of its own starts its child on it too. It "
+                            "outranks a Bot's own harness setting, as spawn_run's does. A "
+                            "backend that is unknown, not allowed by policy or not installed "
+                            "here is refused with nothing created (`unknown_backend`, "
+                            "`backend_not_installed`, `backend_restart_required`), and the "
+                            "refusal lists the ones that can start. `model`, when given, "
+                            "must be an id THAT backend serves (`model_rejected` otherwise). "
+                            "Omit to run on the default harness, as today. Not taken with "
+                            "`crew`."
+                        ),
+                    },
                     "autocompact_pct": {
                         "type": "number",
                         "minimum": AUTOCOMPACT_PCT_MIN,
@@ -207,8 +226,8 @@ def _session_tools() -> tuple[Tool, ...]:
                         "type": "string",
                         "description": (
                             "Short name for the new session, shown in the sidebar. Omit to "
-                            "start from `Fork of <source title>`, which is then renamed "
-                            "automatically after the latest question the copy holds."
+                            "start from `Fork of <source title>`, which is renamed "
+                            "automatically after the first message a person sends the fork."
                         ),
                     },
                     "folder": {
@@ -460,6 +479,38 @@ def _session_tools() -> tuple[Tool, ...]:
             run=_run_session_set_color,
             identity="strict",
             routes=("POST /api/session-control/set-color",),
+        ),
+        Tool(
+            name="session_set_note",
+            description=(
+                "Leave a note in a session you created without starting a turn there: "
+                "a note line in its transcript, which its next turn also reads once as "
+                'background context labelled "session_set_note". A session that is '
+                "running a turn gets the note when that turn ends. State facts, do not "
+                "ask questions: a question rides along and may be answered on an "
+                "unrelated turn. This session itself and sessions you did not create "
+                "are refused, including the person's own tabs."
+            ),
+            schema={
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": (
+                            "Session key from list_sessions or session_status, or its "
+                            "exact title."
+                        ),
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "The note text, a short declarative statement.",
+                    },
+                },
+                "required": ["target", "note"],
+            },
+            run=_run_session_set_note,
+            identity="strict",
+            routes=("POST /api/session-control/set-note",),
         ),
         Tool(
             name="session_rename",
@@ -755,6 +806,14 @@ def _session_tools() -> tuple[Tool, ...]:
                     "reasoning_effort": {
                         "type": "string",
                         "description": "As session_create takes it.",
+                    },
+                    "backend": {
+                        "type": "string",
+                        "description": (
+                            "The harness the worker runs on, as session_create takes it. "
+                            "A backend that cannot start here refuses the dispatch at "
+                            "session_create, and the item is closed."
+                        ),
                     },
                 },
                 "required": ["title", "acceptance", "agent", "seed"],

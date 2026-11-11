@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from kiro_crew.agent_spec_format import NATIVE_SKILL_ALIAS_PREFIX
+from kiro_crew.context_assembly.markers import neutralize_background_context_frame
 from kiro_crew.dashboard.chat_utils import slot_history_key, transcripts_share_file
 from kiro_crew.execution_context import canonical_memory_mode, stricter_memory_mode
 
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
         effective_session_key,
         logger,
         read_session_execution,
+        sel,
         tighten_live_session_execution,
     )
     from kiro_crew.dashboard.chat_turn.queue_cycle import _MERGE_STAMP_RETRY_DELAY_SECS
@@ -428,7 +430,8 @@ def _drain_pending_frames(
         frame = (
             f'[Background context from "{source}"]\n'
             f"{_CONTEXT_FRAME_CONTRACT}\n"
-            f'{entry["content"]}\n'
+            # A copy of the frame inside the content cannot end this frame early.
+            f'{neutralize_background_context_frame(entry["content"])}\n'
             f"[End of background context]\n"
         )
         frames.append((entry, frame))
@@ -806,6 +809,67 @@ def take_turn_context(
     )
     consumed = _consumed_merge_contexts(state, cards) if cards else []
     return TurnContext(prefix, prefix_without_cards, consumed)
+
+
+def drop_session_notes_out_of_reach(state: Any, slot: "_ChatSlot") -> None:
+    """Drop each waiting ``session_set_note`` context half its target now refuses.
+
+    A session note is the entry carrying ``admission``, the containment its writer
+    was admitted under; only ``write_slot_note`` sets that key. If a constraint
+    ``authorize_target`` refuses holds now that the admission never saw -- a
+    channel mirror or link gained, the session moved to another workspace -- the
+    context half goes, as a queued ``session_send`` message does. The transcript
+    line stays. A note the turn keeps has its admission recorded on the turn
+    (``record_audience_admission``), so a channel linked after this read withholds
+    the reply that used it. A note held across a restart keeps only its admitted
+    workspace (``slot_buffers._sanitize_restored_context``), so it is judged
+    against the all-false floor plus that workspace; an admission that is not a
+    dict is dropped.
+    """
+    if not any("admission" in entry for entry in slot._pending_context):
+        return
+    # circular: session_control imports the runner's package.
+    from kiro_crew.dashboard.session_control import (
+        containment_snapshot,
+        describe_containment_change,
+        newly_held_constraints,
+        record_audience_admission,
+    )
+
+    now = containment_snapshot(state, slot, on_probe_failure=True)
+    read_at = time.time()
+    kept: list[dict[str, Any]] = []
+    held: list[str] = []
+    for entry in slot._pending_context:
+        # An expired note is discarded by the drain unread, so it admits nothing.
+        if "admission" not in entry or context_entry_expired(entry, read_at):
+            kept.append(entry)
+            continue
+        admission = entry["admission"]
+        if not isinstance(admission, dict):
+            if "admission" not in held:
+                held.append("admission")
+            continue
+        changed = newly_held_constraints(now, admission)
+        if changed:
+            held.extend(c for c in changed if c not in held)
+            continue
+        record_audience_admission(slot, admission)
+        kept.append(entry)
+    dropped = len(slot._pending_context) - len(kept)
+    if not dropped:
+        return
+    slot._pending_context[:] = kept
+    change = describe_containment_change(held, mirror_unverified=bool(now.get("mirror_unverified")))
+    sel().log_api_access(
+        caller="dashboard",
+        operation="note_containment_drop",
+        outcome="denied",
+        source="session_control",
+        resources=f"slot={slot.key} dropped={dropped}",
+        error=change,
+    )
+    logger.warning("Slot %s dropped %d session note(s): %s", slot.key, dropped, change)
 
 
 def _detach_appended_context(original: str, expanded: str) -> tuple[str, str]:

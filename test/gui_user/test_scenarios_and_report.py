@@ -195,7 +195,7 @@ class TestShippedScenarios:
                     for i, step in enumerate(sc.steps)
                     if any(label in step for label in labels)
                     and re.search(r"\b(click|find)\b", step, re.IGNORECASE)
-                    and "Search Bots" not in step
+                    and "Search bots" not in step
                 ),
                 None,
             )
@@ -203,7 +203,7 @@ class TestShippedScenarios:
                 continue
             checked += 1
             searched = any(
-                "Search Bots" in step and any(m.split("-")[0] in step.lower() for m in sc.members)
+                "Search bots" in step and any(m.split("-")[0] in step.lower() for m in sc.members)
                 for step in sc.steps[:click_at]
             )
             assert (
@@ -417,7 +417,7 @@ class TestShippedScenarios:
     def test_members_dm_scenario_says_where_the_list_is_before_the_search(self) -> None:
         """The page reopens the last mate with the list in the switcher; the steps say so before the search."""
         sc = scenarios.load_scenario(SCENARIOS_DIR / "members-dm-hello.yaml")
-        search = next(i for i, s in enumerate(sc.steps) if "Search Bots" in s)
+        search = next(i for i, s in enumerate(sc.steps) if "Search bots" in s)
         before = " ".join(sc.steps[:search])
         assert "avatar switcher" in before
         assert '"Show the full roster"' in before
@@ -571,6 +571,19 @@ class TestShippedScenarios:
             for label in (en["app"]["notifications"], empty, en["app"]["open_inbox"]):
                 assert f'"{label}"' in text, (name, label)
             assert "Activity will appear here" not in text, name
+
+    def test_crewmate_panel_tabs_quotes_the_bot_panels_workspace_label(self) -> None:
+        """The Bot panel titles its Files view with the Profile card's word.
+
+        A scenario that asks for a "Files" tab there stalls the tester every night.
+        """
+        locales = Path(__file__).resolve().parents[2] / "website/src/i18n/locales"
+        en = json.loads((locales / "en.json").read_text(encoding="utf-8"))
+        workspace = en["pages"]["membersPage"]["profile_workspace"]
+        sc = scenarios.load_scenario(SCENARIOS_DIR / "crewmate-panel-tabs.yaml")
+        text = " ".join([*sc.steps, *sc.expectations])
+        assert f'Click the "{workspace}" tab' in text
+        assert '"Files"' not in text
 
     def test_scenarios_name_the_dormant_row_by_its_shipped_sentence(self) -> None:
         """The sleeping-session expander row is named by its shipped sentence.

@@ -522,7 +522,7 @@ def _url_payload_command(n: int) -> str:
 #: (owners, kits, revoked approvals, tool access, migration ledger), write-denied
 #: like the folder itself. Data, not rule logic: the matcher is unchanged.
 #:
-#: Raised by 3, from 32,613, for the enterprise install-tree write fence in
+#: Raised by 3, from 32,613, for the LTS install-tree write fence in
 #: ``paths``: one import and one ``or`` clause on the write gate, plus the blank line
 #: isort puts after the import. The matcher lives outside the package
 #: (``kiro_crew.edition_install_fence``).
@@ -717,7 +717,62 @@ def _url_payload_command(n: int) -> str:
 #: by ``tool_call_id``, the non-shell tool kinds, row-time merge across files and
 #: the unreadable-file finding, so ``security audit`` never reports an unread
 #: scan as clean. No check was relaxed.
-_PACKAGE_LINE_BUDGET = 35_001
+#: Raised by 4, from 35,001, for the two endorsed-copy leaves on the read+write floor in
+#: ``paths_lists`` (copies of leaves already there). Re-measured.
+#: Raised by 31, from 35,005, for ``text_redaction.ends_plain_sentence``:
+#: the dashboard's sentence-end check moved here unchanged so the Slack stream
+#: shares it; the dashboard copy was deleted. Re-measured.
+#: Raised by 4, from 35,036, for the Bearer branch's ``bearer_prefix`` group and pass
+#: 1's value-only span. Re-measured.
+#: Raised by 34, from 35,040, for ``readonly_bash``'s ``uniq`` operand walk (a bare
+#: ``-`` is an operand, every word after the first operand is one, and a glob in
+#: any word prompts) and the ``git blame --output`` write flag. Nothing is
+#: relaxed. Re-measured.
+#: Raised by 20, from 35,074, for the per-decision payload-walk memo in
+#: ``shell_normalizer._shell_payload_walk`` (one walk of each distinct text per
+#: ``is_denied``) and the paren walk's skip of its second, ``${...}``-aware
+#: pass when the span holds no ``{``. Same verdicts, less work. Re-measured.
+#: Raised by 49, from 35,094, for the ssh floor's glob-verb read: ``match_globs`` on
+#: ``_operand_targets_self`` and ``_host_is_self``, the ``_ssh_verb_basename`` helper
+#: and its facade row, so a glob operand after a bare glob verb (the ``* * * *`` of a
+#: cron schedule) is not read as this host; and ``helpers``' RLIMIT_AS key, now
+#: ``max_address_space_mb``. Re-measured.
+#: Raised by 3, from 35,143, for the ``crew-oauth-bridge`` leaf on the read-gate floor
+#: in ``paths_lists`` (Connection bridge snapshots, fenced from file tools). Re-measured.
+#: Raised by 14, from 35,146, for ``DeniedCommandRule.note``: the optional field and its
+#: docstring, and ``edition_denied_rules`` carrying an edition rule's note through. It
+#: changes only the refusal text; no rule, pattern or match changed. Re-measured.
+#: Raised by 67, from 35,160, for the Outlook ``webLink`` route
+#: (``/owa/?ItemID=<id>&exvsurl=1&...``) in ``redaction_entropy``, its use by
+#: the exfil gate and its five names in the ``redaction`` facade manifest, so
+#: Graph's own message and event links are not masked or blocked. Re-measured.
+#: Raised by 84, from 35,227, for the self-protection-kill refusal diagnostic: the
+#: ``self-protection-kill`` floor reports the matched kill TARGET's offsets instead of
+#: the whole command. ``_is_self_kill`` is a boolean wrapper over a span-returning
+#: ``_self_kill_span`` (one walk, so verdict and span cannot disagree) with a local
+#: ``_locate`` closure that anchors the span on the product NAME inside the matched
+#: token -- best-effort location, so it points at the name only in an unquoted,
+#: single-occurrence, at/after-verb command and returns the whole command otherwise;
+#: ``deny_gate`` forwards it behind a length-preserving guard. No matcher, rule,
+#: threshold or verdict moved -- the decision is byte-identical and the change is
+#: diagnostics-only. Re-measured.
+#: Raised by 62, from 35,311, for ``_quoted_assignment_scripts`` and ``_self_frames``:
+#: the self-protection floor, its ssh self-target floor included, walks a carrier's
+#: quoted script that opens with an assignment whole, so the assignment resolves
+#: inside it. Deny-only. Re-measured.
+#: Raised by 38, from 35,373, for ``shell_commands.pipelines`` and the rm floor reading
+#: each pipeline's ``echo`` / ``printf`` stages and shells in ``_command_tokens``. It only
+#: adds refusals. Re-measured.
+#: Raised by 122, from 35,411, to the package's measured size with the structured
+#: credential detectors' seam: ``redaction`` splits pass 1 from passes 2-4 so the
+#: detectors' hits can run in front of them, carries pass 4's prefix snapshot
+#: across that split, routes the plan by the internal switch, and names the
+#: whole-text fail-closed placeholder; ``text_redaction`` asks the detectors where
+#: to hold a stream buffer, lets only a unit they are still deciding lower the
+#: holdback floor, and drops a unit decided while still running, which does
+#: nothing while the switch is off. The detectors live in a subpackage this
+#: budget does not count. Re-measured.
+_PACKAGE_LINE_BUDGET = 35_533
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second

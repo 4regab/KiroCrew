@@ -15,7 +15,7 @@ import functools
 from typing import TYPE_CHECKING
 
 from kiro_crew.agent_capabilities import CapabilityError
-from kiro_crew.dashboard.chat_utils import TRANSIENT_RETRY_KIND
+from kiro_crew.dashboard.chat_utils import MODEL_UNAVAILABLE_KIND, TRANSIENT_RETRY_KIND
 from kiro_crew.security import redact
 from kiro_crew.session_capabilities import CapabilityStartupError
 
@@ -26,7 +26,6 @@ if TYPE_CHECKING:
         STOP_REASON_CANCELLED,
         SYNTHETIC_RECOVERY_KIND,
         KiroCrewConfig,
-        _member_capable_backend_names,
         _MemoryUnavailable,
         acp_error_is_transient,
         logger,
@@ -415,6 +414,18 @@ async def _on_acp_error_card(turn: _ChatTurn, exc) -> None:
         # The same seam carries the sign-in tag: a session the upstream
         # rejected gets a "Sign in to Kiro" affordance instead.
         _unentitled_meta = _terminal_error_meta(exc)
+        if slot._fallback_walked:
+            # A card that ends a fallback walk is judged by the SELECTED model,
+            # the one a Resume returns to (the start-of-turn restore probe
+            # re-selects it), not by the last candidate's error: a refused
+            # primary whose candidate only throttled must not offer Resume, and
+            # a throttled primary whose candidate was refused keeps it.
+            _primary_refused = getattr(slot, "_fallback_walk_refused", False) is True
+            _last_kind = (_unentitled_meta or {}).get("kind")
+            if _primary_refused and _unentitled_meta is None:
+                _unentitled_meta = {"kind": MODEL_UNAVAILABLE_KIND}
+            elif not _primary_refused and _last_kind == MODEL_UNAVAILABLE_KIND:
+                _unentitled_meta = None
         # Stays English: ``_err_text`` is the entitlement/startup formatter's own
         # output (the provider's rejection story), which a token cannot localize
         # without dropping that text.
@@ -455,15 +466,17 @@ async def _on_acp_error_card(turn: _ChatTurn, exc) -> None:
             # because a generation is per-loop, not globally unique.
             slot._last_turn_structural_terminal_loop_id = _directive_loop_id
             slot._last_turn_structural_terminal_loop_gen = _directive_loop_gen
-        # A cycle that never obtained a model session. Same scope rule as
-        # the structural verdict above -- only a self-driven nudge fire
-        # counts, or a human turn that happened to be starved would spend
-        # an unrelated loop's stand-down budget. The streak itself lives on
-        # the loop (``notify_cycle_start_failed``), which backs the loop off
-        # and eventually stands it down instead of firing cycle after cycle
-        # that can only fail the same way. Read with getattr: the two ACP
-        # exception families tag this fact independently and share no base.
-        _note_cycle_start_failure(slot.key, exc, self_wake=_directive_self_wake)
+        # A cycle that never obtained a model session. Only the loop's own
+        # cycle counts, a recovery it queued for itself included
+        # (``_wake_cycle``); a human turn that happened to be starved would
+        # otherwise spend an unrelated loop's stand-down budget. The streak
+        # itself lives on the loop (``notify_cycle_start_failed``), which backs
+        # the loop off and eventually stands it down instead of firing cycle
+        # after cycle that can only fail the same way. Read with getattr: the
+        # two ACP exception families tag this fact independently and share no base.
+        _wake_cycle = turn._wake_cycle
+        _wake_id, _wake_gen = _wake_cycle or ("", 0)
+        _note_cycle_start_failure(slot.key, exc, self_wake=_wake_cycle is not None)
         # A cycle that DID reach a model session and dispatched but then
         # died terminally here -- a backend error after retries were spent,
         # a persistent tool error, a prompt timeout. The gate (self-wake
@@ -477,9 +490,9 @@ async def _on_acp_error_card(turn: _ChatTurn, exc) -> None:
         await _note_cycle_failure(
             slot.key,
             exc,
-            self_wake=_directive_self_wake,
-            loop_id=_directive_loop_id,
-            expected_generation=_directive_loop_gen,
+            self_wake=_wake_cycle is not None,
+            loop_id=_wake_id,
+            expected_generation=_wake_gen,
         )
         # This branch ENDS the retry cycle: the error is terminal and
         # nothing is re-queued. Refresh the transient-5xx budget now so the
@@ -510,6 +523,7 @@ async def _on_acp_error_card(turn: _ChatTurn, exc) -> None:
         # moves it back).
         slot._fallback_candidate_idx = 0
         slot._fallback_walked = []
+        slot._fallback_walk_refused = False
 
 
 async def _on_session_closing(turn: _ChatTurn) -> None:
@@ -536,11 +550,113 @@ async def _on_session_closing(turn: _ChatTurn) -> None:
     turn._crew_log_error = _crew_log_error
 
 
+def _harness_unsupported_text(session_key: str) -> str:
+    """The ``capability_harness_unsupported`` row's text, its remedy taken from how
+    *session_key*'s backend was chosen.
+
+    The bare code names neither the setting nor the saved spec. A crewmate's worker is
+    refused for its kit, which only some member backends carry, so it gets the
+    kit's own refusal (``mate_worker.worker_kit_backend_refusal``). Any other chat
+    gets the fix for the tier of the selection gate that chose its backend: its
+    own pick, its Bot's pin (which outranks agent.member_acp_backend), the harness
+    a Bot's DM inherits (``mate_worker.inherited_harness_remedy``), or
+    Settings -> Agent Harness for a chat that is not a Bot's DM.
+    """
+    from kiro_crew.crewmate_harness import crewmate_for_session
+    from kiro_crew.members import is_crewmate_worker_session
+
+    member_text = (
+        "This bot has saved capabilities, and the harness its chats run on cannot load "
+        "them. Reset the member's Capabilities page, then start a new chat."
+    )
+    if is_crewmate_worker_session(session_key):
+        from kiro_crew.mate_worker import crewmate_worker_backend, worker_kit_backend_refusal
+
+        try:
+            cfg = KiroCrewConfig.load()
+            crew = crewmate_for_session(cfg, session_key)
+            reason = worker_kit_backend_refusal(crewmate_worker_backend(cfg, crew), cfg, crew)
+        except Exception as exc:  # noqa: BLE001 - the row must still be written
+            reason = str(exc)
+        return reason or member_text
+    from kiro_crew.acp_backends import (
+        ACP_BACKENDS_MEMBER_CAPABILITIES,
+        backend_to_stored,
+        resolve_selected_backend,
+        selectable_backends,
+    )
+    from kiro_crew.crewmate_harness import (
+        crewmate_harnesses,
+        crewmate_pin_for,
+        harness_label,
+        pin_remedy,
+    )
+    from kiro_crew.mate_worker import inherited_harness_remedy
+    from kiro_crew.members import is_member_session_key, session_backend_pick
+
+    try:
+        cfg = KiroCrewConfig.load()
+        pin = crewmate_pin_for(cfg, crewmate_for_session(cfg, session_key))
+        if session_backend_pick(session_key) is not None:
+            remedy = "start a new chat on a harness that can"
+        elif pin is not None:
+            member_route = resolve_selected_backend(cfg.agent.member_acp_backend)
+            remedy = pin_remedy(
+                pin,
+                crewmate_harnesses(cfg),
+                clearing_helps=member_route in ACP_BACKENDS_MEMBER_CAPABILITIES,
+            )
+        elif is_member_session_key(session_key):
+            remedy = inherited_harness_remedy(cfg, crewmate_harnesses(cfg))
+        else:
+            able = ", ".join(
+                sorted(
+                    harness_label(backend_to_stored(b))
+                    for b in ACP_BACKENDS_MEMBER_CAPABILITIES & selectable_backends()
+                )
+            )
+            remedy = f"in Settings → Agent Harness pick a harness that can ({able})"
+    except Exception:  # noqa: BLE001 - the row must still be written
+        logger.debug("Reading %s's harness pin failed", session_key, exc_info=True)
+        return member_text
+    return (
+        "This bot has saved capabilities, and the harness its chats run on cannot "
+        f"load them; {remedy}, or reset the member's Capabilities page, then start a "
+        "new chat."
+    )
+
+
+def _chat_harness_name(session_key: str) -> str:
+    """The name of the harness *session_key* runs on, for the tool-limits row.
+
+    Asked of the one selection gate, as the slash-command reader asks it: the
+    session's own pick, else its Bot's pin, else the member route or the default.
+    """
+    from kiro_crew.acp_backends import backend_to_stored
+    from kiro_crew.crewmate_harness import crewmate_backend_pin, harness_label
+    from kiro_crew.members import select_provider_backend, session_backend_pick
+
+    try:
+        cfg = KiroCrewConfig.load()
+        pick = session_backend_pick(session_key)
+        backend = select_provider_backend(
+            session_key,
+            cfg.agent.member_acp_backend,
+            cfg.agent.acp_backend,
+            backend_override=pick,
+            crew_backend=crewmate_backend_pin(cfg, session_key) if pick is None else None,
+        )
+    except Exception:  # noqa: BLE001 - the row must still be written
+        logger.debug("Reading %s's harness failed", session_key, exc_info=True)
+        return "an unknown harness"
+    return harness_label(backend_to_stored(backend))
+
+
 async def _on_error(turn: _ChatTurn, exc) -> None:
     """Any other error the turn raised."""
-    _directive_loop_gen = turn._directive_loop_gen
-    _directive_loop_id = turn._directive_loop_id
-    _directive_self_wake = turn._directive_self_wake
+    # As in _on_acp_error_card: a recovery the loop's cycle queued is that cycle.
+    _wake_cycle = turn._wake_cycle
+    _wake_id, _wake_gen = _wake_cycle or ("", 0)
     slot = turn.slot
     state = turn.state
     _memory_preparation_admitted = turn._memory_preparation_admitted
@@ -582,41 +698,16 @@ async def _on_error(turn: _ChatTurn, exc) -> None:
         if exc.project:
             _err_meta["project"] = exc.project
     elif isinstance(exc, CapabilityStartupError) and str(exc) == "capability_harness_unsupported":
-        # The bare code names neither the setting nor the saved spec, and
-        # changing agent.acp_backend does nothing for a member chat.
-        _err_text = (
-            "capability_harness_unsupported: This Bot has saved "
-            "capabilities, and the backend its chats run on "
-            "(agent.member_acp_backend, not agent.acp_backend) cannot load "
-            "them. Set agent.member_acp_backend to "
-            f"{_member_capable_backend_names()}, or reset the member's "
-            "Capabilities page, then start a new chat."
-        )
-        from kiro_crew.members import is_crewmate_worker_session
-
-        if is_crewmate_worker_session(session_key):
-            # A crewmate's worker is refused for its kit, which only some
-            # member backends carry, so the member card's remedy does not fit.
-            from kiro_crew.crewmate_harness import crewmate_for_session
-            from kiro_crew.mate_worker import crewmate_worker_backend, worker_kit_backend_refusal
-
-            _cfg = KiroCrewConfig.load()
-            try:
-                _worker_reason = worker_kit_backend_refusal(
-                    crewmate_worker_backend(_cfg, crewmate_for_session(_cfg, session_key))
-                )
-            except Exception as _exc:  # noqa: BLE001 - the row must still be written
-                _worker_reason = str(_exc)
-            if _worker_reason:
-                _err_text = "capability_harness_unsupported: " + _worker_reason
+        _err_text = "capability_harness_unsupported: " + _harness_unsupported_text(session_key)
         _err_meta = _terminal_error_meta(exc)
     elif (
         isinstance(exc, CapabilityStartupError) and str(exc) == "capability_tool_limits_unsupported"
     ):
+        harness = _chat_harness_name(session_key)
         _err_text = (
             "capability_tool_limits_unsupported: This Bot's saved "
             "capabilities turn off single tools on an MCP server. The backend "
-            "its chats run on (agent.member_acp_backend) cannot turn off single "
+            f"its chats run on ({harness}) cannot turn off single "
             "tools, so they would be on. On the member's Capabilities page, turn "
             "the whole server off or turn those tools back on, then start a new "
             "chat."
@@ -630,7 +721,7 @@ async def _on_error(turn: _ChatTurn, exc) -> None:
         _err_meta.update(
             gn.gateway_notice_meta(
                 gn.GATEWAY_NOTICE_CAPABILITY_TOOL_LIMITS_UNSUPPORTED,
-                setting="agent.member_acp_backend",
+                setting=harness,
             )
         )
     else:
@@ -658,7 +749,7 @@ async def _on_error(turn: _ChatTurn, exc) -> None:
     # AcpError, so they land here -- and a member slot is exactly the
     # population that runs there. Reporting only in the AcpError branch would
     # leave the loops this bound exists for never backing off.
-    _note_cycle_start_failure(slot.key, exc, self_wake=_directive_self_wake)
+    _note_cycle_start_failure(slot.key, exc, self_wake=_wake_cycle is not None)
     # The SIBLING of the failed-cycle report in the AcpError branch (_on_acp_error_card),
     # for the same reason the start-failure report is duplicated here: a
     # cycle that reached a session and dispatched but then died does not
@@ -682,9 +773,9 @@ async def _on_error(turn: _ChatTurn, exc) -> None:
     await _note_cycle_failure(
         slot.key,
         exc,
-        self_wake=_directive_self_wake,
-        loop_id=_directive_loop_id,
-        expected_generation=_directive_loop_gen,
+        self_wake=_wake_cycle is not None,
+        loop_id=_wake_id,
+        expected_generation=_wake_gen,
         err_meta=_err_meta,
     )
     if not (isinstance(exc, MemoryStartupUnavailable) and not _memory_preparation_admitted):

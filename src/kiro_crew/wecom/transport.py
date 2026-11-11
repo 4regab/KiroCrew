@@ -486,12 +486,15 @@ class WeComTransport(MessagingTransport):
     ) -> bool:
         """Mirror :meth:`authorize` on the userid the conversation id carries.
 
-        Defence in depth rather than the live gate: WeCom declares
-        ``supports_proactive_send=False``, so the shared send ladder refuses this
-        transport before asking. Implemented anyway, and fail-closed, so the
-        answer is already correct if that capability is ever flipped -- and
-        because ``send_message`` also accepts a one-shot ``response_url`` as its
-        conversation id, which is not a roster identity and is therefore refused.
+        The shared send ladder's recipient check for WeCom: WeCom declares
+        ``supports_proactive_send=True``, so the ladder does not refuse this
+        transport earlier, and its recipient leg (``_authorize_recipient``) asks
+        here and SEL-audits a refusal. ``send_message`` and ``send_document``
+        re-check the same roster through :meth:`_may_push` at the send boundary.
+
+        Every WeCom conversation id is the userid. An empty id is refused;
+        ``allow_all`` admits any non-empty id, just as :meth:`authorize` admits
+        any non-empty userid inbound.
         """
         if not conversation_id:
             return False
@@ -534,12 +537,18 @@ class WeComTransport(MessagingTransport):
             for user_id in sorted(identities)
         ]
         # Under the allow-everyone policy there is no configured list to draw on,
-        # so the warm peers ARE the list: they are the only addressable ones.
+        # so the warm peers ARE the list: they are the only addressable ones. They
+        # are marked learned, because messaging the bot once makes nobody the
+        # owner: an owner-DM path must never infer one from them.
         if self._allow_all:
             for chat_id in sorted(self._warm_chats):
                 if any(x.target_id == f"user:{chat_id}" for x in targets):
                     continue
-                targets.append(ConfiguredChannelTarget(f"user:{chat_id}", f"WeCom DM · {chat_id}"))
+                targets.append(
+                    ConfiguredChannelTarget(
+                        f"user:{chat_id}", f"WeCom DM · {chat_id}", learned=True
+                    )
+                )
         if self._warm_dropped:
             # Say the overflow out loud in EVERY snapshot while it holds: the
             # warm-peer bound has shed learned peers, so this list is a truncated

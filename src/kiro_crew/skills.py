@@ -140,6 +140,7 @@ from kiro_crew.skills_auto_model import (  # noqa: F401
     _build_auto_skill_content,
     _emit_pending_consumed,
     _emit_pending_staged,
+    frontmatter_pinned,
     set_pending_consumed_hook,
     set_pending_staged_hook,
 )
@@ -435,6 +436,9 @@ class SkillsLoader:
         self._closed = False
         self._disabled_apps_cache: tuple[float, frozenset[str]] | None = None
         self._released_apps_cache: tuple[float, frozenset[str]] | None = None
+        #: ``(deadline, apps root as spelled, (resolved apps root, resolved builtins
+        #: root))``; see ``skill_runtime.catalog._owner_roots``.
+        self._owner_roots_cache: tuple[float, str, tuple[Path, Path]] | None = None
         #: ``id(catalog list) -> (that list, (disabled apps, released apps), visible
         #: rows)``; see ``skill_runtime.catalog._iter_visible``.
         self._visible_memo: dict[
@@ -844,9 +848,19 @@ class SkillsLoader:
                 st = pinned_fs.stat_at(parent_fd, skill_dir.name)
                 if st is None or not stat.S_ISDIR(st.st_mode):
                     return False
+                # A directory with no SKILL.md of its own is not a skill: a folder
+                # of nested skills (``auto``, ``auto/.archive``, a family dir) would
+                # otherwise be wiped whole by a delete that GET answers 404 for.
+                skill_md = pinned_fs.stat_at(parent_fd, f"{skill_dir.name}/SKILL.md")
+                if skill_md is None or stat.S_ISDIR(skill_md.st_mode):
+                    return False
             finally:
                 os.close(parent_fd)
         elif is_link_or_junction(skill_dir):
+            return False
+        elif not os.path.lexists(skill_dir / "SKILL.md") or (
+            (skill_dir / "SKILL.md").is_dir() and not is_link_or_junction(skill_dir / "SKILL.md")
+        ):
             return False
         shutil.rmtree(skill_dir)
         self._invalidate_iter_cache()  # so the removal is reflected in list_skills() now

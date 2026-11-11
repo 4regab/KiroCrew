@@ -1,19 +1,15 @@
 /**
- * Settings > Developer > **Crewmates**: the server-side switches for crewmate
- * features. `dashboard.crewmate_threads`, reply threads on crewmate chat messages
- * (RFC crewmates launch, screen 07), is off by default. `agent.bot_messaging`,
- * `agent.group_rooms` and `agent.channel_posts`, which let Bots message each other,
- * join group chat rooms and ask to post to a channel, are on by default.
+ * Settings > Developer > **Crewmates**: the server-side switches for Bots reaching
+ * other Bots, group chat rooms and channels. `agent.bot_messaging`,
+ * `agent.group_rooms` and `agent.channel_posts` are on by default. The reply-threads
+ * switch sits in Feature Previews (`ReplyThreadsRow.tsx`).
  *
  * Sits under its own heading, right after Feature Previews. The heading is
- * visual only: config has no crewmate parent flag, so this toggle nests under a
+ * visual only: config has no crewmate parent flag, so these toggles nest under a
  * section title rather than under a parent key.
  *
- * Server-side, like the Power toggle on the Chat tab: the value is PATCHed to
- * `dashboard.crewmate_threads` and read back through the shared
- * `['kirocrewConfig']` query the Members page reads the flag from
- * (`useCrewmateThreadsFlag`), so the Reply in thread control appears or goes
- * on the next render without a reload.
+ * Server-side: each value is PATCHed to `agent.<switch>` and the shared
+ * `['kirocrewConfig']` query is refetched, so the switch reads the saved value.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -21,11 +17,9 @@ import { api } from '../../api/client'
 import ErrorNotice from '../../components/ErrorNotice'
 import { Btn } from '../../components/ui'
 import { SettingsCard, SettingsSection, SettingsToggle } from '../../components/settings'
-import { CREWMATE_THREADS_CONFIG_KEY } from '../../hooks/useCrewmateThreadsFlag'
 import { i18nT } from '../../i18n/t'
 
 type KirocrewConfigShape = {
-  dashboard?: { crewmate_threads?: boolean }
   agent?: { bot_messaging?: boolean; group_rooms?: boolean; channel_posts?: boolean }
 }
 
@@ -41,16 +35,6 @@ export function CrewmatesSection() {
     queryFn: () => api.kirocrewConfig(),
   })
   const [saveError, setSaveError] = useState('')
-  const threads = cfgQ.data?.dashboard?.crewmate_threads === true
-  const threadsMut = useMutation({
-    mutationFn: (v: boolean) => api.patchConfig(CREWMATE_THREADS_CONFIG_KEY, v),
-    onSuccess: () => {
-      setSaveError('')
-      void qc.invalidateQueries({ queryKey: ['kirocrewConfig'] })
-    },
-    onError: () => setSaveError(i18nT('pages.settings.crewmatesSection.failed_to_save')),
-  })
-
   const on = (key: AgentSwitch) => cfgQ.data?.agent?.[key] !== false
   const agentMut = useMutation({
     mutationFn: ({ key, value }: { key: AgentSwitch; value: boolean }) => api.patchConfig(`agent.${key}`, value),
@@ -94,14 +78,6 @@ export function CrewmatesSection() {
         />
       )}
       <SettingsCard>
-        <SettingsToggle
-          label={i18nT('pages.settings.crewmatesSection.reply_threads')}
-          hint={i18nT('pages.settings.crewmatesSection.reply_threads_desc')}
-          checked={threads}
-          onChange={(v) => threadsMut.mutate(v)}
-          disabled={!cfgQ.isSuccess || threadsMut.isPending}
-          configKey={CREWMATE_THREADS_CONFIG_KEY}
-        />
         <SettingsToggle
           label={i18nT('pages.settings.crewmatesSection.bot_messaging')}
           hint={i18nT('pages.settings.crewmatesSection.bot_messaging_desc')}

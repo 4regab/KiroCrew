@@ -308,13 +308,10 @@ class TestGatewayOriginInjection:
         install_app(src)
         return name
 
-    def _write_secret(self, name, *, mode=0o600, secret=None):
-        from kiro_crew.apps.manager import app_dir
+    def _write_secret(self, name, *, secret=None):
+        from kiro_crew.dashboard.token_auth import write_app_secret
 
-        path = app_dir(name) / ".app_secret"
-        path.write_text(secret if secret is not None else self._SECRET)
-        os.chmod(path, mode)
-        return path
+        write_app_secret(name, secret if secret is not None else self._SECRET)
 
     def _capture_child_env(self, monkeypatch, app_name):
         """Freeze the spawn at the Popen boundary and return the child env dict.
@@ -562,14 +559,33 @@ class TestGatewayOriginInjection:
         assert hmac.compare_digest(env["KIROCREW_GATEWAY_ORIGIN_PROOF"], good)
         assert not hmac.compare_digest(env["KIROCREW_GATEWAY_ORIGIN_PROOF"], bad)
 
+    def test_a_folder_secret_from_an_older_version_is_replaced_at_spawn(
+        self, tmp_path, app_env, monkeypatch
+    ):
+        """The spawn hands the backend a NEW secret; the folder copy is never read."""
+        from kiro_crew.apps import protected_app_state
+        from kiro_crew.apps.manager import app_dir
+        from kiro_crew.dashboard.token_auth import read_app_secret
+
+        name = self._install_backend_app(tmp_path)
+        protected_app_state.secret_path(name).unlink()
+        legacy = app_dir(name) / ".app_secret"
+        legacy.write_text("old-folder-secret", encoding="utf-8")
+
+        _result, env = self._capture_child_env(monkeypatch, name)
+        assert env is not None
+        assert env["KIROCREW_PROXY_SECRET"] not in ("", "old-folder-secret")
+        assert env["KIROCREW_PROXY_SECRET"] == read_app_secret(name)
+        assert not legacy.exists()
+
     def test_missing_secret_still_injects_origin_but_no_secret(
         self, tmp_path, app_env, monkeypatch
     ):
-        """A missing .app_secret is tolerated: origin still set, no proof, no secret."""
-        from kiro_crew.apps.manager import app_dir
+        """A missing secret is tolerated: origin still set, no proof, no secret."""
+        from kiro_crew.apps import protected_app_state
 
         name = self._install_backend_app(tmp_path)
-        (app_dir(name) / ".app_secret").unlink()  # install writes one; remove it
+        protected_app_state.secret_path(name).unlink()  # install writes one; remove it
         monkeypatch.setenv("KIROCREW_BOUND_PORT", "8123")
 
         _result, env = self._capture_child_env(monkeypatch, name)
@@ -882,6 +898,95 @@ class TestTheMdNotebookBackendCanSeeItsOwnStateFiles:
             "a third-party app bought the md-notebook state carve-out with its "
             f"name alone (saw {seen.get('visible')!r})"
         )
+
+
+class TestTheBackendSpawnLiftsTheAppsDeclaredMasks:
+    """``apps/backend.py`` hands an app's ``credentialMasks`` back to its own backend spawn.
+
+    The leaves themselves are pinned in ``test_app_credential_masks.py``; this pins the
+    call site: the lift reaches ``wrap_argv``, keyed on the provenance of the code the
+    spawn executes, never on a fixed source.
+    """
+
+    @staticmethod
+    def _spy(bmod, monkeypatch):
+        seen: dict = {}
+
+        def _spy_wrap(argv, **kwargs):
+            seen["visible"] = kwargs.get("extra_visible_dirs")
+            return (list(argv), None)
+
+        monkeypatch.setattr(bmod, "wrap_argv", _spy_wrap)
+        monkeypatch.setattr(
+            bmod.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(OSError("stop"))
+        )
+        return seen
+
+    @staticmethod
+    def _install(tmp_path, name, masks):
+        src = tmp_path / "source" / name
+        src.mkdir(parents=True)
+        (src / APP_MANIFEST_FILENAME).write_text(
+            json.dumps(
+                {
+                    "name": name,
+                    "version": "1.0.0",
+                    "displayName": name,
+                    "description": "declared credential masks",
+                    "backend": {"entryPoint": "server.py", "healthCheck": "/health"},
+                    "credentialMasks": masks,
+                }
+            )
+        )
+        (src / "server.py").write_text("import time\ntime.sleep(30)\n")
+        install_app(src)
+
+    def test_an_installed_apps_backend_gets_its_declared_leaves_back(
+        self, app_env, tmp_path, monkeypatch
+    ):
+        import kiro_crew.apps.backend as bmod
+        from kiro_crew.sandbox import app_declared_mask_targets
+
+        self._install(tmp_path, "masked-app", ["secrets.json"])
+        lifted = app_declared_mask_targets("masked-app", builtin=False)
+        assert lifted, "the declaration resolved to no target, so this pins nothing"
+        seen = self._spy(bmod, monkeypatch)
+
+        bmod.start_app_backend("masked-app")
+
+        assert seen.get("visible") is not None, "the spawn never reached wrap_argv"
+        for path in lifted:
+            assert path in seen["visible"], (
+                "the app's declared mask hides its credential from its own backend "
+                f"(missing {path!r}, saw {seen['visible']!r})"
+            )
+
+    @pytest.mark.parametrize(("name", "builtin"), [("masked-app", False), ("md-notebook", True)])
+    def test_the_lift_is_keyed_on_the_spawned_codes_provenance(
+        self, app_env, tmp_path, monkeypatch, name, builtin
+    ):
+        import kiro_crew.apps.backend as bmod
+
+        if builtin:
+            from kiro_crew.apps.manager import register_builtin_apps
+
+            register_builtin_apps()
+        else:
+            self._install(tmp_path, name, ["secrets.json"])
+        asked: list[tuple[str, bool]] = []
+        sentinel = "/declared-mask-sentinel"
+
+        def _declared(app_name, *, builtin):
+            asked.append((app_name, builtin))
+            return (sentinel,)
+
+        monkeypatch.setattr(bmod, "app_declared_mask_targets", _declared)
+        seen = self._spy(bmod, monkeypatch)
+
+        bmod.start_app_backend(name)
+
+        assert asked == [(name, builtin)]
+        assert sentinel in (seen.get("visible") or ())
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="shebang semantics are POSIX-only")

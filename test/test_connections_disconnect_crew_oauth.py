@@ -1,4 +1,4 @@
-"""Disconnect when Kiro Crew holds the sign-in (``connections.crew_oauth``).
+"""Disconnect when Kiro Crew holds the sign-in (``dashboard.feature_previews.crew_oauth``).
 
 Reuses the handler harness of ``test_connections_disconnect.py``: every side
 effect but the decision under test is neutralized there.
@@ -201,7 +201,7 @@ async def test_connect_uses_crews_sign_in_only_where_routing_does(
 
     started: list[str] = []
 
-    async def _crew_start(slug: str) -> str:
+    async def _crew_start(slug: str, project_dirs=None) -> str:
         started.append(slug)
         return "crew-tok"
 

@@ -14,7 +14,7 @@ Instance fields written: ``_awaiting_permission``, ``_codex_compaction_pending``
 ``_stale_probe``, ``_tool_dispatched``, ``active_agent``, ``last_compaction_transient``.
 
 Instance fields read: ``_awaited_responses``, ``_cancel_grace_secs``, ``_cancel_ts``,
-``_cancelled``, ``_engine_fallback``, ``_ingress_seq``, ``_kas_compact_turn``,
+``_cancelled``, ``chat_shared``, ``_engine_fallback``, ``_ingress_seq``, ``_kas_compact_turn``,
 ``_keepalive_parked``, ``_keepalive_ts``, ``_parked_total``, ``_queue``, ``_runtime``,
 ``_session_id``, ``_skill_reads``, ``_stale_eligible``, ``_steers_proven``,
 ``_tool_call_diff_path``, ``_tool_call_harness_tool_name``, ``_tool_call_input_redacted``,
@@ -62,6 +62,7 @@ from kiro_crew.acp.liveness import (
 from kiro_crew.acp.session_handle_watchdog import INTERACTIVE_POLICY_WAIT
 from kiro_crew.acp.stale_compaction import consume_stale_compaction_status
 from kiro_crew.acp.types import (
+    ACP_BACKEND_KIRO,
     EVENT_AGENT_SWITCHED,
     EVENT_CLEAR_STATUS,
     EVENT_COMPACTION_STATUS,
@@ -89,6 +90,7 @@ from kiro_crew.acp.types import (
     AcpEvent,
     JsonRpcMessage,
 )
+from kiro_crew.constants import DENY_CAUSE_SURFACE_POLICY
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 
 if TYPE_CHECKING:
@@ -102,6 +104,11 @@ logger = logging.getLogger("kiro_crew.acp.session_handle")
 #: a turn budget it never reaches, instead of racing the arm against the turn's
 #: own deadline.
 QUEUE_POLL_SECS = 5.0
+
+#: Longest a cancelled kiro turn waits for the metering frame behind its answer.
+#: The frame follows within milliseconds; the bound keeps a missing one from
+#: delaying the Stop acknowledgement.
+_CANCELLED_TURN_METERING_GRACE_SECS = 0.25
 
 
 async def _dispatch_events(
@@ -755,6 +762,16 @@ async def _dispatch_events(
                 self._tool_dispatched = False
                 for _injected in self._release_proven_steers(reason, _refusal):
                     yield AcpEvent(kind=EVENT_STEER_CONSUMED, text=_injected)
+                if (
+                    reason == STOP_REASON_CANCELLED
+                    and self._runtime.acp_backend == ACP_BACKEND_KIRO
+                ):
+                    # kiro-cli answers a cancelled prompt first and sends the frame that
+                    # bills the turn right after it; that frame also repeats the context
+                    # percentage the drain stops on (live-probe confirmed, 3.1.0).
+                    await self._drain_post_compaction_metadata(
+                        grace=_CANCELLED_TURN_METERING_GRACE_SECS
+                    )
                 self._turn_done.set()
                 yield AcpEvent(
                     kind=EVENT_COMPLETE,
@@ -849,7 +866,8 @@ async def _dispatch_events(
                     # fail-closed here instead of yielding — the request
                     # is REJECTED (never dropped), the child gets a tool
                     # error, nothing can hang, and no title-only approve
-                    # can occur on any consumer surface.
+                    # can occur on any consumer surface. The host notice
+                    # goes first, so the turn is not told a user refused.
                     logger.warning(
                         "rejecting low-fidelity child permission request "
                         "id=%s for fidelity-unaware consumer (child=%s)",
@@ -862,7 +880,12 @@ async def _dispatch_events(
                         "child_low_fidelity_unaware_consumer",
                         sub_session_id=_perm_event.sub_session_id or "",
                     )
-                    await self.reject_tool(_perm_event.request_id)
+                    await self._reject_with_host_notice(
+                        _perm_event,
+                        "this surface does not judge a sub-agent request that arrives "
+                        "without verifiable security context",
+                        cause=DENY_CAUSE_SURFACE_POLICY,
+                    )
                     yield AcpEvent(
                         kind=EVENT_SUBAGENT_ACTIVITY,
                         sub_session_id=_perm_event.sub_session_id,
@@ -1030,6 +1053,18 @@ async def _dispatch_events(
                 # no session and was fanned out to co-tenants is not this
                 # session's own.
                 yield AcpEvent(kind=EVENT_CLEAR_STATUS, runtime_global=msg.fanout_no_owner)
+            elif (
+                action == "agent_switched"
+                and extract_command_result
+                and msg.fanout_no_owner
+                and self.chat_shared
+            ):
+                # A ``commands/execute`` turn proves this handle issued the
+                # switch, and its OWNED command result reports it below. The
+                # notification was fanned out ownerless (a second queue is
+                # registered), and surfacing it would read as a peer's switch to a
+                # consumer that gates its bookkeeping on ``runtime_global``.
+                pass
             elif action == "agent_switched":
                 saw_agent_switch = True
                 params = msg.params or {}

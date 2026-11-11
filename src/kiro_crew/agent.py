@@ -133,6 +133,7 @@ from kiro_crew.agent_parts.spec_build import (
     is_managed_prompt,
 )
 from kiro_crew.agent_parts.spec_files import (
+    _SPEC_LOCK_REFUSALS,
     KIRO_AGENTS_DIR,
     _atomic_json_write,
     _atomic_json_write_unguarded,
@@ -141,6 +142,7 @@ from kiro_crew.agent_parts.spec_files import (
     agents_spec_lock,
     kiro_agents_dir_path,
     missing_required_agent_specs,
+    one_spec_lock_wait,
     present_required_agent_specs,
     write_owner_derived_spec,
 )
@@ -225,12 +227,16 @@ from kiro_crew.agent_parts.spec_rebuild import (
 )
 from kiro_crew.agent_parts.spec_siblings import _install_sibling_specs, _refilter_kept_mirrors
 from kiro_crew.agent_parts.spec_unreadable import (
+    HELD_SIBLING_PASS_RETRY_SECS,
     _first_main_spec_warning,
+    _held_pass_clock,
     _main_spec_episode_lock,
     _main_spec_episode_revision,
+    _main_spec_held_pass_at,
     _main_spec_skip_generation,
     _main_spec_unreadable,
     _main_spec_warned,
+    _make_held_sibling_pass_due,
     _note_main_spec_readable,
     _skip_unreadable_main_spec,
     _spec_hold_open,
@@ -421,6 +427,7 @@ if TYPE_CHECKING:  # served by ``__getattr__`` at runtime; named here for mypy
         managed_mcp_spec_entry,
         managed_member_transport,
         sanitize_spec_env,
+        with_managed_launch,
     )
     from kiro_crew.agent_materialization.mcp_aliases import (  # noqa: F401
         DERIVED_KEY,
@@ -479,6 +486,7 @@ if TYPE_CHECKING:  # served by ``__getattr__`` at runtime; named here for mypy
         _install_team_lead_agent,
         knowledge_agent_model,
         knowledge_view_without_registered_injection,
+        repair_guest_agent_spec,
         repair_knowledge_agent_spec,
     )
     from kiro_crew.agent_materialization.shared_template_view import (  # noqa: F401
@@ -986,6 +994,7 @@ _EXPORTS_BY_OWNER: dict[str, tuple[str, ...]] = {
         "crew_owned_mcp_servers",
         "_gated_off_servers",
         "managed_mcp_spec_entry",
+        "with_managed_launch",
         "managed_member_transport",
         "_enforce_managed_mcp_ownership",
         "_managed_opt_in_entry",
@@ -1074,6 +1083,7 @@ _EXPORTS_BY_OWNER: dict[str, tuple[str, ...]] = {
     ),
     "kiro_crew.agent_materialization.service_agents": (
         "_install_guest_agent",
+        "repair_guest_agent_spec",
         "_install_lite_agent_fallback",
         "_install_knowledge_agent",
         "knowledge_agent_model",

@@ -32,19 +32,6 @@ from kiro_crew.sel import sel
 # module-level name the facade does not already bind, or the facade would serve it.
 
 
-def _windows_authorize_unavailable() -> bool:
-    """Whether adding a custom-secret authorization must refuse on this host.
-
-    True on Windows, where ``call_api_with_secret`` refuses every mediated call
-    (it needs a Unix-domain socket with peer-credential attestation that Windows
-    cannot provide), so a signed grant could never be used. A seam of its own, not
-    an inline ``platform_compat.IS_WINDOWS`` read, so a test can turn the refusal
-    off for the Unix authorize-transaction cases without re-patching the platform
-    flag the real publish path also reads.
-    """
-    return platform_compat.IS_WINDOWS
-
-
 def _spawn_precreates_policy_directory() -> bool:
     """Whether agent spawns on this host go through the Linux namespace backend.
 
@@ -84,20 +71,6 @@ def _handle_secrets_authorize(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(2)
-    # Adding a grant on Windows signs a policy no call can use: ``call_api_with_secret``
-    # refuses every mediated call under ``platform_compat.IS_WINDOWS`` (it needs a
-    # Unix-domain socket with peer-credential attestation, which Windows cannot
-    # provide). Refuse at this first surface the owner touches — before any directory
-    # or policy is created — so no unusable grant is ever written. ``--remove`` is
-    # untouched so an owner can still clear an entry a non-Windows host authorized.
-    if not args.remove and _windows_authorize_unavailable():
-        print(
-            "error: custom-secret mediation is not supported on Windows (it needs a "
-            "Unix-domain socket with peer-credential attestation); nothing was "
-            "authorized.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
     from kiro_crew.config import loader as _loader
     from kiro_crew.secrets_mediation.policy import POLICY_LOCK_FILENAME, policy_path
     from kiro_crew.secrets_mediation.provenance import REQUEST_POLICY_DIRNAME
@@ -192,6 +165,7 @@ def _publish_secret_request_policy(path: Path, content: str) -> None:
 
 def _authorize_txn(args: "argparse.Namespace", path) -> None:
     """The locked read-verify-modify-sign-write body of ``secrets authorize``."""
+    from kiro_crew.bounded_read import bounded_read
     from kiro_crew.secrets_mediation.policy import (
         _MAX_POLICY_BYTES,
         PolicyError,
@@ -214,7 +188,7 @@ def _authorize_txn(args: "argparse.Namespace", path) -> None:
             # bounded here exactly as the host endpoint bounds its own read. Read
             # cap+1 and refuse on overflow — same ceiling, no drift.
             with open(path, "rb") as fh:
-                raw_bytes = fh.read(_MAX_POLICY_BYTES + 1)
+                raw_bytes = bounded_read(fh, _MAX_POLICY_BYTES + 1)
             if len(raw_bytes) > _MAX_POLICY_BYTES:
                 raise SystemExit(
                     f"error: {path} exceeds the {_MAX_POLICY_BYTES}-byte policy size "

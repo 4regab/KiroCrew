@@ -4,7 +4,7 @@ The duplicate and silent paths, the dashboard tab and bell, the channel the job 
 scheduled from, and the Slack post with its uploads; the dedup anchor advances only
 on a confirmed delivery.
 
-Orchestrator fields read: ``_owner_id``, ``dashboard_state``, ``sessions``, ``slack``.
+Orchestrator fields read: ``dashboard_state``, ``sessions``, ``slack``.
 Orchestrator fields written: none.
 
 Composed by :mod:`kiro_crew.slack.gateway`, whose globals its functions run on;
@@ -84,7 +84,7 @@ async def _deliver_cron_agent_result(
                     "cron",
                     title,
                     redacted_for_dash,
-                    meta={"job_id": job.id},
+                    meta={"job_id": job.id, "result_ts": job.last_result_ts},
                 )
 
             sel().log_tool_invocation(
@@ -204,7 +204,12 @@ async def _deliver_cron_agent_result(
         redacted_for_dash, _ = redact_credentials(redacted_for_dash)
         safe_name, _ = redact_exfiltration_urls(job.name)
         safe_name, _ = redact_credentials(safe_name)
-        notify_meta: dict[str, str] = {"job_id": job.id}
+        notify_meta: dict[str, str | float] = {"job_id": job.id}
+        # `result_ts` names the stored result this note carries, so the dashboard
+        # can tell whether the job's current `last_result` is still that one. A
+        # 24h repeat reminder carries a rewritten text, so it names none.
+        if result_text == job.last_result:
+            notify_meta["result_ts"] = job.last_result_ts
         # Gate the slot linkage on not hide_in_chat for parity with the
         # three inject sites above. Without this, a job flipped to
         # hide_in_chat=True that still owns an older cron-{id} slot would
@@ -277,8 +282,9 @@ async def _deliver_cron_agent_result(
             # Retry only open_dm (transient Slack API errors).
             # Delivery (post_blocks/post_message) is NOT retried to avoid duplicates.
             channel = job.channel
-            if not channel and (job.created_by or self._owner_id):
-                channel = await self._open_dm_with_retry(job.created_by or self._owner_id, job.name)
+            dm_user = self._cron_dm_user(job)
+            if not channel and dm_user:
+                channel = await self._open_dm_with_retry(dm_user, job.name)
             if channel:
                 # ── Extract embedded local images and upload them
                 # natively (mirror the chat renderer's on_done seal).
