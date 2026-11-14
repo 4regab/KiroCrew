@@ -57,6 +57,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from . import shell_normalizer as _shell_normalizer
+from . import shell_normalizer_walk as _walk
 from .argv_floor_self import _SELF_FLOOR_MACHINERY_RE, _SELF_FLOOR_QUOTE_JUNK_RE
 from .argv_floor_ssh import (
     _FUNCTION_BIND_CAP,
@@ -1503,8 +1504,9 @@ def _git_tar_read(text_lower: str, *, typed: bool = False) -> bool:
 
     *typed* is True for the outermost read only, whose text is the command as typed.
     """
-    from .argv_rules import _program_index, _split_commands
+    from .argv_rules import _split_commands
     from .shell_commands import _double_quoted_substitution_bodies, read_commands
+    from .shell_normalizer_walk import _program_index
 
     raw = _RAW_COMMAND.get()
     unmasked = _ssh_floor_unmasked_text(text_lower)
@@ -1652,7 +1654,23 @@ def _git_tar_read(text_lower: str, *, typed: bool = False) -> bool:
             signals.append(_carries_self_dial_signal())
         return signals[0]
 
+    # Each judgment reads one frame under one cased twin (None: the lowered reading).
+    # Walks of equal length pair by position. The lowered walk gains an ALTERNATIVE
+    # frame wherever a substitution's body names the mint verb or the product, which
+    # the cased walk may not, so the lengths differ; then each frame is read under
+    # every distinct cased frame that lowers to it, and refused if any reading refuses,
+    # or lowered when none does, as the ssh floor's ``judged_pairs`` does. A positional pairing
+    # dropped every twin there, so ``sudo -H`` was read as ``-h`` (opus).
+    judgments: "list[tuple[int, str, str | None]]" = []
     for frame_index, (source, _tokens) in enumerate(payload_frames):
+        if len(cased_frames) == len(payload_frames):
+            judgments.append((frame_index, source, cased_frames[frame_index]))
+            continue
+        twins: "list[str | None]" = list(
+            dict.fromkeys(c for c in cased_frames if c.lower() == source)
+        )
+        judgments.extend((frame_index, source, twin) for twin in twins or [None])
+    for frame_index, source, cased_source in judgments:
         if frame_index and _frame_cannot_run_git_tar(source):
             continue  # a payload frame with no git/tar word dials nothing
         # The walk also returns the rest of the line after each escaped backtick
@@ -1682,8 +1700,7 @@ def _git_tar_read(text_lower: str, *, typed: bool = False) -> bool:
         ):
             return True
         cased_commands: "list[list[str]]" = []
-        if len(cased_frames) == len(payload_frames):
-            cased_source = cased_frames[frame_index]
+        if cased_source is not None:
             cased_commands = (
                 raw_commands if cased_source == source else _view_commands(cased_source)[0]
             )
@@ -1712,7 +1729,7 @@ def _git_tar_read(text_lower: str, *, typed: bool = False) -> bool:
             if found is None:
                 _observe_words(frame_env, command)
                 continue
-            verb, args = _shell_normalizer._program_basename(command[found]), command[found + 1 :]
+            verb, args = _walk._program_basename(command[found]), command[found + 1 :]
             prefix = command[: len(command) - len(args) - 1]
             _observe_words(frame_env, prefix)
             # Every value kept under a name is carried, inherited ones included:
@@ -1938,7 +1955,7 @@ def _frame_cannot_run_git_tar(source: str) -> bool:
 def _git_tar_verbs(word: str) -> "tuple[bool, bool]":
     """Whether program *word* runs ``git`` and ``tar`` (``gtar`` is GNU tar); a glob
     (``g*t``) is read as every verb it CAN name, as the self floor reads ``pkill``."""
-    verb = _unmasked(_shell_normalizer._program_basename(word)).removesuffix(".exe")
+    verb = _unmasked(_walk._program_basename(word)).removesuffix(".exe")
     return (
         verb == "git" or _glob_could_expand_to(verb, ("git",)),
         verb in ("tar", "gtar") or _glob_could_expand_to(verb, ("tar", "gtar")),
@@ -1947,7 +1964,7 @@ def _git_tar_verbs(word: str) -> "tuple[bool, bool]":
 
 def _is_parallel(word: str) -> bool:
     """Whether program *word* runs GNU ``parallel`` (a glob is read as every name it CAN be)."""
-    verb = _unmasked(_shell_normalizer._program_basename(word))
+    verb = _unmasked(_walk._program_basename(word))
     return verb == "parallel" or _glob_could_expand_to(verb, ("parallel",))
 
 
