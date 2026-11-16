@@ -536,6 +536,29 @@ export function inModalLayer(from: EventTarget | null | readonly EventTarget[], 
   return false
 }
 
+/** Marks a region whose sideways runs are always its own, whether or not it
+ *  can scroll further that way right now: at its end, with nothing to scroll,
+ *  or over a control beside its scroller (a chip row's arrow buttons).
+ *  `canScrollX` alone hands such a run to the panel the moment the scroller
+ *  has no room left. */
+export const OWNS_SCROLL_X_ATTR = 'data-owns-scroll-x'
+
+/** Whether an element on the way from the event's target up to (not past)
+ *  `root` carries {@link OWNS_SCROLL_X_ATTR}. */
+export function inScrollXOwner(from: EventTarget | null | readonly EventTarget[], root: Element | null): boolean {
+  const chain: Element[] = []
+  if (Array.isArray(from)) {
+    for (const n of from as readonly EventTarget[]) if (n instanceof Element) chain.push(n)
+  } else {
+    for (let n = from instanceof Element ? from : null; n; n = n.parentElement) chain.push(n)
+  }
+  for (const n of chain) {
+    if (n === root) break
+    if (n.hasAttribute(OWNS_SCROLL_X_ATTR)) return true
+  }
+  return false
+}
+
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
@@ -695,8 +718,15 @@ export function useTrackpadSwipe(rootRef: RefObject<HTMLElement | null>, opts: T
       // A run that starts inside a modal layer is the layer's: the page behind
       // it must not move (a swipe over the What's New dialog opened the panel).
       // A pinch-zoomed page is the browser's too: the swipe pans the zoomed view.
-      const owned = pinchZoomed() || inModalLayer(path.length ? path : e.target, root)
-        || (e.deltaX !== 0 && canScrollX(path.length ? path : e.target, e.deltaX, root))
+      const zoomedIn = pinchZoomed()
+      const from = path.length ? path : e.target
+      const scrolls = e.deltaX !== 0 && canScrollX(from, e.deltaX, root)
+      // A marked region with no room left that way keeps the run too: nothing
+      // on the page scrolls with it, so the wheel is cancelled below and the
+      // browser's history swipe does not start under it. A pinch (`ctrlKey`)
+      // stays the browser's zoom, and a mostly vertical wheel stays a scroll.
+      const pinned = !zoomedIn && Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey && !scrolls && inScrollXOwner(from, root)
+      const owned = zoomedIn || inModalLayer(from, root) || scrolls || pinned
       // The event's own time, not the time it is handled: wheels queued behind a
       // slow frame arrive in a burst, and handling time would read that frame
       // as a gap in the fingers and end the drag under them.
@@ -704,7 +734,7 @@ export function useTrackpadSwipe(rootRef: RefObject<HTMLElement | null>, opts: T
       // The reader reads the fingers: undo Natural scrolling's sign here.
       const sign = fingerSign((e as WheelEvent & { webkitDirectionInvertedFromDevice?: unknown }).webkitDirectionInvertedFromDevice, naturalScrolling())
       const sample = { dx: sign * e.deltaX, dy: e.deltaY, mode: e.deltaMode, ctrl: e.ctrlKey, owned, at: when }
-      if (run(sample)) e.preventDefault()
+      if (run(sample) || pinned) e.preventDefault()
     }
     /** Tell a relaying frame whether this host is listening. A frame that is
      *  not armed leaves every wheel to the browser, so a run nobody would act on

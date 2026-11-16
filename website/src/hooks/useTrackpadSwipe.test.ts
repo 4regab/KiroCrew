@@ -476,6 +476,21 @@ describe('useTrackpadSwipe: a pinch-zoomed page', () => {
     expect(onDragStart).not.toHaveBeenCalled()
   })
 
+  it('leaves a sideways swipe over a chip row to the browser while zoomed in', () => {
+    vi.stubGlobal('visualViewport', Object.assign(new EventTarget(), { scale: 2 }))
+    const root = document.createElement('div')
+    const row = document.createElement('div')
+    row.setAttribute('data-owns-scroll-x', '')
+    root.appendChild(row)
+    document.body.appendChild(root)
+    renderHook(() => useTrackpadSwipe({ current: root }, {
+      enabled: true, wants: () => true, onDragStart: () => {}, onDragMove: () => {}, onDragEnd: () => {}, onSwipe: () => {},
+    }))
+    const ev = new WheelEvent('wheel', { deltaX: 20, deltaY: 0, bubbles: true, cancelable: true })
+    act(() => { row.dispatchEvent(ev) })
+    expect(ev.defaultPrevented).toBe(false)
+  })
+
   /** A relaying frame under a fresh root whose hook accepts frames. */
   const mountWithFrame = (onDragStart: () => void) => {
     const root = document.createElement('div')
