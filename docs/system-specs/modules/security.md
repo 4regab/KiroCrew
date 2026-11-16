@@ -21,6 +21,17 @@ through the path gate's resolver without allocating scratch or creating the data
 home, preserving the validated override pin after a working-directory change.
 Other sibling files and files inside work-tree subdirectories remain accessible.
 
+The index also holds one reserved row, `"\x00quarantine"`, mapping a directory name to the
+session keys that owned it when a resume could not establish that they belong to one session
+tree. A directory with a mark is not rejoined until every marked owner resolves to one tree.
+Reads fail closed: a mark row this module did not write, an index that exists but is not a
+JSON object under the size cap, or a read error refuses the directory. Every rewrite of the
+index carries the row through, dropping marks for directories the sweep reclaimed. A mark and
+the row change it protects are one write: when that write fails or would not fit, nothing
+changes, every owner stays bound, and the next ownership check refuses the directory again.
+No mark is held only in memory. Binding readers skip the row, so an index without it reads as it always did. An index
+rewritten after it became unusable no longer holds the marks it lost.
+
 ### MCP launch authorization leaves
 
 The `approvals.json` file in the crew-home `mcp-launch-approvals/` directory

@@ -43,6 +43,21 @@ class TestAResumedKeyRejoinsItsTree:
     tree as ``shared_scratch`` when the conversation's process starts.
     """
 
+    @pytest.fixture(autouse=True)
+    def settled_lineage(self, _floor_monkeypatch) -> None:
+        """The persisted session-tree lineage reads as loaded unless a test says not."""
+        import importlib.util
+
+        self.real_lineage_reason = None
+        if importlib.util.find_spec("kiro_crew.session_allocation_parts.scratch_ownership") is None:
+            return  # a tree without the check: nothing to stub
+        from kiro_crew.session_allocation_parts import scratch_ownership
+
+        self.real_lineage_reason = getattr(scratch_ownership, "_lineage_unavailable_reason", None)
+        _floor_monkeypatch.setattr(
+            scratch_ownership, "_lineage_unavailable_reason", lambda: "", raising=False
+        )
+
     def test_the_index_round_trips_and_prunes_reclaimed_trees(self, scratch_root: Path) -> None:
         scratch_root.mkdir(parents=True)
         old = scratch_root / "dashboard-chat-1-abcdef01"
@@ -515,7 +530,9 @@ class TestAResumedKeyRejoinsItsTree:
             record = MagicMock(return_value=False)
             monkeypatch.setattr(trees, "record_tree", record)
             await mgr.get_or_create(key, agent="kirocrew")
-            record.assert_called_once_with(key, successor, ticket=record.call_args.kwargs["ticket"])
+            record.assert_called_once_with(
+                key, successor, ticket=record.call_args.kwargs["ticket"], parent=""
+            )
             assert "shared_scratch" not in factory.call_args.kwargs
         finally:
             await mgr.close_all()

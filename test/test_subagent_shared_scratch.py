@@ -14,6 +14,7 @@ and the ``_bg`` successor (inherit + adopt).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import os
 import re
@@ -28,6 +29,7 @@ import pytest
 
 from kiro_crew import agent_scratch as sc
 from kiro_crew import agent_scratch_trees as trees
+from kiro_crew.testing.wait import await_until
 
 #: A pid no live process can own on any supported platform (above every pid_max),
 #: so a cleanup path that signals a fake reaches nothing on the runner.
@@ -576,6 +578,106 @@ class TestSpawnersMountTheTreeWindow:
         assert env["KIROCREW_SCRATCH"] == str(previous)
         assert client.work_scratch_dir == previous
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mark", ["retired", "unreadable"])
+    async def test_a_respawn_never_remounts_a_directory_refused_across_trees(
+        self, scratch_root: Path, tmp_path: Path, monkeypatch, mark: str
+    ) -> None:
+        """A and B share D; once A's resume retires and marks D, B's respawn starts fresh."""
+        import kiro_crew.acp.client as client_mod
+        from kiro_crew.acp.client import AcpClient
+
+        wrapped, stop = self._install_capture(
+            monkeypatch, client_mod, tmp_path, "create_subprocess_limited"
+        )
+        shared = sc.allocate_scratch("session")
+        (shared / "a-staged.txt").write_text("A's file")
+        a, b = "dashboard:chat-a-1", "dashboard:chat-b-1"
+        for key in (a, b):
+            trees.record_tree(key, shared)
+        assert trees.abandon_tree_all(shared, frozenset({a, b}))
+        if mark == "unreadable":
+            index = scratch_root / trees.TREE_INDEX_FILENAME
+            index.write_text(index.read_text().replace('"dashboard:chat-a-1"', "7"))
+        client = AcpClient(work_dir=tmp_path / "workspace")
+        client._scratch_dir = shared  # B's process ran in D and now respawns
+        client._launched_before = True
+        with pytest.raises(stop):
+            await client._spawn()
+
+        (own,) = tuple(wrapped["kwargs"]["extra_private_dirs"])  # type: ignore[index]
+        env = wrapped["spawn_kwargs"]["env"]  # type: ignore[index]
+        assert Path(own) != shared and env["KIROCREW_SCRATCH"] == own
+        assert client.work_scratch_dir == Path(own)
+        assert (shared / "a-staged.txt").read_text() == "A's file"  # quarantined, kept
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "dropped", ["refused", "swept", "inherited", "inherited-respawn", "unallocated-respawn"]
+    )
+    async def test_a_respawn_never_runs_in_a_directory_it_cannot_see(
+        self, scratch_root: Path, tmp_path: Path, monkeypatch, dropped: str
+    ) -> None:
+        """B worked in a folder inside D: a respawn never runs in a refused D, a swept D
+        comes back mounted, and a first start that inherited a refused D keeps its cwd
+        (a respawn of that start leaves it, also when that start had no directory of its
+        own because its allocation failed)."""
+        import kiro_crew.acp.client as client_mod
+        from kiro_crew.acp.client import AcpClient
+
+        wrapped, stop = self._install_capture(
+            monkeypatch, client_mod, tmp_path, "create_subprocess_limited"
+        )
+        shared = sc.allocate_scratch("session")
+        inside = shared / "project"
+        inside.mkdir()
+        a, b = "dashboard:chat-a-1", "dashboard:chat-b-1"
+        for key in (a, b):
+            trees.record_tree(key, shared)
+        if dropped == "swept":
+            shutil.rmtree(shared)
+        else:
+            assert trees.abandon_tree_all(shared, frozenset({a, b}))
+        if dropped.startswith("inherited"):
+            client = AcpClient(work_dir=inside, shared_scratch=shared)
+            if dropped == "inherited-respawn":  # its first process ran with D mounted
+                client._scratch_dir = sc.allocate_scratch("own")
+                client._launched_before = True
+        elif dropped == "unallocated-respawn":
+            # The first start's allocation failed, so it ran with D alone; this
+            # respawn's allocation fails too.
+            client = AcpClient(work_dir=inside, shared_scratch=shared)
+            client._launched_before = True
+
+            def no_scratch(_label):
+                raise OSError("no room")
+
+            monkeypatch.setattr(sc, "allocate_scratch", no_scratch)
+        else:
+            client = AcpClient(work_dir=inside)
+            client._scratch_dir = shared
+            client._launched_before = True
+        with pytest.raises(stop):
+            await client._spawn()
+
+        cwd = Path(str(wrapped["spawn_kwargs"].get("cwd") or client._spawn_work_dir))  # type: ignore[union-attr]
+        assert client._spawn_work_dir == str(client._work_dir) == str(cwd)
+        if dropped == "inherited":
+            assert cwd == inside  # an explicit cwd is never moved; the start fails loudly
+            assert str(shared) not in wrapped["kwargs"]["extra_private_dirs"]  # type: ignore[index]
+        elif dropped == "swept":
+            # The spawn re-creates its work directory, so D is back and mounted.
+            assert cwd == inside and str(shared) in wrapped["kwargs"]["extra_private_dirs"]  # type: ignore[index]
+        elif sys.platform == "win32":
+            # Native Windows masks no scratch directory, so the cwd stays readable and
+            # is kept (``_stored_cwd_is_hidden_scratch``); only the window is dropped.
+            assert cwd == inside
+            # The wrap gets no window argument at all when there is none to mount.
+            windows = wrapped["kwargs"].get("extra_private_dirs", ())  # type: ignore[union-attr]
+            assert str(shared) not in windows
+        else:
+            assert not cwd.is_relative_to(shared) and cwd.is_dir()
+
 
 @pytest.mark.skipif(
     sys.platform == "win32",
@@ -602,6 +704,7 @@ class TestAnInheritingRuntimeJoinsTheMarkerOnceLive:
         mock_proc.returncode = None
         mock_proc.stderr = None
         mock_proc.stdout = None
+        mock_proc.wait = AsyncMock(return_value=-9)
         TestRuntimeShieldSurvivesAFailedAppend._patch_prelude(monkeypatch, tmp_path, mock_proc)
         # No native agent tree here either (the offload module's autouse fixture).
         from kiro_crew.acp import skill_projection
@@ -662,6 +765,7 @@ class TestAnInheritingRuntimeJoinsTheMarkerOnceLive:
             await runtime.spawn()
         assert ("adopt", tree, _UNALLOCATABLE_PID) in calls
         assert runtime.work_scratch_dir == tree
+        assert runtime._launched_before  # the next spawn is a respawn
 
     @pytest.mark.asyncio
     async def test_a_marker_that_cannot_be_joined_reaps_the_spawn(
@@ -678,6 +782,222 @@ class TestAnInheritingRuntimeJoinsTheMarkerOnceLive:
         with pytest.raises(SharedScratchJoinError, match="could not be joined"):
             await runtime.spawn()
         kill.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_refusal_landing_during_the_spawn_stops_the_child(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A co-owner's resume marks the tree after the window was built: the child
+        that mounted it is stopped before the session uses it, and the spawn fails."""
+        from kiro_crew import platform_compat
+        from kiro_crew.acp.transport_errors import AcpError
+
+        tree = tmp_path / "scratch" / "parent-abcdef01"
+        runtime, calls, _kill, _stop = self._drive(monkeypatch, tmp_path, tree, "recorded")
+        checks = iter([False, True])  # clear when the window is built, marked once spawned
+        monkeypatch.setattr(trees, "refused_across_trees", lambda path: next(checks))
+        stopped: list[int] = []
+
+        async def kill_tree(pid: int, sig: int) -> bool:
+            stopped.append(pid)
+            return True
+
+        monkeypatch.setattr(platform_compat, "kill_process_tree_async", kill_tree)
+        with pytest.raises(AcpError, match="refused during the spawn"):
+            await runtime.spawn()
+        assert stopped == [_UNALLOCATABLE_PID]
+        assert ("adopt", tree, _UNALLOCATABLE_PID) not in calls  # never adopted
+        assert runtime._shared_scratch is None
+
+    @pytest.mark.asyncio
+    async def test_a_first_start_refused_during_the_spawn_keeps_its_cwd(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A first start's explicit cwd inside the refused tree is never moved: the
+        spawn fails and its retry fails loudly, instead of running in another folder."""
+        from kiro_crew import platform_compat
+        from kiro_crew.acp.transport_errors import AcpError
+        from kiro_crew.session_allocation_parts import get_or_create
+
+        tree = tmp_path / "scratch" / "parent-abcdef01"
+        runtime, _calls, _kill, _stop = self._drive(monkeypatch, tmp_path, tree, "recorded")
+        inside = tree / "project"
+        runtime._work_dir = inside
+        runtime._spawn_work_dir = str(inside)
+        monkeypatch.setattr(get_or_create, "_stored_cwd_is_hidden_scratch", lambda cwd, s: True)
+        checks = iter([False, True])  # clear when the window is built, marked once spawned
+        monkeypatch.setattr(trees, "refused_across_trees", lambda path: next(checks))
+
+        async def kill_tree(pid: int, sig: int) -> bool:
+            return True
+
+        monkeypatch.setattr(platform_compat, "kill_process_tree_async", kill_tree)
+        with pytest.raises(AcpError, match="refused during the spawn"):
+            await runtime.spawn()
+        assert runtime._work_dir == inside
+        assert not getattr(runtime, "_launched_before", False)
+
+    @pytest.mark.asyncio
+    async def test_a_spawn_cancelled_during_the_refusal_check_stops_the_child(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Nothing has recorded the child yet, so a cancel there must not leak it."""
+        from kiro_crew import platform_compat
+
+        tree = tmp_path / "scratch" / "parent-abcdef01"
+        runtime, _calls, _kill, _stop = self._drive(monkeypatch, tmp_path, tree, "recorded")
+        checks = iter([False])
+
+        def refused(path):
+            for clear in checks:
+                return clear
+            raise asyncio.CancelledError()  # the turn is cancelled during the post-spawn hop
+
+        monkeypatch.setattr(trees, "refused_across_trees", refused)
+        stopped: list[int] = []
+
+        async def kill_tree(pid: int, sig: int) -> bool:
+            stopped.append(pid)
+            return True
+
+        monkeypatch.setattr(platform_compat, "kill_process_tree_async", kill_tree)
+        with pytest.raises(asyncio.CancelledError):
+            await runtime.spawn()
+        assert stopped == [_UNALLOCATABLE_PID]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("site", ["refused", "cancelled"])
+    async def test_a_windows_child_stopped_for_a_refusal_releases_its_admission(
+        self, tmp_path: Path, monkeypatch, site: str
+    ) -> None:
+        """A Windows child holds a cleanup admission from its spawn. Stopping it by pid
+        would pin that admission until a restart, so the owned-tree drain stops it."""
+        from types import SimpleNamespace
+
+        from kiro_crew import platform_compat
+        from kiro_crew import platform_compat_wintree as wintree
+        from kiro_crew.acp import launch
+
+        monkeypatch.setattr(wintree, "_WINDOWS_TREE_ADMISSIONS", set())
+        admission = wintree.reserve_windows_tree_cleanup()
+        monkeypatch.setattr(platform_compat, "IS_WINDOWS", True)
+        process = MagicMock(pid=_UNALLOCATABLE_PID)
+        process.wait = AsyncMock(return_value=0)
+
+        async def kill_tree(pid: int, sig: int) -> bool:
+            return True  # a pid kill: the admission stays pinned
+
+        async def drain(proc) -> bool:
+            wintree.release_windows_tree_reservation(admission)
+            return True
+
+        monkeypatch.setattr(platform_compat, "kill_process_tree_async", kill_tree)
+        monkeypatch.setattr(platform_compat, "terminate_windows_asyncio_tree", drain)
+
+        async def hop(fn, *args):
+            if site == "cancelled":
+                raise asyncio.CancelledError()
+            return True
+
+        host = SimpleNamespace(
+            _shared_scratch=tmp_path / "scratch" / "parent-abcdef01",
+            _discard_bound_workspace=AsyncMock(),
+            _discard_sandbox_cleanup=MagicMock(),
+        )
+        from kiro_crew.acp.transport_errors import AcpError
+
+        with contextlib.suppress(asyncio.CancelledError, AcpError):
+            await launch._stop_a_child_that_mounted_a_refused_tree(
+                host, process, False, hop, MagicMock()
+            )
+        assert wintree._WINDOWS_TREE_ADMISSIONS == set()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("site", ["refused", "cancelled"])
+    async def test_a_child_that_already_exited_still_gets_its_cleanup(
+        self, tmp_path: Path, monkeypatch, site: str
+    ) -> None:
+        """On POSIX the tree kill and the fallback both find the child gone. The
+        stop still completes, so the caller discards the bound workspace."""
+        from types import SimpleNamespace
+
+        from kiro_crew import platform_compat
+        from kiro_crew.acp import launch
+        from kiro_crew.acp.transport_errors import AcpError
+
+        monkeypatch.setattr(platform_compat, "IS_WINDOWS", False)
+
+        async def gone(pid: int, sig: int) -> bool:
+            raise ProcessLookupError(pid)
+
+        monkeypatch.setattr(platform_compat, "kill_process_tree_async", gone)
+        process = MagicMock(pid=_UNALLOCATABLE_PID)
+        process.kill = MagicMock(side_effect=ProcessLookupError(_UNALLOCATABLE_PID))
+        process.wait = AsyncMock(return_value=0)
+
+        async def hop(fn, *args):
+            if site == "cancelled":
+                raise asyncio.CancelledError()
+            return True
+
+        host = SimpleNamespace(
+            _shared_scratch=tmp_path / "scratch" / "parent-abcdef01",
+            _discard_bound_workspace=AsyncMock(),
+            _discard_sandbox_cleanup=MagicMock(),
+        )
+        with pytest.raises((asyncio.CancelledError, AcpError)):
+            await launch._stop_a_child_that_mounted_a_refused_tree(
+                host, process, False, hop, MagicMock()
+            )
+        host._discard_bound_workspace.assert_awaited_once()
+        host._discard_sandbox_cleanup.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_a_cancel_during_the_refused_stop_still_finishes_the_teardown(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The refused path's stop and both discards run to the end even when launch()
+        is cancelled while the child stop is pending; the cancel is raised after."""
+        from types import SimpleNamespace
+
+        from kiro_crew import platform_compat
+        from kiro_crew.acp import launch
+
+        monkeypatch.setattr(platform_compat, "IS_WINDOWS", False)
+        stopping = asyncio.Event()
+        release = asyncio.Event()
+        stopped: list[int] = []
+
+        async def slow_kill(pid: int, sig: int) -> bool:
+            stopping.set()
+            await release.wait()
+            stopped.append(pid)
+            return True
+
+        monkeypatch.setattr(platform_compat, "kill_process_tree_async", slow_kill)
+        process = MagicMock(pid=_UNALLOCATABLE_PID)
+        process.wait = AsyncMock(return_value=0)
+
+        async def hop(fn, *args):
+            return True  # the directory was marked during the spawn
+
+        host = SimpleNamespace(
+            _shared_scratch=tmp_path / "scratch" / "parent-abcdef01",
+            _discard_bound_workspace=AsyncMock(),
+            _discard_sandbox_cleanup=MagicMock(),
+        )
+        task = asyncio.ensure_future(
+            launch._stop_a_child_that_mounted_a_refused_tree(host, process, False, hop, MagicMock())
+        )
+        await await_until(stopping, what="the child stop to begin")
+        task.cancel()
+        await asyncio.sleep(0)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await await_until(task, what="the drained teardown to finish")
+        assert stopped == [_UNALLOCATABLE_PID]
+        host._discard_bound_workspace.assert_awaited_once()
+        host._discard_sandbox_cleanup.assert_called_once()
 
 
 class TestSpawnsOnBehalfOfAParent:

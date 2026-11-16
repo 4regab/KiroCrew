@@ -78,6 +78,9 @@ from kiro_crew.session_allocation_parts.errors import (
     SpeculativeResumeRefused,
 )
 from kiro_crew.session_allocation_parts.eviction import _drain_despite_cancellation
+from kiro_crew.session_allocation_parts.scratch_ownership import (
+    _recorded_tree_of_own_session_tree,
+)
 from kiro_crew.session_lifecycle import adopt_parked_queue, allocation_identity
 from kiro_crew.start_priority import (
     START_QUEUE_COLD_START,
@@ -377,7 +380,9 @@ def _dispatch_hard_kill(self: SessionAllocationService, provider: LLMProvider) -
         threading.Thread(target=kill, args=(provider,), daemon=True).start()
 
 
-async def _record_scratch_tree(self: SessionAllocationService, key: str, tree: Path) -> bool:
+async def _record_scratch_tree(
+    self: SessionAllocationService, key: str, tree: Path, parent: str = ""
+) -> bool:
     """Attempt best-effort persistence off-loop before publishing the session identity.
 
     Return False when *tree* did not become *key*'s binding, or when a disk
@@ -391,6 +396,7 @@ async def _record_scratch_tree(self: SessionAllocationService, key: str, tree: P
             key,
             tree,
             ticket=next(_scratch_record_tickets),
+            parent=parent,
         )
     )
     if persisted:
@@ -660,6 +666,8 @@ async def _get_or_create_impl(
     # default directory. Any other caller keeps its cwd, so a start there fails loudly
     # instead of running in another repository. Never handed to a factory.
     fallback_hidden_cwd = bool(extra_factory_kwargs.pop("fallback_hidden_cwd", False))
+    # The session the gateway spawned this subagent for, from the spawn call.
+    scratch_parent = str(extra_factory_kwargs.pop("scratch_parent", "") or "")
     from kiro_crew.execution_context import read_session_execution
 
     execution = await asyncio.to_thread(read_session_execution, key)
@@ -800,6 +808,7 @@ async def _get_or_create_impl(
             app_launch_agent=app_launch_agent,
             owning_app=owning_app,
             fallback_hidden_cwd=fallback_hidden_cwd,
+            scratch_parent=scratch_parent,
             **extra_factory_kwargs,
         )
 
@@ -869,6 +878,7 @@ async def _get_or_create_impl(
             focus_resume=focus_resume,
             app_name=app_name,
             fallback_hidden_cwd=fallback_hidden_cwd,
+            scratch_parent=scratch_parent,
             **claim,
         )
 
@@ -932,7 +942,7 @@ async def _get_or_create_impl(
         if readable_scratch is None and memory_mode == "persistent" and resume_sid:
             # A resume rejoins its recorded tree (bound as ``shared_scratch`` below),
             # so a cwd inside that tree stays readable to the new process.
-            readable_scratch = await asyncio.to_thread(agent_scratch_trees.recorded_tree, key)
+            readable_scratch = await _recorded_tree_of_own_session_tree(key, self._deps.logger)
             cwd_kept_by_recorded_tree = readable_scratch is not None
         cwd_is_hidden = await asyncio.to_thread(
             _stored_cwd_is_hidden_scratch,
@@ -1413,7 +1423,7 @@ async def _get_or_create_impl(
             and resume_sid
             and extra_factory_kwargs.get("shared_scratch") is None
         ):
-            recorded_scratch = await asyncio.to_thread(agent_scratch_trees.recorded_tree, key)
+            recorded_scratch = await _recorded_tree_of_own_session_tree(key, self._deps.logger)
             if recorded_scratch is not None:
                 extra_factory_kwargs["shared_scratch"] = recorded_scratch
                 provider = build_provider()
@@ -1766,7 +1776,10 @@ async def _get_or_create_impl(
                         # declare it must retire any predecessor binding.
                         work_scratch = getattr(provider, "work_scratch_dir", None)
                         if isinstance(work_scratch, Path):
-                            must_retire = not await self._record_scratch_tree(key, work_scratch)
+                            # The binding and its spawn parent go in one checked write.
+                            must_retire = not await self._record_scratch_tree(
+                                key, work_scratch, scratch_parent
+                            )
                         else:
                             must_retire = had_resume_sid or await run_to_completion(
                                 asyncio.to_thread(agent_scratch_trees.has_live_tree, key)
@@ -1937,6 +1950,7 @@ async def _get_or_create_impl(
             app_launch_agent=app_launch_agent,
             owning_app=owning_app,
             fallback_hidden_cwd=fallback_hidden_cwd,
+            scratch_parent=scratch_parent,
             **extra_factory_kwargs,
         )
 
