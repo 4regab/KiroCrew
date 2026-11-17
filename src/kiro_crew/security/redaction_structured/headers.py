@@ -33,7 +33,7 @@ import base64
 import binascii
 from collections.abc import Callable
 
-from .charsets import ALNUM
+from .charsets import ALNUM, ascii_lower
 from .checks import (
     _SHORTCUT_MIN,
     MASK_CHARS,
@@ -44,7 +44,7 @@ from .checks import (
     reads_as_words,
     session_name,
 )
-from .model import PLAN_TAGS, Hit
+from .model import PLAN_TAGS, TAIL_LINE, Hit
 from .table import HeaderRow
 
 # A name is read where it is not the tail of a longer one: ``x-api-key`` is not ``api-key``,
@@ -57,6 +57,8 @@ _BLANKS = " \t\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008
 _ASCII_BLANKS = " \t"
 _SPACE = frozenset(" \t\r\n")
 _QUOTES = "\"'"
+#: The quotes a header or cookie value may be wrapped in (read by ``text_redaction``).
+VALUE_QUOTES = _QUOTES
 _TOKEN = frozenset(ALNUM + "._~+/-=")
 _COOKIE_VALUE_STOPS = frozenset(";, \t\r\n\"'")
 _WORD_STOPS = frozenset(" \t\r\n\"'")
@@ -79,10 +81,23 @@ _NETRC_PAIRS = frozenset({"login", "account"})
 _NETRC_TOKENS = 6
 # A Basic value longer than this is not decoded to look for a placeholder.
 _BASIC_DECODE_MAX = 512
+# How many blanks and quotes a stream holds after a Cookie name while its separator
+# has not arrived yet.
+_SEPARATOR_MAX = 64
+# How far past its name one stream window reads a running Cookie line before the rest
+# of the line is masked: 8 KiB, a common server limit for one request header line.
+COOKIE_LINE_HOLD = 8192
 
 
 class _Open(Exception):
-    """The text ends before the unit is decided (non-final scans only)."""
+    """The text ends before the unit is decided (non-final scans only). *at* is where
+    the undecided text starts when it is not the header name (a Cookie pair), and
+    *hits* are the units decided before it."""
+
+    def __init__(self, at: int | None = None) -> None:
+        super().__init__()
+        self.at = at
+        self.hits: list[Hit] = []
 
 
 def _skip(text: str, i: int, chars: str) -> int:
@@ -265,8 +280,9 @@ class _Walk:
 
     For a cookie, a walk from a pair start reads the same pairs whatever anchor reached it: the line
     end, the ``final`` flag and every step after are fixed by the position alone. Each
-    pair start a walk reads is kept with how the walk ended (``True``: it raised
-    :class:`_Open`). A later walk that reaches one stops there, or raises, as that walk
+    pair start a walk reads is kept with how the walk ended (the position it raised
+    :class:`_Open` at, or None). A later walk that reaches one stops there, or raises
+    at that same position, as that walk
     did; the hits after it are already in the list.
 
     The finders (``breaks``, ``eqs``, ``semis``, ``stops``, ``masks``, ``words``,
@@ -311,7 +327,7 @@ class _Walk:
         self.colons = _Next(text, ":")
         self.word_stops = _Next(text, "".join(sorted(_WORD_STOPS)))
         self.quoted = {q: _Next(text, q + "\r\n") for q in _QUOTES}
-        self.walked: dict[int, bool] = {}
+        self.walked: dict[int, int | None] = {}
         self._scan: _ValueScan | None = None
         self._spent = 0
         self._cur_lo = 0
@@ -443,21 +459,102 @@ def _walk_keep(text: str, start: int, end: int, row: HeaderRow, walk: _Walk) -> 
     return not cookie_value_is_placeholder(text, start, end, has_mask, has_trigger, walk.classify)
 
 
+def opens_cookie_header(text: str, start: int, end: int) -> bool:
+    """Whether a ``Cookie`` header name in ``text[start:end]`` reads as one, by the
+    cookie reader's own grammar: not the tail of a longer name (``Set-Cookie``), and
+    followed by its separator (:func:`_after_name`: a quote, blanks, ``:`` or ``=``)."""
+    return _line_cookie_name(text, start, end) is not None
+
+
+def _line_cookie_name(text: str, lo: int, hi: int) -> tuple[int, int] | None:
+    """``(name, first pair)`` of the first Cookie header name in ``text[lo:hi]``, or None."""
+    low = ascii_lower(text[lo:hi])
+    at = low.find("cookie")
+    while at != -1:
+        pos = lo + at
+        if pos == 0 or text[pos - 1] not in _NAME_CHARS:
+            i = _after_name(text, pos + len("cookie"))
+            if i is not None:
+                return pos, i
+        at = low.find("cookie", at + 1)
+    return None
+
+
+def _tail_from(text: str, start: int) -> str:
+    """``text[start:]``, behind a name character (``_``) when *start* follows one, so
+    the anchor rule (no name character before a header name) reads a cut name
+    (``Set-Cookie``, ``MyCookie``) as the tail of a longer one, as the whole text
+    does. A stand-in, not the cut character: the next cut would drop that one, while
+    the stand-in is set again each time."""
+    if 0 < start and text[start - 1] in _NAME_CHARS:
+        return "_" + text[start:]
+    return text[start:]
+
+
+def cookie_look_behind(text: str, keep: int) -> str:
+    """A stream's look-behind: the last *keep* characters of the raw *text* it has let
+    go, except that while a Cookie header line is still running, its name and
+    separator are kept in front of them. A later pair is then
+    read from that name as the whole text reads it, without the stream holding the
+    line, so each feed reads only new text."""
+    n = len(text)
+    if n <= keep:
+        return text
+    cut = n - keep
+    line_start = max(text.rfind("\n"), text.rfind("\r")) + 1
+    if line_start >= cut:
+        return _tail_from(text, cut)
+    head = _line_cookie_name(text, line_start, n)
+    if head is None or head[0] >= cut:
+        return _tail_from(text, cut)
+    at, i = head
+    # The name, quotes and separator without their blanks: a bounded prefix that
+    # reads the same way.
+    prefix = "".join(ch for ch in text[at:i] if ch not in _BLANKS)
+    # The raw tail stays whole, so every other unit keeps the look-behind it had. It
+    # may start inside a pair, so it is read as the value of a placeholder pair
+    # (``_=``) up to the next separator, never as a cookie name; a pair a later window
+    # can still decide is held whole past the look-behind (``_Open.at``).
+    prefix += "_="
+    # The raw tail keeps the full *keep* budget: the bounded prefix rides in front of
+    # it, so every other anchor (an ``Authorization`` label) keeps the look-behind it
+    # has without a Cookie line.
+    return prefix + _tail_from(text, max(i, cut))
+
+
 def _cookies(text: str, at: int, name: str, row: HeaderRow, final: bool, walk: _Walk) -> list[Hit]:
     i = walk.after_name(at + len(name))
     if i is None:
+        # The window ends between the name and its separator: the separator
+        # still decides whether the line is a Cookie header, so hold the name.
+        # The shared ``nonblank`` finder reads the run, so anchors stay linear.
+        end = at + len(name)
+        k = end + 1 if end < len(text) and text[end] in _QUOTES else end
+        if not final and walk.nonblank(k) == len(text):
+            if len(text) - end <= _SEPARATOR_MAX:
+                raise _Open
+            # Past the bound the separator is still undecided: fail closed and
+            # drop the rest of the line rather than release the name.
+            return [Hit(end, len(text), row.id, row.tier, "cookie", "known_key", tail=TAIL_LINE)]
         return []
     n = len(text)
     line_end = walk.breaks(i)
     hits: list[Hit] = []
     first_only = name == "set-cookie"
+    if not final and line_end == n and not first_only and n - at >= COOKIE_LINE_HOLD:
+        # A running Cookie line read COOKIE_LINE_HOLD characters past its name in one
+        # window: the rest of the line is a Secret (fail closed), and the stream
+        # drops it to its CR or LF. It also bounds the one pair a stream holds.
+        return [Hit(i, n, row.id, row.tier, "cookie", "known_key", tail=TAIL_LINE)]
     seen: list[int] = []
     try:
         while i < line_end:
             if not first_only:
                 if i in walk.walked:
-                    if walk.walked[i]:
-                        raise _Open
+                    held_at = walk.walked[i]
+                    if held_at is not None:
+                        # Joins a held chain: held where that walk held, not earlier.
+                        raise _Open(held_at)
                     break
                 seen.append(i)
             eq = walk.eqs(i)
@@ -466,7 +563,7 @@ def _cookies(text: str, at: int, name: str, row: HeaderRow, final: bool, walk: _
             vs = eq + 1
             ve = walk.stops(vs)
             if ve == n and not (final or line_end < n):
-                raise _Open
+                raise _Open(i)
             if walk.session(i, eq) and _walk_keep(text, vs, ve, row, walk):
                 hits.append(Hit(vs, ve, row.id, row.tier, "cookie", "known_key"))
             if first_only:
@@ -475,10 +572,19 @@ def _cookies(text: str, at: int, name: str, row: HeaderRow, final: bool, walk: _
             if semi >= line_end:
                 break
             i = walk.nonblank(semi + 1)
-    except _Open:
-        walk.walked.update(dict.fromkeys(seen, True))
+        if not final and line_end == n and not first_only and i < n:
+            # The line is still running and its last pair is not decided: hold that
+            # pair. A stream reads later pairs from the name its look-behind keeps
+            # (:func:`cookie_look_behind`), so the pairs before it commit.
+            raise _Open(i)
+    except _Open as held:
+        if held.at is None:
+            held.at = i
+        walk.walked.update(dict.fromkeys(seen, held.at))
+        # The pairs before the held one are decided: they commit with their hits.
+        held.hits = hits
         raise
-    walk.walked.update(dict.fromkeys(seen, False))
+    walk.walked.update(dict.fromkeys(seen, None))
     return hits
 
 
@@ -664,7 +770,8 @@ def detect_headers(
                         found = fixed[1](text, at, row, final)
                         if found is not None:
                             hits.append(found)
-                except _Open:
-                    opens.append(at)
+                except _Open as held:
+                    opens.append(at if held.at is None else held.at)
+                    hits += held.hits
                 at = low.find(name, at + 1)
     return hits, opens
