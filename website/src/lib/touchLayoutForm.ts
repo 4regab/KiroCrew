@@ -1,4 +1,10 @@
+import { FOLD_TWO_PANE_QUERY } from '../hooks/useViewportSegments'
 import { safeGetItem, safeSetItem } from '../utils/safeStorage'
+
+/** The width the phone form ends at; `useIsMobile` re-exports it. Kept here so
+ *  the form without a fold (`unfoldedPhoneForm`) reads it from a module that
+ *  tests do not stub. */
+export const MOBILE_BREAKPOINT = 768
 
 export const TOUCH_LAYOUT_KEY = 'kc-touch-layout'
 export const TOUCH_LAYOUT_CHOICES = ['auto', 'phone', 'desktop'] as const
@@ -33,6 +39,11 @@ export function isTouchFirst(): boolean {
  * layout" choice, else the browser's own mobile/desktop mode rather than the
  * window's width.
  *
+ * A reported fold at 640px and wider returns `false` (the two-pane form) on any
+ * device, ahead of the browser's mode. Only the person's own Phone layout
+ * choice comes before it. A flat foldable reports no fold, so it keeps the rule
+ * below.
+ *
  * A touch-first device is one whose primary pointer is coarse AND cannot hover.
  * On it the browser already knows which form the person wants: a phone browser
  * reports itself as mobile, its "Request desktop site" toggle (and iPad Safari
@@ -50,7 +61,50 @@ export function isTouchFirst(): boolean {
  * for everything else, including the Desktop choice and a desktop-mode browser:
  * both get the desktop form from 768px up and keep the phone form below it.
  */
-export function touchFirstForm(): true | null {
+export function touchFirstForm(): boolean | null {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null
+  if (isTouchFirst() && readTouchLayoutChoice() === 'phone') return true
+  if (window.matchMedia(FOLD_TWO_PANE_QUERY).matches) return false
+  return touchFirstUnfoldedForm()
+}
+
+/** The phone/desktop form with any fold left out: `useIsMobile`'s rule without
+ *  FOLD_TWO_PANE_QUERY, the touch-first answer, else the width breakpoint. The
+ *  side panel picks its host from this (`panelInlineHost` below),
+ *  so a fold, which changes the form, never changes where the panel is mounted. */
+export function unfoldedPhoneForm(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+  return touchFirstUnfoldedForm() ?? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`).matches
+}
+
+// The unfolded form as of `useIsMobile`'s last commit. Kept here, not in
+// hooks/useIsMobile.ts, because many suites stub that module whole.
+let committedUnfolded: boolean | null = null
+
+/** Record the unfolded form at a `useIsMobile` commit; `null` when it stops
+ *  tracking. A window with no viewport keeps the form it last recorded. */
+export function recordUnfoldedForm(tracking: boolean): void {
+  if (!tracking) { committedUnfolded = null; return }
+  if (typeof window !== 'undefined' && window.innerWidth === 0 && window.innerHeight === 0) return
+  committedUnfolded = unfoldedPhoneForm()
+}
+
+/** The unfolded form `useIsMobile` last committed, so a render between a
+ *  viewport crossing 768px and the form switch's commit reads the old form, as
+ *  `useIsMobile` does. Where nothing has committed one it reads the form live,
+ *  and a window with no viewport (0x0) reads as `useIsMobile` reads it there:
+ *  the touch-first answer, else the desktop form, never the narrow query that a
+ *  0x0 window matches. */
+export function committedUnfoldedPhoneForm(): boolean {
+  if (committedUnfolded !== null) return committedUnfolded
+  if (typeof window !== 'undefined' && window.innerWidth === 0 && window.innerHeight === 0) {
+    return touchFirstUnfoldedForm() ?? false
+  }
+  return unfoldedPhoneForm()
+}
+
+/** `touchFirstForm` as it reads with no fold reported: the touch-first rule alone. */
+export function touchFirstUnfoldedForm(): true | null {
   if (!isTouchFirst()) return null
   const choice = readTouchLayoutChoice()
   if (choice !== 'auto') return choice === 'phone' ? true : null
@@ -69,4 +123,32 @@ export function browserReportsMobile(): boolean {
   const hinted = (navigator as Navigator & { userAgentData?: { mobile?: unknown } }).userAgentData?.mobile
   if (typeof hinted === 'boolean') return hinted
   return /\bMobile\b/.test(navigator.userAgent || '')
+}
+
+/**
+ * Whether the side panel is mounted inline, beside the chat in the page's own
+ * row, rather than portaled into the shell's full-height column. The phone
+ * form needs the inline host. Off it the choice follows the form the device
+ * would have WITHOUT a fold, so folding or unfolding, which flips the form at
+ * the same width, never moves the panel to the other host. Moving it would
+ * mount a second panel and drop every live frame in it (an app frame's form, a
+ * preview's page). The unfolded form is the one `useIsMobile` last committed
+ * (`committedUnfoldedPhoneForm`), not the live breakpoint: with no fold the
+ * host changes in the same commit as the form, inside the form switch's morph,
+ * so a resize across 768px moves the panel as on main and never a render early.
+ *
+ * shortcut: a window resized across 768px while folded, or a Touch screen
+ * layout choice changed while folded, queues no form switch, so the host moves
+ * at the next render outside any morph; it remounts the panel there, as main
+ * does on any resize across 768px. Subscribe the host to the committed
+ * unfolded form if that late remount shows on a device.
+ */
+export function panelInlineHost({ isMobile }: { isMobile: boolean }): boolean {
+  if (isMobile) return true
+  if (typeof window === 'undefined') return false
+  // A window with no viewport (a background tab, or a remote dashboard pane
+  // hidden with display:none) has no form to read. useIsMobile keeps the
+  // committed form there, and the host reads the same committed form, so hiding
+  // a folded pane never moves the panel or reloads its frames.
+  return committedUnfoldedPhoneForm()
 }
