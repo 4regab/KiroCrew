@@ -23,6 +23,8 @@ canonical path or None); and ``vet_public_url``, ``UrlRejectedError`` and
 ``address_is_not_public``, the gateway's outbound public-address check for a URL, or
 a resolved address, an app's backend fetches. Level 14 also adds ``sniff_raster_mime``
 and ``RASTER_SNIFF_BYTES``: the gateway's own raster sniffer, by reference.
+Level 15 adds the page's ``FileTree``: the dashboard's project file tree, behind the
+app's declared ``/api/project/tree``.
 """
 
-APP_SDK_LEVEL = 14
+APP_SDK_LEVEL = 15

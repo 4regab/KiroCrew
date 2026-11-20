@@ -21,5 +21,7 @@
  * resolved address, an app's backend fetches.
  * Level 14 also adds `sniff_raster_mime` and `RASTER_SNIFF_BYTES`: the gateway's
  * raster sniffer, by reference.
+ * Level 15 adds `FileTree`: the dashboard's project file tree, behind the app's
+ * declared `/api/project/tree`.
  */
-export const APP_SDK_LEVEL = 14
+export const APP_SDK_LEVEL = 15

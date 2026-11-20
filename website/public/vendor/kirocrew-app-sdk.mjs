@@ -32,6 +32,8 @@ export const {
   useBrowserSites,
   // The live view of the app's own slot, take over and hand back, coordinates (level 11).
   BrowserView, useBrowserView, useBrowserCoords,
+  // The dashboard's project file tree, behind the app's declared tree read (level 15).
+  FileTree,
   defaultMessageRenderers, mergeRenderers, resolveRenderer, ToolCallPill, GROUPED_ROLES,
   // WS event scope prediction, so a subscription that will never be delivered warns at
   // development time instead of silently receiving nothing.
