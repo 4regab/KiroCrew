@@ -381,7 +381,11 @@ class StreamRead:
     buffer's end: the stream replaces it with ``tag`` and drops input to its end.
     ``undecided`` is set when ``cut`` stops at a unit the detectors have not
     decided yet (an open unit, or a hit the cut would split), rather than only
-    at the anchor-prefix margin.
+    at the anchor-prefix margin. A ``tail`` of ``line`` (:data:`~.model.TAIL_LINE`)
+    drops nothing: the stream writes ``tag`` and hides its output to the next line
+    break, and reads the rest of the buffer as before. ``quiet_from`` is the buffer
+    offset of a held Cookie line's name (-1 for none): until a line break arrives or the
+    hold passes its bound, a feed may skip this read (:func:`.stream.quiet`).
     """
 
     cut: int
@@ -391,6 +395,7 @@ class StreamRead:
     #: ``(BEGIN, END line end)`` of each private-key block that ended, in buffer
     #: offsets: once a BEGIN is committed, its end is the stream's next ``armour_from``.
     armour_blocks: tuple[tuple[int, int], ...] = ()
+    quiet_from: int = -1
 
 
 #: How every credential placeholder starts (``[REDACTED: credential]`` and the rest).
@@ -454,7 +459,12 @@ def _tail_cut(buf: str, base: int, cut: int) -> int:
 
 
 def stream_read(
-    context: str, buf: str, *, boundary: bool = False, armour_from: int = 0
+    context: str,
+    buf: str,
+    *,
+    boundary: bool = False,
+    armour_from: int = 0,
+    hiding: bool = False,
 ) -> StreamRead | None:
     """The detectors' hold on ``buf`` read after ``context``.
 
@@ -476,11 +486,15 @@ def stream_read(
     Identifier-value row alone reads (a data URI payload, a request id) replaces
     nothing and overrides no Secret hit, so the committed text is the same wherever
     the cut falls in it, and it is not held.
+
+    ``hiding`` is set while the stream hides a line already (``TAIL_LINE``): that
+    line is then not reported again, only one after a line break.
     """
     try:
         _load()
-        from kiro_crew.security.redaction_structured.model import IDENTIFIER, SECRET
-        from kiro_crew.security.redaction_structured.stream import TAIL
+        from kiro_crew.security.redaction_structured.engine import resolve
+        from kiro_crew.security.redaction_structured.model import IDENTIFIER, SECRET, TAIL_LINE
+        from kiro_crew.security.redaction_structured.stream import TAIL, line_break
 
         with look_behind(context, buf, armour_from):
             read = _read(buf, final=False)
@@ -490,14 +504,30 @@ def stream_read(
         return StreamRead(0, undecided=True)
     base, open_from = read.base, read.replace_open_from
     blocks = tuple((begin - base, end - base) for begin, end in read.armour_blocks)
+    n = base + len(buf)
+    # A Cookie line past its bound is a signal, not a span: the stream hides the line.
+    line = next((h for h in read.hits if h.tail == TAIL_LINE and h.end == n), None)
+    pool = read.resolved
+    if line is not None:
+        pool = resolve([h for h in read.hits if h.tail != TAIL_LINE])
+        # The line already hidden is not reported again; a later one is.
+        if hiding and line_break(buf[: line.start - base]) == -1:
+            line = None
     # An Identifier-value hit (a structure reading that is not structural).
     resolved = [
         h
-        for h in read.resolved
+        for h in pool
         if not (h.tier == IDENTIFIER and h.detector == "structure" and not h.structural)
     ]
-    n = base + len(buf)
+    held = read.open_from
+    quiet_from = (
+        held - base if held is not None and read.window[held : held + 6].lower() == "cookie" else -1
+    )
     tail_hit = next((h for h in resolved if h.tier == SECRET and h.tail and h.end == n), None)
+    # A run decided inside a Cookie line to hide is hidden with the line, so the line's
+    # name is never dropped ahead of a later pair on it.
+    if line is not None and tail_hit is not None and tail_hit.start >= line.start:
+        tail_hit = None
     if tail_hit is not None and (open_from is None or open_from >= tail_hit.start):
         return StreamRead(
             tail_hit.start - base,
@@ -509,6 +539,9 @@ def stream_read(
     undecided = open_from is not None
     if open_from is not None:
         cut = min(cut, open_from)
+    if line is not None:
+        cut = min(cut, line.start)
+        undecided = True
     cut = max(cut, base)
     moved = True
     while moved:
@@ -519,10 +552,18 @@ def stream_read(
             # A cut right at its end, with more text after it, would commit the
             # hit without the character it was decided by (a closing quote).
             first = h.start if h.anchor < 0 else min(h.start, h.anchor)
-            if first < cut < h.end or first < cut == h.end < n:
+            # The cut only ever moves back (an anchor in the look-behind holds it at
+            # ``base``), so the loop ends.
+            if (first < cut < h.end or first < cut == h.end < n) and max(base, first) < cut:
                 cut = max(base, first)
                 moved = undecided = True
-    return StreamRead(cut - base, undecided=undecided, armour_blocks=blocks)
+    if line is not None and cut < line.start:
+        # Another hold stops the cut before the line: keep the Cookie name with it, so
+        # the next read still decides the line from its name.
+        cut = max(base, min(cut, line.anchor))
+    if line is not None and cut == line.start:
+        return StreamRead(cut - base, TAIL_LINE, tag=_tag(line.rule_id), armour_blocks=blocks)
+    return StreamRead(cut - base, undecided=undecided, armour_blocks=blocks, quiet_from=quiet_from)
 
 
 def discard_run(tail: str, pad: int, buf: str) -> tuple[int, int, bool]:
@@ -540,3 +581,17 @@ def stream_context_max() -> int:
     from kiro_crew.security.redaction_structured.stream import CONTEXT
 
     return CONTEXT
+
+
+def line_break(text: str) -> int:
+    """:func:`.stream.line_break`: the first line break in *text*, or -1."""
+    from kiro_crew.security.redaction_structured.stream import line_break as first
+
+    return first(text)
+
+
+def quiet(held: str, chunk: str) -> bool:
+    """:func:`.stream.quiet`: whether a feed may skip the read for a held Cookie line."""
+    from kiro_crew.security.redaction_structured.stream import quiet as skip
+
+    return skip(held, chunk)
