@@ -1105,6 +1105,13 @@ class TestSandboxEscapeSshSelf:
             "sudo -e s*",
             # The cased words go through the same body masking as the lowered ones.
             "echo \"$(date '+%F x')\" s; sudo -H ls -l s* *.*",
+            # A ``;`` inside a word of a comment does not end the comment.
+            "ls # x;s?h local*",
+            # A ``;;`` or ``;&`` glued to the next arm's patterns leaves them patterns.
+            'case "$f" in docs) echo d;;s*|r*) du -sh l*;;esac',
+            'case "$f" in docs) echo d;&s*|r*) ls l*;;esac',
+            # A ``case`` glued after a separator opens a case statement too.
+            "true;case sample in s*|r* ) echo local* ;; esac",
         ],
     )
     def test_a_glob_host_after_a_glob_verb_is_not_this_host(self, text):
@@ -1136,6 +1143,16 @@ class TestSandboxEscapeSshSelf:
             "x=$(s?h local* id)",
             "(s?h local* id)",
             "cd /tmp;s?h local*",
+            "cd tmp;s?h local* id",
+            "cd tmp&&s?h local* id",
+            "cd tmp|s?h local*",
+            "(cd tmp;s?h local*)",
+            # A ``;`` or ``|`` inside one word that does not end the command (a
+            # clobber redirect, a substitution) leaves the verb in program position.
+            ">|out s?h local* id",
+            "$(a;b) s?h local* id",
+            # A ``case`` an earlier command runs into opens no case statement.
+            "echo case;true in x;s?h local* id",
             "echo $(s?h localhost id)",
             # Bash runs a ``$(`` inside double quotes as a command line of its own.
             'echo "$(s?h localhost id)"',

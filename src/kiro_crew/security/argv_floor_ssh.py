@@ -1266,6 +1266,11 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
     for tokens, cased_tokens in zip(frames, cased_frames):
         programs = _argv_programs(tokens)
         executed = _argv_rules._executed_program_indices(tokens, cased_tokens)
+        # Bash runs ``s?h`` in ``cd tmp;s?h``. The glued-split reading only adds
+        # run positions, and only the glob verb test below reads them.
+        run_globs = executed | _argv_rules._executed_program_indices(
+            tokens, cased_tokens, glue_split=True
+        )
         # Only a submitted line that is one simple ``git add`` gets this reading.
         file_operands = (
             _argv_rules._file_operand_indices(tokens, cased_tokens)
@@ -1312,7 +1317,7 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
                 verb is not None
                 and _ssh_verb_basename(token) != verb
                 and not any(sep in token for sep in "/\\")
-                and (i not in executed or not token.strip("*"))
+                and (i not in run_globs or not token.strip("*"))
             )
             # A wildcard that is a plain ``git add`` operand (``_file_operand_indices``)
             # is a file name: the words after it get no DNS lookup, only the own-name
