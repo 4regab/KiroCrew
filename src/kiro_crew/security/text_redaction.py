@@ -397,6 +397,7 @@ class StreamRedactor:
     def _engine_discard(self) -> str | None:
         """Drop a structured unit's continuation; None once the unit has ended."""
         seam = _submodule(_SEAM)
+        self._engine_tail = seam.line_drop_tail(self._engine_tail, self._ctx, self._buf)
         dropped, self._engine_pad, done = seam.discard_run(
             self._engine_tail, self._engine_pad, self._buf
         )
@@ -558,7 +559,20 @@ class StreamRedactor:
         # A unit the detectors have not decided yet is held whole, and one decided
         # while still running is dropped to its end.
         engine = self._engine_read(boundary=self._boundary)
-        if engine is not None and engine.tail:
+        # A held value that a STRONG anchor of this pass also reads stays with this
+        # pass: its own ceiling (Phase B) fails closed on it, as it did before the
+        # detectors bounded that value.
+        anchored_value = (
+            engine is not None
+            and engine.held
+            and (
+                partial_jwt is not None
+                or bearer_anchor is not None
+                or aws_keyed_anchor is not None
+                or strong_token_anchor
+            )
+        )
+        if engine is not None and engine.tail and not anchored_value:
             commit, raw = self._buf[: engine.cut], self._buf[engine.cut :]
             self._buf = ""
             out = self._redact_window(commit) if commit else ""

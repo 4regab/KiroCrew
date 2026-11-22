@@ -18,7 +18,13 @@ the end of the run.
 The private-key scan of each window starts where the last committed block's END
 line ended, as whole text resumes it, so a BEGIN inside a block whose own BEGIN
 has left the look-behind is not read as a new header.
-Chunked output and spans therefore equal the whole-text result at every split.
+Chunked output and spans therefore equal the whole-text result at every split, with one
+exception that only masks more. A header, cookie or command-line value still running
+past 4 KiB (``headers._HOLD_MAX``) is replaced from its start and the stream discards
+the rest of its line, even text the whole text keeps: a stream past the bound does
+not keep the line's start, which the readers of that text read it from. When the
+discarded line names a private-key block (a BEGIN line), whose body can run past the
+line's end, the stream discards the rest of the text (:func:`span_tail`).
 """
 
 from __future__ import annotations
@@ -26,7 +32,8 @@ from __future__ import annotations
 from .charsets import B64STD
 from .encoded import RUN_CHARS
 from .engine import render, resolve, scan
-from .model import SECRET, TAG, TAIL_ALL, TAIL_B64RUN, TAIL_ENCRUN, Hit, Span
+from .model import SECRET, TAG, TAIL_ALL, TAIL_B64RUN, TAIL_ENCRUN, TAIL_LINE, Hit, Span
+from .table import TABLE
 
 # Look-behind kept from committed text: covers the pairing window (300 + 40 + 21),
 # line leads (64), key-token expansion (64) and URL schemes (32) with margin.
@@ -42,11 +49,15 @@ def discard(tail: str, pad: int, chunk: str) -> tuple[int, int, bool]:
     """``(dropped, pad, done)`` for a replaced unit's continuation in ``chunk``.
 
     ``tail`` is :data:`~.model.TAIL_ALL` (the unit runs to the end of the text: drop
-    everything) or a run tail (drop the rest of the run and at most two ``=`` after it).
+    everything), :data:`~.model.TAIL_LINE` (drop up to the line's CR or LF, which
+    stays) or a run tail (drop the rest of the run and at most two ``=`` after it).
     ``pad`` counts the ``=`` already dropped.
     """
     if tail == TAIL_ALL:
         return len(chunk), pad, False
+    if tail == TAIL_LINE:
+        i = next((k for k, ch in enumerate(chunk) if ch in "\r\n"), len(chunk))
+        return i, pad, i < len(chunk)
     i = 0
     if pad == 0:
         i = len(chunk) - len(chunk.lstrip(_RUN_TAILS[tail]))
@@ -54,6 +65,34 @@ def discard(tail: str, pad: int, chunk: str) -> tuple[int, int, bool]:
         pad += 1
         i += 1
     return i, pad, not (i == len(chunk) and pad < 2)
+
+
+def span_tail(hits: list[Hit], tail_hit: Hit, text: str) -> str:
+    """How far the drop of *tail_hit* runs, the Secret span a stream is about to
+    replace in *text*: the furthest any unit that ends the span runs. A unit that
+    runs to the end of the text (an unterminated private-key block) outranks a held
+    value's line, and that line outranks a run, which cannot pass a line's end."""
+    tails = {
+        h.tail
+        for h in hits
+        if h.tier == SECRET and h.tail and h.end == tail_hit.end and h.start >= tail_hit.start
+    }
+    if TAIL_ALL in tails:
+        return TAIL_ALL
+    if TAIL_LINE in tails:
+        return line_tail("", text[tail_hit.start :])
+    return tail_hit.tail
+
+
+def line_tail(before: str, dropped: str) -> str:
+    """The tail of a line drop that has dropped *before*, then *dropped*:
+    :data:`~.model.TAIL_LINE`, or :data:`~.model.TAIL_ALL` once the dropped text names
+    a private-key block. That block's body can run past the line's end, and its BEGIN
+    line, which the whole text masks it by, is dropped: the rest of the text goes too."""
+    for begin in {row.begin for row in TABLE.armour}:
+        if begin in before[-len(begin) + 1 :] + dropped:
+            return TAIL_ALL
+    return TAIL_LINE
 
 
 class StreamRedactor:
@@ -101,6 +140,8 @@ class StreamRedactor:
     def _discard(self, chunk: str) -> str:
         """Drop input belonging to a unit already replaced; return what follows it."""
         i, self._pad, done = discard(self._mode, self._pad, chunk)
+        if self._mode == TAIL_LINE and line_tail(self._ctx, chunk[:i]) == TAIL_ALL:
+            self._mode, i, done = TAIL_ALL, len(chunk), False
         self._pos += i
         if self._mode != TAIL_ALL:
             self._ctx = (self._ctx + chunk[:i])[-CONTEXT:]
@@ -147,7 +188,8 @@ class StreamRedactor:
                 result.open_from is None or result.open_from >= tail_hit.start
             ):
                 self._note_blocks(result.armour_blocks, tail_hit.start, offset)
-                return self._start_discard(window, base, offset, resolved, tail_hit)
+                tail = span_tail(result.hits, tail_hit, window)
+                return self._start_discard(window, base, offset, resolved, tail_hit, tail)
             cut = n - TAIL
             if result.open_from is not None:
                 cut = min(cut, result.open_from)
@@ -171,12 +213,12 @@ class StreamRedactor:
         return out
 
     def _start_discard(
-        self, window: str, base: int, offset: int, resolved: list[Hit], tail_hit: Hit
+        self, window: str, base: int, offset: int, resolved: list[Hit], tail_hit: Hit, tail: str
     ) -> str:
         out = render(window, resolved, base, tail_hit.start) + TAG
         self._record(resolved, base, tail_hit.start, offset)
         self._open_span = (tail_hit.start + offset, tail_hit.rule_id, tail_hit.tier)
-        self._mode = tail_hit.tail
+        self._mode = tail
         self._pad = 0
         if self._mode != TAIL_ALL:
             # The window ends inside the run: no padding has been read yet.
