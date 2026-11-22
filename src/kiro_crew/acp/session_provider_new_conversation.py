@@ -182,6 +182,7 @@ async def new_conversation(
     new_handle.keepalive_routed = getattr(old, "keepalive_routed", False) is True
     self._handle = new_handle
     self._rewatch_agent_turns()
+    self._install_mcp_consent_hook()
     old.mcp_session_report().hand_over(new_handle.mcp_session_report())  # its reader follows
     # The fresh session/new restored nothing: a session/load observation from
     # the old handle would make the next turn skip its history replay

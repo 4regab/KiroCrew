@@ -10,10 +10,11 @@ of the method on the class or on an instance reaches every caller.
 
 Instance fields written: ``_answer_tasks``, ``_audit_tasks``, ``_kas_host_auth_logged``,
 ``_kas_host_auth_failure_logged``, ``_kas_served_token_digest``,
-``_mcp_reattempts``, ``_mcp_sign_in``, ``_mcp_sign_in_ended_hooks``.
+``_mcp_consent_hooks``, ``_mcp_reattempts``, ``_mcp_sign_in``, ``_mcp_sign_in_ended_hooks``.
 
 Instance fields read: ``_agent``, ``_answer_cap_wait_secs``, ``_dead``, ``_fold_mcp_frame``,
-``_max_answer_tasks``, ``_pid``, ``_session_queues``, ``_subagent_owner``.
+``_max_answer_tasks``, ``_offer_consent_to_hook``, ``_pid``, ``_session_queues``,
+``_subagent_owner``.
 """
 
 from __future__ import annotations
@@ -522,6 +523,30 @@ def set_mcp_sign_in_ended_hook(
     self._mcp_sign_in_ended_hooks[session_id] = hook
 
 
+def set_mcp_consent_hook(
+    self: AcpRuntime, session_id: str, hook: Callable[[JsonRpcMessage], bool]
+) -> None:
+    """Install the hook offered *session_id*'s consent frame before it is queued.
+
+    It answers True when it delivered the frame itself, so the frame is not put on
+    the queue; that is how a link that lands while no turn reads the queue reaches
+    the chat. ``unregister_session`` removes it.
+    """
+    self._mcp_consent_hooks[session_id] = hook
+
+
+def _offer_consent_to_hook(self: AcpRuntime, session_id: str, consent: JsonRpcMessage) -> bool:
+    """Whether *session_id*'s consent hook delivered *consent*; a failing hook did not."""
+    hook = self._mcp_consent_hooks.get(session_id)
+    if hook is None:
+        return False
+    try:
+        return hook(consent) is True
+    except Exception:  # noqa: BLE001 -- a display hook never breaks the runtime
+        logger.warning("MCP consent hook failed; the link is queued", exc_info=True)
+        return False
+
+
 def begin_mcp_reattempt(self: AcpRuntime, session_id: str, server_name: str) -> bool:
     """Ask the engine to connect a failed MCP server of one session again.
 
@@ -577,9 +602,11 @@ async def _run_mcp_reattempt(self: AcpRuntime, session_id: str, server_name: str
 async def _answer_open_external_url(self: AcpRuntime, request_id: int | str, params: Any) -> None:
     """Deliver an MCP consent URL to the session whose sign-in is in flight.
 
-    The URL becomes an ordinary ``_kiro.dev/mcp/oauth_request`` frame on that
-    session's queue, so it takes the same safety checks and banner as the
-    kiro-cli engine's own request. It is refused with a JSON-RPC error when
+    The URL becomes an ordinary ``_kiro.dev/mcp/oauth_request`` frame, so it
+    takes the same safety checks and banner as the kiro-cli engine's own
+    request. The session's consent hook (``set_mcp_consent_hook``) is offered it
+    first and delivers it while no turn reads the session; otherwise, and on a
+    session without a hook, it goes on that session's queue. It is refused with a JSON-RPC error when
     no sign-in is in flight (the link cannot be attributed to a server), when
     the owning session is gone, or when the URL is not http(s), which the
     banner would refuse. The engine raises on that error, so its connect
@@ -611,7 +638,8 @@ async def _answer_open_external_url(self: AcpRuntime, request_id: int | str, par
         )
         # Made here, so the reader never saw it: folded as the reader folds one.
         self._fold_mcp_frame(session_id, consent)
-        await queue.put(consent)
+        if not self._offer_consent_to_hook(session_id, consent):
+            await queue.put(consent)
     try:
         if refusal:
             logger.info("MCP consent URL not opened: %s", refusal)

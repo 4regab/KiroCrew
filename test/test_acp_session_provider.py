@@ -1336,6 +1336,18 @@ class TestNewConversation:
         return runtime, new_handle
 
     @pytest.mark.asyncio
+    async def test_the_chats_consent_hook_moves_to_the_fresh_session(self):
+        old = _make_handle(session_id="old-session-1")
+        runtime, new_handle = self._runtime_with_new_session()
+        provider = AcpSessionProvider(old, runtime)
+        provider.set_mcp_consent_hook(lambda request: True)
+
+        await provider.new_conversation()
+
+        sessions = [c.args[0] for c in runtime.set_mcp_consent_hook.call_args_list]
+        assert sessions == ["old-session-1", "fresh-session-2"]
+
+    @pytest.mark.asyncio
     async def test_creates_fresh_session_on_same_runtime_and_swaps_handle(self):
         old = _make_handle(session_id="old-session-1")
         runtime, new_handle = self._runtime_with_new_session()
