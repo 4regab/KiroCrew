@@ -467,13 +467,18 @@ async def close_slot(
     *,
     pre_pop_check: Callable[[], None] | None = None,
     hand_back: bool = True,
+    release_worktrees: bool = True,
 ) -> None:
     """Close a slot while releasing its admission fence on every aborted path.
 
     A close that returns has committed, so the sessions the closed one managed are
-    handed up the manager line here (a no-op unless ``agent.session_manager_chain``).
-    The idle sweep passes ``hand_back=False``: an idle archive keeps them on it.
+    handed up the manager line here (a no-op unless ``agent.session_manager_chain``),
+    and a crewmate's worker loses the worktrees that were its own
+    (``crewmate_worktree_scope.release_closed_worker``). The idle sweep passes
+    ``hand_back=False`` and ``release_worktrees=False``: an idle archive keeps both,
+    so reviving it finds them as they were.
     """
+    session_key = effective_session_key(slot)
     # Published across the whole frame, restore included: a concurrent vocabulary delete
     # must be able to strip this object while it is out of ``_slots``.
     with close_in_flight(state, name, slot):
@@ -486,6 +491,10 @@ async def close_slot(
         from kiro_crew.dashboard.session_control import hand_back_on_close
 
         await _timed_close_stage(name, "hand-back", hand_back_on_close(state, slot))
+    if release_worktrees and state.get_slot(name) is not slot:
+        from kiro_crew.dashboard.crewmate_worktree_scope import release_closed_worker
+
+        release_closed_worker(state, slot, session_key)
 
 
 async def _timed_close_stage(name: str, stage: str, step: Awaitable[_T]) -> _T:

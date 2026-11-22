@@ -13,7 +13,12 @@ import os
 import subprocess
 
 import pytest
-from test_crewmate_worktree import _commit_in, _git, _init, git_here  # noqa: F401
+from crewmate_worktree_helpers import (  # noqa: F401 - fixtures
+    _commit_in,
+    _git,
+    _init,
+    git_here_fixture,
+)
 
 from kiro_crew import crewmate_worktree as cw
 
