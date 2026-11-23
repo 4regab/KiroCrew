@@ -6,11 +6,14 @@ An owner of the :mod:`kiro_crew.config.sections` facade; it never imports the fa
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import overload
+from typing import TYPE_CHECKING, overload
 
-from kiro_crew.config.fields import _meta
+from kiro_crew.config.fields import _meta, _safe_int
 from kiro_crew.config.sections_shared_crew import SharedCrewConfig
 from kiro_crew.config.sections_tailnet import TailscaleConfig
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from kiro_crew.config.sections_defaults import SectionReader
 
 # The terminal apps the desktop shell can open in a project directory
 # (``dashboard.terminal.external_app``), by id. Must equal the ids of
@@ -174,6 +177,25 @@ CHAT_ENTRY_CACHE_ENTRIES_DEFAULT = 4096
 CHAT_ENTRY_CACHE_BYTES_MIN = 4 * 1024 * 1024
 CHAT_ENTRY_CACHE_BYTES_MAX = 512 * 1024 * 1024
 CHAT_ENTRY_CACHE_BYTES_DEFAULT = 32 * 1024 * 1024
+
+# dashboard.warm_task_brief_away_minutes -- how long a crewmate thread or Crew
+# Mode chat must be off screen before a return posts the "Since you left" brief.
+# The floor is the minimum docs/request-for-change/rfc-delayed-task-brief.md
+# section 3.2 accepts; the RFC sets no ceiling, so one day bounds a hand-edited value.
+WARM_TASK_BRIEF_AWAY_MINUTES_MIN = 30
+WARM_TASK_BRIEF_AWAY_MINUTES_MAX = 1440
+WARM_TASK_BRIEF_AWAY_MINUTES_DEFAULT = 30
+
+
+def read_warm_task_brief_away_minutes(section: "SectionReader") -> int:
+    """The stored away time, clamped to its bounds; unreadable reads as the default."""
+    return section.read(
+        "warm_task_brief_away_minutes",
+        _safe_int,
+        WARM_TASK_BRIEF_AWAY_MINUTES_MIN,
+        WARM_TASK_BRIEF_AWAY_MINUTES_MAX,
+    )
+
 
 #: The ``dashboard.verbosity`` levels a writer may store.
 VERBOSITY_LEVELS: tuple[str, ...] = ("default", "concise", "answer_only")
@@ -1077,6 +1099,15 @@ class DashboardConfig:
             "Recent Session Tint Count",
             "Number of most-recently-active sessions to highlight in the sidebar with a "
             "graded accent stripe (0-10; 0 = off).",
+        ),
+    )
+    warm_task_brief_away_minutes: int = field(
+        default=WARM_TASK_BRIEF_AWAY_MINUTES_DEFAULT,
+        metadata=_meta(
+            "Since You Left Away Time (minutes)",
+            "Minutes a crewmate thread or Crew Mode chat must be off screen before "
+            'coming back to it posts a "Since you left" brief (30-1440). Takes '
+            "effect on the next return; no restart.",
         ),
     )
     show_unread_dot: bool = field(

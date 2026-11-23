@@ -56,7 +56,7 @@ the loader therefore reaches `config set`, an undo restores it, and a patch of
 | `config/sections_agent.py` | `AgentConfig`, and the readers that resolve against its declared defaults. |
 | `config/sections_session.py` | `session`, the crew record `KiroCrewAgentConfig`, `workspaces`, `session_environments` (its DTOs; validation lives in `config/session_environments.py`) and a session's `ResolvedBindings`. |
 | `config/sections_limits.py` | The bounds constants the loader's clamps and the dashboard's write gate share, and `resource_limits`. |
-| `config/sections_tailnet.py`, `config/sections_dashboard.py`, `config/sections_dashboard_hosts.py` | `dashboard`: `TailscaleConfig` and its parser; the DTO with its Jira and link-rule records; the host-list and link-pattern coercers. |
+| `config/sections_tailnet.py`, `config/sections_dashboard.py`, `config/sections_dashboard_hosts.py` | `dashboard`: `TailscaleConfig` and its parser; the DTO with its Jira and link-rule records; the host-list and link-pattern coercers; the `dashboard.warm_task_brief_away_minutes` bounds and load reader. |
 | `config/sections_slack.py`, `config/sections_telegram.py`, `config/sections_channels.py` | The messaging channels: Slack with its per-channel records and the activation modes; Telegram; and the others with the coercers they share. |
 | `config/sections_stt.py`, `config/sections_decisions.py`, `config/sections_telemetry.py` | Speech-to-text and its degradation rules; `decisions`; `telemetry` and `wakatime`. |
 | `config/memory_sections.py` | `memory`, `knowledge`, `skills`, `session_summary` and the named `memory_stores` records. |

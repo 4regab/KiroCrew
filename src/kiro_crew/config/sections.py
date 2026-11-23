@@ -278,10 +278,14 @@ from kiro_crew.config.sections_dashboard import (  # noqa: F401
     REMOTE_EDITOR_HOST_PATTERN,
     REMOTE_EDITOR_IDS,
     VERBOSITY_LEVELS,
+    WARM_TASK_BRIEF_AWAY_MINUTES_DEFAULT,
+    WARM_TASK_BRIEF_AWAY_MINUTES_MAX,
+    WARM_TASK_BRIEF_AWAY_MINUTES_MIN,
     DashboardConfig,
     JiraAuthEntry,
     LinkPatternRule,
     normalize_verbosity,
+    read_warm_task_brief_away_minutes,
 )
 from kiro_crew.config.sections_dashboard_hosts import (  # noqa: F401
     _BITBUCKET_CLOUD_HOSTS,
