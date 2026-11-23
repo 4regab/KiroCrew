@@ -6831,6 +6831,13 @@
       "this_app_is_disabled": "Это приложение отключено",
       "this_app_provides_agents_and_skills_but_no_visua": "Это приложение предоставляет агентов и навыки, но не имеет визуального интерфейса.\n            Используйте его агентов из чата."
     },
+    "keptAppPages": {
+      "open": "Открыть",
+      "region_label": "Приложения в фоновом режиме",
+      "running": "{{name}} всё ещё работает",
+      "status_check_failed": "Не удалось проверить, включено ли приложение {{name}}: {{error}}",
+      "stop_named": "Остановить {{name}}"
+    },
     "appPopoutTitleBar": {
       "return": "Вернуть",
       "return_to_main_window_and_close_this_popout": "Вернуться в главное окно и закрыть это отдельное окно"

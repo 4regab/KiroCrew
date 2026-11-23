@@ -23,6 +23,8 @@ canonical path or None); and ``vet_public_url``, ``UrlRejectedError`` and
 ``address_is_not_public``, the gateway's outbound public-address check for a URL, or
 a resolved address, an app's backend fetches. Level 14 also adds ``sniff_raster_mime``
 and ``RASTER_SNIFF_BYTES``: the gateway's own raster sniffer, by reference.
+Level 15 adds the SDK's ``useKeepAlive``: a routed page stays mounted, hidden, while
+the app says it is busy, and the dashboard names it on every page with Open and Stop.
 """
 
-APP_SDK_LEVEL = 14
+APP_SDK_LEVEL = 15

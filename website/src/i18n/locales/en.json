@@ -4561,6 +4561,13 @@
       "this_app_is_disabled": "This app is disabled",
       "this_app_provides_agents_and_skills_but_no_visua": "This app provides agents and skills but no visual interface.\n            Use its agents from chat."
     },
+    "keptAppPages": {
+      "open": "Open",
+      "region_label": "Apps running in the background",
+      "running": "{{name}} is still running",
+      "status_check_failed": "Could not check whether {{name}} is still on: {{error}}",
+      "stop_named": "Stop {{name}}"
+    },
     "appPopoutTitleBar": {
       "return": "Return",
       "return_to_main_window_and_close_this_popout": "Return to main window and close this popout"

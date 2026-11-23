@@ -214,8 +214,9 @@ describe('AppHost — hosting a real bundle', () => {
     // No PageHeader on this card — it replaces the app, not the whole page.
     expect(screen.queryByTestId('page-title')).toBeNull()
 
-    const logged = errorSpy.mock.calls.map(c => String(c[0])).join('\n')
-    expect(logged).toContain(`[AppHost] Failed to load ${NAME} from /apps/${NAME}/ui/index.js:`)
+    expect(errorSpy.mock.calls.map(c => c.slice(0, 3))).toContainEqual(
+      ['[AppHost] Failed to load %s from %s:', NAME, `/apps/${NAME}/ui/index.js`],
+    )
 
     fireEvent.click(screen.getByRole('button', { name: /apps/i }))
     expect(mockNavigate).toHaveBeenCalledWith('/apps')
@@ -342,8 +343,7 @@ describe('AppHost — error boundary', () => {
     expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(`${NAME} encountered an error`)
     expect(screen.getByText('the app blew up during render')).toBeTruthy()
 
-    const crashLog = errorSpy.mock.calls.map(c => String(c[0])).join('\n')
-    expect(crashLog).toContain(`[AppHost] ${NAME} crashed:`)
+    expect(errorSpy.mock.calls.map(c => c.slice(0, 2))).toContainEqual(['[AppHost] %s crashed:', NAME])
 
     // Retry clears the boundary AND bumps the reset key, so the app is given a
     // genuinely fresh lazy import rather than the cached rejected one.

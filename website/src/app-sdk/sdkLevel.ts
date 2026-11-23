@@ -21,5 +21,7 @@
  * resolved address, an app's backend fetches.
  * Level 14 also adds `sniff_raster_mime` and `RASTER_SNIFF_BYTES`: the gateway's
  * raster sniffer, by reference.
+ * Level 15 adds `useKeepAlive`: a routed page stays mounted, hidden, while the app
+ * says it is busy, and the dashboard names it on every page with Open and Stop.
  */
-export const APP_SDK_LEVEL = 14
+export const APP_SDK_LEVEL = 15

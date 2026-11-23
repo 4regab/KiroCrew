@@ -8008,6 +8008,9 @@ batch shares level 14, so an app that needs one
 feature-detects it (the manifest key or attribute, or the SDK export), never the level alone. An app reads `ctx.sdk_level` or the SDK export to detect an
 older host and degrade, instead of failing on a missing attribute.
 
+Level 15 adds the SDK's `useKeepAlive`, which keeps a routed page mounted, hidden, while the
+app says it is busy. An app detects it by the export, as for every level.
+
 **Structural routes.** `RouteRegistry` reads each item a `routes` hook returns through
 `_route_fields`: an `AppRoute`, or any object whose `method` is a str naming GET, POST,
 PUT, DELETE or PATCH (any case), whose `path` is a str of at most 512 characters, and

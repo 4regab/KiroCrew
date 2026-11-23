@@ -6477,6 +6477,13 @@
       "this_app_is_disabled": "Diese App ist deaktiviert",
       "this_app_provides_agents_and_skills_but_no_visua": "Diese App stellt Agenten und Skills bereit, aber keine visuelle Oberfläche.\n            Verwenden Sie ihre Agenten aus dem Chat."
     },
+    "keptAppPages": {
+      "open": "Öffnen",
+      "region_label": "Apps, die im Hintergrund laufen",
+      "running": "{{name}} läuft noch",
+      "status_check_failed": "Es konnte nicht geprüft werden, ob {{name}} noch aktiviert ist: {{error}}",
+      "stop_named": "{{name}} beenden"
+    },
     "appPopoutTitleBar": {
       "return": "Zurückkehren",
       "return_to_main_window_and_close_this_popout": "Zum Hauptfenster zurückkehren und dieses ausgekoppelte Fenster schließen"

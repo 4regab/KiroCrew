@@ -6259,6 +6259,13 @@
       "this_app_is_disabled": "이 앱은 비활성화되어 있습니다",
       "this_app_provides_agents_and_skills_but_no_visua": "이 앱은 에이전트와 스킬을 제공하지만 시각적 인터페이스는 없습니다.\n 채팅에서 이 앱의 에이전트를 사용하세요."
     },
+    "keptAppPages": {
+      "open": "열기",
+      "region_label": "백그라운드에서 실행 중인 앱",
+      "running": "{{name}}이(가) 아직 실행 중입니다",
+      "status_check_failed": "{{name}}이(가) 아직 켜져 있는지 확인하지 못했습니다: {{error}}",
+      "stop_named": "{{name}} 중지"
+    },
     "appPopoutTitleBar": {
       "return": "돌아가기",
       "return_to_main_window_and_close_this_popout": "메인 창으로 돌아가고 이 분리 창을 닫습니다"

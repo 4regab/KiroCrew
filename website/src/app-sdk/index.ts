@@ -704,3 +704,6 @@ export { appWebOrigin, appWebOriginStatus } from './webOrigin'
 export type { AppWebOriginReason, AppWebOriginStatus } from './webOrigin'
 // The App Kit seam level; an app feature-detects the seams above by it.
 export { APP_SDK_LEVEL } from './sdkLevel'
+// Keep the routed page running, hidden, while the app is busy (level 15).
+export { useKeepAlive } from './keepAlive'
+export type { KeepAliveStatus } from './keepAlive'
