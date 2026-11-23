@@ -387,6 +387,9 @@ from conftest_resets_bot_chat import (  # noqa: E402,F401 -- bound for pytest an
 from conftest_resets_connected_computers import (  # noqa: E402,F401 -- bound for pytest and importers
     _reset_connected_computers_state,
 )
+from conftest_resets_dashboard import (  # noqa: E402,F401 -- bound for pytest and importers
+    _no_full_chat_lapse_timers,
+)
 from conftest_resets_decisions import (  # noqa: E402,F401 -- bound for pytest and importers
     _fresh_decision_provider_error_warnings,
 )
