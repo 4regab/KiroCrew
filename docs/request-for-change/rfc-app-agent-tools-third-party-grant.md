@@ -3,8 +3,8 @@ title: "Third-party app agent tools: an owner grant on top of the prompted serve
 status: accepted
 author: pearcekieser, with kirocrew-worker
 created: 2026-11-12
-last-audited: 2026-11-20
-audited-at: c157748343
+last-audited: 2026-11-23
+audited-at: 516db85995
 doc-pr: 35966
 implementation-prs: []
 tracking-issues: [32727]
@@ -29,6 +29,50 @@ superseded-by: []
 > [rfc-app-contribution-points.md](rfc-app-contribution-points.md) for
 > third-party apps, as that section's last line asks. Phase 1 builds only
 > that part.
+
+## Owner revision (2026-11-23)
+
+Ray Xu (buluoray), the owner, set the direction for third-party `agentTools`
+on [#32727](https://github.com/kirodotdev/KiroCrew/issues/32727#issuecomment-7084356946)
+on 2026-11-22: they work like an MCP server the user trusts once, not like a
+tool that asks on every call. He then had #17015 taken over and rebuilt on
+that direction
+([take-over note](https://github.com/kirodotdev/KiroCrew/pull/17015#issuecomment-7109019533)).
+This revision records that decision. Where it disagrees with a part of this
+document below, this revision wins, and that part carries a note pointing here.
+Everything else stands, including the `agentTools` grant family and its digest
+entry (section 1), the update rule (section 2) and the digest in the display
+text (answer 3).
+
+1. **Approve on the install card.** The install card lists each declared tool
+   by name and description. Confirming the card approves exactly the entries
+   that the card showed and that the cloned manifest still declares. A tool the
+   card did not show is not approved. An install with no card (a CLI or folder
+   install, an already-trusted repository, a registry row with no disclosed
+   block) approves no tool, and the owner approves those on the app detail
+   page. This replaces answer 1 in Open questions.
+2. **No prompt per call.** An approved tool is listed on `kirocrew-core`, next
+   to the first-party tools, and runs with no approval prompt, because the
+   default agent already grants `@kirocrew-core`. There is no opt-in
+   `kirocrew-apps` server to find. This replaces section 5 and the third
+   condition in Summary, and the "per-tool approval inside `kirocrew-core`"
+   alternative is no longer rejected.
+3. **Revoke each tool on the app page.** The app detail page lists each
+   approved tool, and the owner can revoke any one of them there. A revoked
+   tool stops listing at the next `tools/list`, and a call to it is refused.
+4. **Ask again only on change.** Unchanged: an update that adds or changes a
+   tool holds that tool back until the owner approves it on the app page.
+5. **Existing paths only.** Calls keep going through `POST /api/app-tools/call`
+   with its schema checks, the signed proxy, redaction and caps. A third-party
+   tool called from a session that another app owns is refused 403
+   `cross_app`. The session sandbox cannot read the grant file, so
+   `kirocrew-core` reads the approved declarations from a read-only strict
+   internal route, `GET /api/app-tools/list`, which takes the place of the
+   `POST /api/app-tools/prompted-list` route in section 3. No new `token_auth`
+   admission path is added.
+
+Naming the calling session or agent in the principal claim, which the same
+decision asks for, is a later PR. The audit entry of section 6 still applies.
 
 ## Summary
 
@@ -97,7 +141,8 @@ refuses a call from a session that another app owns (403 `cross_app`).
 - An app's own scoped agent can reach the app's own approved tools, and no
   other app's tools.
 - Each call through `kirocrew-apps` still asks the person. Nothing in this
-  document adds an auto-approval.
+  document adds an auto-approval. (Replaced by the owner revision: an approved
+  tool runs on `kirocrew-core` with no prompt per call.)
 - Each call's audit row names the grant entry that allowed it.
 
 ## Non-goals
@@ -154,8 +199,9 @@ agent tool. The owner approves on the app detail page.
 
 ### 2. Install, update and approval
 
-- Install: the install screen lists each declared tool by name and
-  description, but the install approves no tool. The owner approves agent
+- Install (replaced by item 1 of the owner revision: confirming the card
+  approves exactly the tools it showed): the install screen lists each
+  declared tool by name and description, but the install approves no tool. The owner approves agent
   tools in a separate step after install. Answer 1 in Open questions decides
   this. It is a new install rule. On main, each writer of a first approved set
   stores every declared entry of each staged family, explicit-only families
@@ -234,6 +280,10 @@ The exact mechanism for the allow list (per-tool refs in `tools` with
 to choose, as answer 2 in Open questions decides.
 
 ### 5. Per-call approval
+
+Replaced by item 2 of the owner revision: an approved tool is listed on
+`kirocrew-core` and runs with no prompt per call. The text below is the
+earlier design.
 
 No change from #17015. `kirocrew-apps` stays in `PROMPT_ONLY_MCP_SERVERS`, and
 `may_skip_gate` never skips the gate for a ref that names it. A grant in
@@ -343,6 +393,10 @@ narrows, so phase 1 does not block it.
 
 ### A per-tool approval inside `kirocrew-core`
 
+No longer rejected: the owner revision lists approved tools on
+`kirocrew-core`. The approval is the owner grant of section 1, not an entry
+in the default `allowedTools`, so the problem below does not arise.
+
 Option (b) of #32727. The default agent grants `@kirocrew-core` whole
 (`src/kiro_crew/config/defaults.json`), and kiro-cli has no "all of a server
 except these tools" form. Every core tool would need its own entry in the
@@ -358,7 +412,8 @@ of [#35966](https://github.com/kirodotdev/KiroCrew/pull/35966).
    agent tools in a separate step after install? Answer: "approval is a
    separate step after install, not implied by installing, matching other
    explicit-only grants." Installing approves no tool, and section 2 follows
-   this answer. On main, a first install approves the declared entries of the
+   this answer. Replaced on 2026-11-23 by item 1 of the owner revision:
+   confirming the install card approves exactly the tools that card showed. On main, a first install approves the declared entries of the
    explicit-only `reachableByUserSessions` family too, so section 2 states
    this as a new install rule for `agentTools`.
 2. Which mechanism gives a scoped app agent an allow list on `kirocrew-apps`:
