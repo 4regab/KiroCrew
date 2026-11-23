@@ -362,4 +362,27 @@ describe('tying the click to the asking frame', () => {
     expect(document.activeElement).toBe(holder)
     expect(open).not.toHaveBeenCalled()
   })
+
+  it('keeps the button while something beside the frame scrolls, and takes it away when the frame moves', () => {
+    const other = realFrame().frame
+    const { holder, frame, win } = realFrame()
+    const transcript = document.createElement('div')
+    document.body.appendChild(transcript)
+    render(<Real frame={frame} open={vi.fn()} />)
+    const ask = () => {
+      enter(other)
+      frame.focus()
+      post({ type: OPEN_MESSAGE_TYPE, url: URL_A }, win)
+      expect(chip()).not.toBeNull()
+    }
+    ask()
+    // A streaming chat transcript scrolls on every line.
+    act(() => { transcript.dispatchEvent(new Event('scroll')) })
+    expect(chip()).not.toBeNull()
+    act(() => { holder.dispatchEvent(new Event('scroll')) })
+    expect(chip()).toBeNull()
+    ask()
+    act(() => { document.dispatchEvent(new Event('scroll')) })
+    expect(chip()).toBeNull()
+  })
 })
