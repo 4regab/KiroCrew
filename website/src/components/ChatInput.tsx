@@ -32,6 +32,8 @@ import { useComposerInlineMarkdown } from '../hooks/useComposerInlineMarkdown'
 import { useComposerArrowKeyHistory } from '../hooks/useComposerArrowKeyHistory'
 import { useComposerSendMode } from '../hooks/useComposerSendMode'
 import { useComposerSettings } from './chat-input/composerSettings'
+import { useInputDelay } from './chat-input/useInputDelay'
+import { ColdPrefillConfirm } from './chat-input/ColdPrefillConfirm'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { usePressActivation } from '../hooks/usePressActivation'
 import { isTouchDevice } from '../utils/isTouchDevice'
@@ -178,6 +180,10 @@ function ChatInput({
   placeholder = '',
   lockedPlaceholder,
   prefillHint,
+  coldPrefillPrompt = null,
+  onColdPrefillStart,
+  onColdPrefillDiscard,
+  coldPrefillSendKey = null,
   onScreenshot,
   onUploadFiles,
   uploading = false,
@@ -551,10 +557,15 @@ function ChatInput({
   })
   // All terminal draft sends enter here before agent routing or prompt-length
   // confirmation. A terminal draft never queues or steers.
+  // The first send after a cold-link prompt reaches the composer ignores a
+  // press briefly after it appears and after the window gains focus, so a
+  // press meant for whatever was there before is not taken.
+  const coldPrefillSendReady = useInputDelay(coldPrefillSendKey)
   const fireComposer = useCallback((alternate?: unknown) => {
     // A locked composer sends nothing, except into a running turn (the busy
     // controls' steer), which the lease never holds.
     if (typingLocked && !isRunning) return
+    if (!coldPrefillSendReady()) return
     if (terminal.active) {
       if (!disabled && !voiceTranscribing && connected && !optimizingRef.current) {
         composerVoice?.controls?.disarmForSend()
@@ -563,15 +574,16 @@ function ChatInput({
       return
     }
     fireAgentComposer(alternate)
-  }, [typingLocked, isRunning, terminal.active, disabled, voiceTranscribing, connected, composerVoice, runTerminalCommand, fireAgentComposer])
+  }, [typingLocked, isRunning, coldPrefillSendReady, terminal.active, disabled, voiceTranscribing, connected, composerVoice, runTerminalCommand, fireAgentComposer])
   const fireFollowUp = useCallback((text?: string, sourceKeyAtClick?: string | null) => {
     // Both chat parents consume the current draft for missing or empty text.
+    if (!text && !coldPrefillSendReady()) return
     if (!text && terminal.active) {
       fireComposer()
       return
     }
     sendFollowUp(text, sourceKeyAtClick)
-  }, [terminal.active, fireComposer, sendFollowUp])
+  }, [coldPrefillSendReady, terminal.active, fireComposer, sendFollowUp])
   // A quick-send click sends from the host's own handler; it gets the same send
   // the ↑ segment uses, so an instant click takes the composer's busy decision.
   const selectFollowUp = useCallback((option: string, event: React.MouseEvent, sourceKeyAtClick?: string | null) => {
@@ -713,10 +725,11 @@ function ChatInput({
   // Every optimize entry, Send included, goes through here.
   const optimizeUnlessLocked = useCallback(() => !disabled && optimizePrompt(), [disabled, optimizePrompt])
   // Enter, Send and the Lexical send; every other send keeps today's path.
-  const sendOrOptimize = useOptimizeBeforeSend({
+  const sendOrOptimizeReady = useOptimizeBeforeSend({
     enabled: promptOptimizer && connected && !disabled && !terminal.active && !isRunning && !typingLocked && !voiceTranscribing && !holdSend,
     slotId, value, optimize: optimizeUnlessLocked, onBusy: sayBusy, send: fireComposer,
   })
+  const sendOrOptimize = useCallback((alternate?: unknown) => { if (coldPrefillSendReady()) sendOrOptimizeReady(alternate) }, [coldPrefillSendReady, sendOrOptimizeReady])
   const { promptStash, promptStashChord, stashTouchHost, stashInOverflow } = useComposerPromptStash({
     enabled: promptStashEnabled, slotId, value, blocks: pasteBlocks, onChange, onBlocksChange: onPasteBlocksChange, reseedUndoHistory,
     // A typing lock keeps another collaborator's draft read-only until the
@@ -1303,6 +1316,8 @@ function ChatInput({
           <span className="text-muted text-[13px]">{approvalNotice}</span>
         </div>
       )}
+
+      {!showGhost && coldPrefillPrompt && <ColdPrefillConfirm prompt={coldPrefillPrompt} onStart={onColdPrefillStart} onDiscard={onColdPrefillDiscard} />}
 
       {!showGhost && prefillHint && (
         <div className="flex items-center gap-2 px-4 py-2 mb-1 bg-accent/10 rounded-lg">

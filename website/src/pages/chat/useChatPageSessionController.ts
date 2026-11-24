@@ -89,6 +89,13 @@ interface UseChatPageSessionControllerArgs {
   navigationType: NavigationType
   newSessionRef: MutableRefObject<boolean>
   noUrlSync?: boolean
+  /**
+   * Called with a freshly created session's key and the prompt a cold
+   * `/chat?new=1&prefill=` link carried, so ChatPage can show it as a draft the
+   * operator confirms instead of this hook seeding the composer. Only the cold
+   * URL path calls it; an app's draft launch seeds the composer as before.
+   */
+  onColdUrlPrefill?: (slotKey: string, prompt: string) => void
   pasteDrafts: MutableRefObject<Record<string, PasteBlock[]>>
   popout?: boolean
   prevSlot: MutableRefObject<string | null>
@@ -130,6 +137,7 @@ export function useChatPageSessionController({
   navigationType,
   newSessionRef,
   noUrlSync,
+  onColdUrlPrefill,
   pasteDrafts,
   popout,
   prevSlot,
@@ -491,7 +499,12 @@ export function useChatPageSessionController({
     mutationFn: async () => {
       const prompt = initialPrefillRef.current
       const appDraftLaunch = appDraftLaunchRef.current
-      const action = await dispatch(createSlot({ mode, agent: appDraftAgentRef.current, ...appDraftSlotOptionsRef.current, prefill: prompt || undefined }))
+      // A prompt with no app-draft launch behind it came from the cold
+      // `?new=1&prefill=` URL, which any page can open. Create the session
+      // without seeding, and hand the prompt to ChatPage as a draft the operator
+      // confirms; the app-launch and `pendingInput` paths below are unchanged.
+      const fromColdUrl = !!prompt && !appDraftLaunch
+      const action = await dispatch(createSlot({ mode, agent: appDraftAgentRef.current, ...appDraftSlotOptionsRef.current, prefill: fromColdUrl ? undefined : (prompt || undefined) }))
       // A rejected create throws here and keeps the prompt for the retry.
       const slot = unwrapResult(action)
       if (appDraftLaunch && slot?.key) trackLaunchedDraft(slot, prompt)
@@ -507,7 +520,12 @@ export function useChatPageSessionController({
         // That is the new slot unless the user switched chats during the create:
         // the fulfilled reducer then leaves their choice active, and the prompt
         // seeds that chat instead.
-        if (!(createSlot.fulfilled.match(action) && action.meta.prefillStaged)) dispatch(setPendingInput(prompt))
+        if (fromColdUrl) {
+          // A cold `?new=1&prefill=` link can be opened by any page, so never
+          // seed the composer. Hand the prompt to a draft the operator confirms,
+          // keyed to the session this create just made.
+          onColdUrlPrefill?.(slot.key, prompt)
+        } else if (!(createSlot.fulfilled.match(action) && action.meta.prefillStaged)) dispatch(setPendingInput(prompt))
         // Cleared only after the prompt is staged SOMEWHERE, so neither branch can
         // drop it: this is what makes the seed spent-once rather than lost-once.
         initialPrefillRef.current = ''
