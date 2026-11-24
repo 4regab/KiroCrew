@@ -88,6 +88,7 @@ from kiro_crew.agent_files import (
     is_owned_agent_name,
     kas_wire_agent_id,
 )
+from kiro_crew.mcp_provenance import COPIED_KEY
 from kiro_crew.platform.tool_names import KAS_TOOL_FAMILY_BY_KIRO_CLI_NAME
 from kiro_crew.sel import sel
 
@@ -199,10 +200,11 @@ _RECORD_REFUSES_NOTHING: dict[str, Any] = {
 #: the session's own agent and never the target that switched it off.
 #: ``autoApprove`` never crosses the wire, and ``timeout`` and its ``timeoutMs``
 #: alias are a start budget (``kas_settings_mcp._with_timeout``). ``poolable`` is a
-#: hint the pooling rewriter reads, not a launch input (``rewriter_launch.py``).
+#: hint the pooling rewriter reads, not a launch input (``rewriter_launch.py``), and
+#: :data:`~kiro_crew.mcp_provenance.COPIED_KEY` records who copied the entry.
 #: Every other key counts, so a key not named here refuses rather than shares.
 _NOT_LAUNCH_KEYS = frozenset(
-    {"autoApprove", "disabled", "disabledTools", "poolable", "timeout", "timeoutMs"}
+    {"autoApprove", "disabled", "disabledTools", "poolable", "timeout", "timeoutMs", COPIED_KEY}
 )
 
 #: The transport a command entry launches when it names none.

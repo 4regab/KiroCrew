@@ -189,6 +189,16 @@ an edit the ownership guard reads as the user's, and the next emit expands what
 they wrote. `env.PATH` becomes irrevocable only when the declaration lives in a
 different file from the expansion — the scope-owned case above.
 
+## Copy provenance in the rendered spec (a third key)
+
+The rendered spec is also rebuilt on top of itself, so an entry copied into it
+from `~/.kiro/settings/mcp.json` would outlive the server once that file renames
+or removes it. `"x-kirocrew-copied": true` records that Kiro Crew made the copy;
+the rebuild removes a stamped entry once no MCP config launches a server for it,
+and never while one of those files cannot be read. It is recorded, never inferred:
+an entry the user wrote carries no stamp and is never removed, which is also why a
+copy an older build made stays. See `docs/architecture/mcp.md`, "Merge order".
+
 ## What this is not
 
 - Not token custody or OAuth grant ownership — see `mcp-oauth-ownership.md`.
