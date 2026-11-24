@@ -396,7 +396,7 @@ function ChatInput({
     approvalModeAdjusted, approvalNudgeActive, dismissApprovalNudge, hideApprovalNudge,
     approvalNotice, setApprovalNotice, approvalNoticeKind, showApprovalError, showApprovalStatus,
     approvalToolInput, approvalIsUnattended,
-    approvalDenyRule, approvalDenyDetail, approvalDenyFamily, approvalDenyCommand,
+    approvalDenyRule, approvalDenyDetail, approvalDenyFamily, approvalDenyCommand, approvalIsGitConfirm,
     approvalLabelRaw, approvalToolCallId, approvalPurpose, approvalTs, approvalLabel, approvalRaisedBy, approvalSubagentTask, approvalAskedBySubagent, showGhost, showInChat,
   } = approval
   const activeSlot = slotId
@@ -1227,8 +1227,14 @@ function ChatInput({
               {/* A1 hint: points at the footer mode picker. Withheld for unattended
                   sources (the picker governs THIS slot), the ghost state (picker
                   unmounted), an override card, the B2 nudge, and once the user has
-                  found the picker (this link or a mode change). */}
-              {!showGhost && !approvalIsUnattended && !approvalDenyRule && !approvalModeAdjusted && !approvalNudgeActive && approvalMode && (
+                  found the picker (this link or a mode change). A git-confirm card
+                  asks under every mode, so it says that instead of pointing at the picker. */}
+              {approvalIsGitConfirm && !approvalDenyRule && (
+                <div className="px-3.5 pb-2 -mt-1 text-[12px] text-muted select-none">
+                  {i18nT('components.chatInput.git_confirm_always_asks')}
+                </div>
+              )}
+              {!showGhost && !approvalIsGitConfirm && !approvalIsUnattended && !approvalDenyRule && !approvalModeAdjusted && !approvalNudgeActive && approvalMode && (
                 <div className="flex items-center gap-1.5 flex-wrap px-3.5 pb-2 -mt-1 text-[12px] text-muted select-none">
                   <span>{i18nT('components.chatInput.approval_hint_question')}</span>
                   <button

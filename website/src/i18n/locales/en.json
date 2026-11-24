@@ -4767,6 +4767,7 @@
     "chatInput": {
       "approval_hint_adjust": "Adjust approval mode",
       "approval_hint_question": "Tired of confirming every step?",
+      "git_confirm_always_asks": "Git changes always ask, even in Trust.",
       "add_files_options": "Add files & options",
       "allow_once": "Allow once",
       "attach_files": "Attach files",

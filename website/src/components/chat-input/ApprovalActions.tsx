@@ -19,6 +19,7 @@ export function ApprovalActions({ approval, slotId }: { approval: ReturnType<typ
     approvalIsReadOnly, approvalAlwaysAllowRef, approvalAlwaysAllowRefusal,
     approvalFullCommand, approvalBaseCommand, approvalIsShell, approvalTrustBaseGrantable,
     approvalTakesReason, handleApprovalAction, approvalActionsRef, approvalBrowserTrustClass,
+    approvalIsGitConfirm,
   } = approval
   // A browser site grant: the command rows name the site and what is trusted on it.
   const siteKey = approvalBrowserTrustClass ? BROWSER_SITE_KEYS[approvalBrowserTrustClass] : undefined
@@ -27,8 +28,9 @@ export function ApprovalActions({ approval, slotId }: { approval: ReturnType<typ
     <div ref={approvalActionsRef} data-approval-actions className="flex gap-1.5 flex-wrap items-center">
       {approvalDenyRule ? <DenyOverrideDropdown disabled={approvalSubmitting} className={approvalBtnClass} family={approvalDenyFamily} onAction={action => { handleApprovalAction(action) }} /> : <>
         <button disabled={approvalSubmitting} className={approvalBtnClass} onClick={() => handleApprovalAction('approved')}><CheckCircle size={12} className="shrink-0" />{i18nT('components.chatInput.allow_once')}</button>
-        {/* All standing grants stay in Trust: Allow once + Trust + Reject, never a fourth button. */}
-        {approvalTrustGrantable && (approvalTrustCommandGrantable || approvalTrustAllGrantable || approvalIsReadOnly || !!approvalAlwaysAllowRef || !!approvalAlwaysAllowRefusal) ? (
+        {/* All standing grants stay in Trust: Allow once + Trust + Reject, never a fourth button.
+            A git-confirm card takes no grant, so it offers no Trust at all. */}
+        {approvalIsGitConfirm ? null : approvalTrustGrantable && (approvalTrustCommandGrantable || approvalTrustAllGrantable || approvalIsReadOnly || !!approvalAlwaysAllowRef || !!approvalAlwaysAllowRefusal) ? (
           <TrustDropdown
             fullCommand={approvalFullCommand}
             baseCommand={approvalBaseCommand}

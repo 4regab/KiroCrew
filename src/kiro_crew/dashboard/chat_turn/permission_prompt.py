@@ -328,6 +328,17 @@ async def _on_permission_prompt(
         and not event.tool_input_redacted
         and not refuses(_full, _shown)
     )
+    # A command the session confirms under hooks.confirm_git_writes (a git
+    # command other than a known read, or a git-free command holding a shell
+    # expansion) is answered once by the person: no standing grant lifts the
+    # confirm, so the card offers none -- no command or family tier, no
+    # session trust, no trust-reads. The git_confirm mark keeps the card open
+    # through a Trust or YOLO switch (the mode sweep skips it).
+    _git_confirm = bool(getattr(turn, "_git_write_confirm", ""))
+    if _git_confirm:
+        _command_grantable = False
+        perm_meta["git_confirm"] = "1"
+        perm_meta["is_read_only"] = ""
     if _command_grantable:
         perm_meta["full_command"] = _safe_full
         # Authorization authority stays distinct from the
@@ -356,11 +367,13 @@ async def _on_permission_prompt(
     # ``child_unconditional_grant_eligible``, where trust-all is an
     # unconditional grant and only content-matching paths need the
     # canonical command.
-    perm_meta["trust_grantable"] = "1"
+    if not _git_confirm:
+        perm_meta["trust_grantable"] = "1"
     _override_offer = getattr(turn, "_deny_override", None)
-    if _override_offer is None:
+    if _override_offer is None and not _git_confirm:
         # "Always allow this tool": the verified ``@server/tool`` this card may
         # grant, or why not. Read off the loop (config and governance reads).
+        # A git-confirm card grants nothing, so it offers no such grant.
         # Imported here: this body runs on the chat runner module's globals.
         from kiro_crew.dashboard import always_allow_tool
 
@@ -502,6 +515,7 @@ async def _on_permission_prompt(
                 slot_key=slot.key,
                 future=fut,
                 channel_trust=_approval_thread is None,
+                git_confirm=_git_confirm,
                 # The shared user whose message alone opened this turn may answer
                 # its own call too. A code channel's own session stays the owner's,
                 # and so does a child's call: a background child can outlive the
