@@ -424,6 +424,27 @@ def _switch_target_busy(
     )
 
 
+async def _take_turn_lease(state: DashboardState, session_key: str) -> str | None:
+    """Take *session_key*'s turn lease without waiting, to hold across a live config call.
+
+    A turn another surface drives (a Slack, Discord, Telegram or Teams message, a
+    cron run) holds the lease before its prompt is in flight, which
+    :func:`_switch_target_busy` cannot see,
+    and that prompt would read the stdout the config call's reply wait reads. A
+    held lease is therefore a turn in flight: this returns None and the caller
+    defers or refuses. Otherwise it returns the folded key the caller releases
+    with ``state.sessions.release(key, wake_queue=True)`` once the reply is in:
+    ``wake_queue`` because a channel message that queued behind this hold has no
+    turn end to drain it.
+
+    A channel member holds its lease for its whole listening life, so no live push
+    reaches its session while it listens, the same answer the session switches
+    written through ``_write_session_switch`` give it.
+    """
+    lease_key = state.sessions._fold_key(session_key)
+    return lease_key if await state.sessions.try_acquire(lease_key) else None
+
+
 def _send_writes_persona(body: dict) -> bool:
     """Whether a ``POST /api/chat`` body writes the slot's persona fields.
 

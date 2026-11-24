@@ -357,6 +357,7 @@ from kiro_crew.dashboard.chat_api.slot_guards import (  # noqa: F401
     _subagents_attached_detail,
     _subagents_attached_response,
     _switch_target_busy,
+    _take_turn_lease,
 )
 from kiro_crew.dashboard.chat_api.slot_lifecycle import (  # noqa: F401
     _RESOURCE_SUBSCRIPTION_RETIRE_SECS,

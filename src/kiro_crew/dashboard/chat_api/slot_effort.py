@@ -36,6 +36,7 @@ if TYPE_CHECKING:
         _slot_switch_session_lock,
         _subagents_attached_response,
         _switch_target_busy,
+        _take_turn_lease,
         apply_approval_mode,
         approve_for_me_engine_supported,
         approve_for_me_keys,
@@ -217,7 +218,9 @@ async def api_chat_slot_selection_capabilities(request: web.Request) -> web.Resp
     )
 
 
-async def _push_live_effort(provider: AcpProvider, effort: str, slot_name: str) -> str:
+async def _push_live_effort(
+    state: DashboardState, session_key: str, provider: AcpProvider, effort: str, slot_name: str
+) -> str:
     """Push *effort* to the live *provider*: the one live push both effort routes share.
 
     ``change_effort`` for a level, ``clear_effort(every_model=True)`` for ``""``
@@ -227,13 +230,20 @@ async def _push_live_effort(provider: AcpProvider, effort: str, slot_name: str) 
     supports effort, offers the level and runs no turn, since a push during a
     turn would race the streaming prompt loop.
 
-    Returns ``"applied"`` (the session runs the level now), ``"not_applied"``
+    The push holds *session_key*'s turn lease until its reply is in
+    (:func:`_take_turn_lease`). ``"busy"`` means another holder has it, a turn in
+    flight that ``has_active_turn`` cannot see, and nothing was sent.
+
+    Otherwise returns ``"applied"`` (the session runs the level now), ``"not_applied"``
     (the session takes it only on a restart), ``"overlay_busy"`` (nothing
     changed: another writer holds the workspace effort overlay), ``"refused"``
     (the harness refused the level and kept its prior one) or ``"failed"`` (the
     push raised for another reason). The exception text of the last two stays
     in the log line: it can carry agent-authored words, a path or a host.
     """
+    lease_key = await _take_turn_lease(state, session_key)
+    if lease_key is None:
+        return "busy"
     try:
         if effort:
             pushed: bool | None = await provider.change_effort(effort)
@@ -264,6 +274,9 @@ async def _push_live_effort(provider: AcpProvider, effort: str, slot_name: str) 
             exc,
         )
         return "failed"
+    finally:
+        # Before the caller's reset fallback, which declines a held lease.
+        state.sessions.release(lease_key, wake_queue=True)
     if pushed is None:
         # clear_effort changed nothing: neither the overlay nor the provider's map.
         return "overlay_busy"
@@ -423,8 +436,21 @@ async def api_chat_slot_reasoning_effort(request: web.Request) -> web.Response:
             # _prompt_loop → dropped/misrouted frame or a stuck turn. The override
             # is already persisted on the slot, so defer the live push to the next
             # turn instead of pushing now or resetting (effort is a cheap knob).
-            if provider.has_active_turn():
-                logger.info("Slot %s deferred live effort push: turn active", name)
+            # change_effort handles both backends and persists the per-model
+            # override + overlay. "" clears the slot's level → fall back to the
+            # model default (kiro: /effort with the workspace default; claude: the
+            # adapter's ``default`` live). A push the session cannot take live,
+            # or one that failed, leaves _updated_live False for the reset below.
+            # The push also defers while another holder has the session's turn
+            # lease ("busy"): a channel turn that holds it has no prompt in flight
+            # yet, which has_active_turn cannot see.
+            outcome = (
+                "busy"
+                if provider.has_active_turn()
+                else await _push_live_effort(state, session_key, provider, effort, name)
+            )
+            if outcome == "busy":
+                logger.info("Slot %s deferred live effort push: a turn holds the session", name)
                 # This path's success point: the override is recorded on the
                 # slot now and pushed to the live session next turn.
                 slot.reasoning_effort = effort
@@ -433,12 +459,6 @@ async def api_chat_slot_reasoning_effort(request: web.Request) -> web.Response:
                 return web.json_response(
                     {"ok": True, "reasoning_effort": effort, "deferred": True, **normalized}
                 )
-            # change_effort handles both backends and persists the per-model
-            # override + overlay. "" clears the slot's level → fall back to the
-            # model default (kiro: /effort with the workspace default; claude: the
-            # adapter's ``default`` live). A push the session cannot take live,
-            # or one that failed, leaves _updated_live False for the reset below.
-            outcome = await _push_live_effort(provider, effort, name)
             if outcome == "refused":
                 # A fixed sentence: the exception text can carry agent-authored
                 # words, a path or a host. The push's log line keeps the detail.
@@ -954,12 +974,11 @@ async def _write_session_switch(
                 },
                 status=409,
             )
-        # The write also holds the session's turn lease, taken without waiting: a
-        # channel turn holds it before its prompt is in flight, which the busy probe
-        # cannot see, and that prompt would read the stdout this write's reply wait reads.
-        lease_key = state.sessions._fold_key(session_key)
-        if _switch_target_busy(state, slot, session_key, provider) or not (
-            await state.sessions.try_acquire(lease_key)
+        # The write also holds the session's turn lease until its reply is in
+        # (_take_turn_lease).
+        if (
+            _switch_target_busy(state, slot, session_key, provider)
+            or (lease_key := await _take_turn_lease(state, session_key)) is None
         ):
             return web.json_response(
                 {"error": "a turn is in flight", "code": "turn_in_flight"}, status=409
