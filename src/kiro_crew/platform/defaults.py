@@ -369,6 +369,9 @@ class DefaultMcpToolingProvider:
     def custom_agent_servers(self) -> Tuple[str, ...]:
         return ()
 
+    def folder_free_mcp_servers(self) -> FrozenSet[str]:
+        return frozenset()
+
 
 class DefaultAgentCatalogProvider:
     """No edition agent-catalog rows — discovery is the on-disk scan only."""

@@ -1668,6 +1668,12 @@ is byte-identical) with no `CONTRACT_VERSION` bump.
   list of the spawns that add it, so it never counts the server where a spawn
   does not add it. Read through `getattr`, so an edition provider that predates
   it names none. Default `()`. v1 addition, no `CONTRACT_VERSION` bump.
+- `McpToolingProvider.folder_free_mcp_servers() -> FrozenSet[str]` — WIRED:
+  `mcp_gateway.folder_use` reads it through `getattr`, so MCP Management shares a
+  listed server with the page-wide switch like Kiro Crew's own instead of keeping
+  it in each chat until the person turns its Share switch on (spec:
+  `mcp-shareability.md`, "Folder use gates routing"). Default empty set; no
+  `CONTRACT_VERSION` bump.
 - `McpToolingProvider.extra_mcp_scopes() -> List[McpScope]` — provider-specific
   GLOBAL MCP config scopes. `/api/mcp/apply` and the MCP uninstall path write
   each returned scope's `global_json` (and strip its `agent_mcp_file`) IN

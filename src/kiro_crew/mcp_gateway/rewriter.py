@@ -37,7 +37,7 @@ import sys as _sys
 import tempfile
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Collection
+from typing import TYPE_CHECKING, Any, Collection, Mapping
 
 from kiro_crew import __version__, _facade_mirror, platform_compat
 from kiro_crew.agent_spec_format import iter_agent_spec_files
@@ -116,7 +116,8 @@ _FINGERPRINT_NAME = ".rewrite-fingerprint"
 # (one with a ``secret://`` reference gets a refusing stub in any other agent),
 # and ``useLegacyMcpJson: false`` (kiro-cli's alias) also gets none.
 # 15: an agent's own server is wrapped only when its ``tools`` names it.
-_FINGERPRINT_SCHEMA = 15
+# 16: roots-requesting servers with vault references keep their gateway stubs.
+_FINGERPRINT_SCHEMA = 16
 
 # The fingerprint inputs of the latest pass into each overlay directory, kept so
 # a caller can read the settings a pass was built from without a second scan.
@@ -569,6 +570,9 @@ def rewrite_agents(
     pooling_enabled: bool = True,
     approvals: LaunchApprovals | None = None,
     mate_source_dir: Path | None = None,
+    cwd_answers: Mapping[str, str] | None = None,
+    cwd_bindings: Mapping[str, str] | None = None,
+    folder_free: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Populate ``overlay_dir`` with rewritten copies of ``source_dir/*.json``.
 
@@ -627,7 +631,23 @@ def rewrite_agents(
     # and ``config.loader`` imports this module's path helpers at import time.
     from kiro_crew.agent_discovery import read_agent_spec_strict
 
-    stub_set = stub_servers or frozenset()
+    # Compute the name-wide outcome before either wrapping site or the cache.
+    # Probes still resolve every launch, regardless of the folder decision.
+    from kiro_crew.mcp_gateway.folder_use import read_declarations, roots_requesting
+
+    configured_stub_set = stub_servers or frozenset()
+    observed_roots = (
+        frozenset()
+        if getattr(approvals, "probe", False)
+        else roots_requesting(socket_path)
+    )
+    roots_excluded = (
+        read_declarations(source_dir, mate_source_dir).per_chat(
+            configured_stub_set, observed_roots, folder_free,
+            cwd_answers or {}, cwd_bindings or {},
+        )
+        if observed_roots else frozenset()
+    )
 
     # An install upgraded from an older release can still carry a settings
     # overlay at ``<overlay_dir>/../settings/mcp.json``; this pass never
@@ -708,7 +728,7 @@ def rewrite_agents(
         work_dir=work_dir,
         sandbox_mode=sandbox_mode,
         approval_mode=approval_mode,
-        stub_set=stub_set,
+        stub_set=configured_stub_set,
         pooling_enabled=pooling_enabled,
         forward_env=forward_env,
         identity_keys=identity_keys,
@@ -717,6 +737,9 @@ def rewrite_agents(
         scope_muted=scope_muted,
         mate_source_dir=mate_source_dir,
     )
+    # Keep the configured roster and its managed launches fixed for live refresh;
+    # observed roots only invalidate cached overlays, not the broker's policy.
+    current_inputs["roots_excluded"] = sorted(roots_excluded)
     if approvals is not None:
         current_inputs["launch_approvals"] = approvals.digest()
     with _PASS_INPUTS_LOCK:
@@ -796,7 +819,8 @@ def rewrite_agents(
             loaded = loads_user_json(kiro_settings_json.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
                 settings_poolable = _injectable_settings_servers(
-                    loaded, stub_set,
+                    loaded, configured_stub_set,
+                    roots_excluded=roots_excluded,
                     pooling_enabled=pooling_enabled,
                     forward_env=forward_env,
                     identity_keys=identity_keys,
@@ -1012,7 +1036,8 @@ def rewrite_agents(
                 work_dir=work_dir,
                 sandbox_mode=sandbox_mode,
                 approval_mode=approval_mode,
-                stub_servers=stub_set,
+                stub_servers=configured_stub_set,
+                roots_excluded=roots_excluded,
                 pooling_enabled=pooling_enabled,
                 forward_env=forward_env,
                 identity_keys=identity_keys,
@@ -1111,7 +1136,8 @@ def rewrite_agents(
                     work_dir=work_dir,
                     sandbox_mode=sandbox_mode,
                     approval_mode=approval_mode,
-                    stub_servers=stub_set,
+                    stub_servers=configured_stub_set,
+                    roots_excluded=roots_excluded,
                     pooling_enabled=pooling_enabled,
                     forward_env=forward_env,
                     identity_keys=identity_keys,
@@ -1408,6 +1434,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         mcp_entry_is_remote,
     )
     from kiro_crew.mcp_gateway import STUB_MODULE  # noqa: F401
+    from kiro_crew.mcp_gateway.folder_use import roots_observed  # noqa: F401
     from kiro_crew.mcp_gateway.hashing import (  # noqa: F401
         STUB_FLAGS_FLAG,
         decode_target_args,
