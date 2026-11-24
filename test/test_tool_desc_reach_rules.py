@@ -40,17 +40,20 @@ def test_both_spawn_cwd_descriptions_name_the_configured_roots(monkeypatch):
 def test_an_empty_roots_list_reads_as_cwd_disabled(monkeypatch):
     _config_with_roots(monkeypatch, [])
     for tool, desc in _cwd_descriptions().items():
-        assert "disabled" in desc, (tool, desc)
+        assert "Disabled" in desc, (tool, desc)
 
 
-def test_an_unreadable_config_falls_back_to_the_shipped_roots(monkeypatch):
+def test_an_unreadable_config_names_the_setting_and_no_roots(monkeypatch):
+    # The admission gate refuses every cwd when the config cannot be read, so the
+    # description must not promise the shipped roots then.
     def _boom(cls):
         raise OSError("config unreadable")
 
     monkeypatch.setattr(schemas_mod.KiroCrewConfig, "load", classmethod(_boom))
     for tool, desc in _cwd_descriptions().items():
+        assert "agent.subagent_cwd_allowed_roots" in desc, (tool, desc)
         for root in DEFAULT_CWD_ALLOWED_ROOTS:
-            assert root in desc, (tool, root, desc)
+            assert root not in desc, (tool, root, desc)
 
 
 @pytest.mark.parametrize(

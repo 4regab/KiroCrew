@@ -249,44 +249,18 @@ def _agent_roster_hint() -> str:
     return hint + "."
 
 
-def _cwd_roots_hint() -> str:
-    """The roots sentence both spawn ``cwd`` descriptions end with.
-
-    Read from ``agent.subagent_cwd_allowed_roots``, the list the admission gate hands
-    ``validate_cwd``, so the model sees the rule before a refusal teaches it. An
-    unreadable config prints the shipped default, labelled as the default: this text
-    is advice and the gate still decides.
-    """
-    # Imported here, not at module level: every module-level name an owner binds is
-    # served by the ``spawn`` facade, and this constant is no part of that surface.
-    from kiro_crew.config.sections_agent_fields import DEFAULT_CWD_ALLOWED_ROOTS
-
-    try:
-        roots = list(KiroCrewConfig.load().agent.subagent_cwd_allowed_roots)
-    except Exception:
-        return (
-            " Must be under an agent.subagent_cwd_allowed_roots entry (shipped default: "
-            f"[{', '.join(DEFAULT_CWD_ALLOWED_ROOTS)}]); any other path is refused."
-        )
-    if not roots:
-        return " cwd is disabled: agent.subagent_cwd_allowed_roots is empty, so any cwd is refused."
-    return (
-        f" Must be under one of agent.subagent_cwd_allowed_roots: [{', '.join(roots)}]; "
-        "any other path is refused."
-    )
-
-
 def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
     """Descriptors for the spawn tools.
 
     ``names_only`` is set by the in-process discovery read (via
     ``mcp_tools.build_tool_names``), which keeps only tool NAMES and discards
-    every description. Under it the two reads that exist solely to fill a
-    description -- the live sub-agent cap and the agents-directory roster scan --
-    are skipped, so a names-only caller never performs on-loop work for text it
-    throws away. The returned names and their order are unchanged; only the two
-    descriptions that would have carried those values are left without them.
-    This is why neither read needs a ``get_running_loop`` guard of its own.
+    every description. Under it the three reads that exist solely to fill a
+    description -- the live sub-agent cap, the agents-directory roster scan and
+    the cwd roots -- are skipped, so a names-only caller never performs on-loop
+    work for text it throws away. The returned names and their order are
+    unchanged; only the descriptions that would have carried those values are
+    left without them. This is why no read needs a ``get_running_loop`` guard of
+    its own.
     """
     # Advertise the concurrent sub-agent cap so the model fans out with
     # confidence instead of self-limiting. The cap IN FORCE is preferred:
@@ -313,15 +287,28 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
         "queues automatically; capacity is a ceiling, not a target. Keep dependent "
         "tasks for a later batch."
     )
-    # A names-only caller discards every description, so neither the live cap
-    # nor the roster scan below runs for it: the two values exist only to fill
-    # text it throws away. This is the whole reason those reads need no
-    # running-loop skip -- the names path never reaches them.
+    # A names-only caller discards every description, so none of the live cap,
+    # the cwd roots or the roster scan below runs for it: the three values exist
+    # only to fill text it throws away. This is the whole reason those reads need
+    # no running-loop skip -- the names path never reaches them.
     _cap_hint = ""
     _agent_hint = ""
     _cwd_hint = ""
     if not names_only:
-        _cwd_hint = _cwd_roots_hint()
+        # Both spawn ``cwd`` descriptions end with the roots the admission gate hands
+        # ``validate_cwd``, so the model sees the rule before a refusal teaches it. An
+        # unreadable config names the setting and no roots: the gate then refuses
+        # every cwd too.
+        try:
+            _roots = list(KiroCrewConfig.load().agent.subagent_cwd_allowed_roots)
+        except Exception:
+            _cwd_hint = " Must be under an agent.subagent_cwd_allowed_roots entry."
+        else:
+            _cwd_hint = (
+                f" Must be under agent.subagent_cwd_allowed_roots: [{', '.join(_roots)}]."
+                if _roots
+                else " Disabled: agent.subagent_cwd_allowed_roots is empty."
+            )
         # A list the gateway builds for a tool server to relay reads as that server's
         # own, so it prints the ceiling sentence below, never the gateway's.
         _live_cap = 0 if built_for_a_tool_server() else host_status.adaptive_exec_cap()

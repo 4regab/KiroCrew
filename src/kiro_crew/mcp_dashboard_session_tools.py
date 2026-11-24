@@ -44,21 +44,17 @@ from kiro_crew.mcp_dashboard_session_runs import (
 )
 from kiro_crew.mcp_tools.table import Tool
 
-#: The ``target`` text of the verbs a fenced caller meets the fence on most: list_sessions
-#: lists every session, so without this the documented path hands out keys that are refused.
-#: Same reach and same fenced callers as the session_adopt and session_handoff descriptions.
-_FENCED_TARGET_DESC = (
-    "Session key from list_sessions, or its exact title. A fenced caller (a session an "
-    "agent created, a Bot, a scheduled run, a channel session, or the Conductor while "
-    "`agent.session_control` is off) reaches only sessions it manages: one it created and "
-    "did not hand away, one handed to it with session_handoff, or, with "
-    "`agent.session_manager_chain` on, one managed by a session it manages. list_sessions "
-    "also lists sessions outside that reach; they are refused `not_creator`."
-)
-
 
 def _session_tools() -> tuple[Tool, ...]:
     """Session control: open, fork, steer, stop and read other sessions."""
+    # The ``target`` text of the manager-reach verbs: list_sessions lists every session,
+    # so without it the documented path hands a fenced caller keys that are refused. The
+    # reach and the fenced callers are the ones session_handoff's description spells out.
+    fenced_target_desc = (
+        "Session key from list_sessions, or its exact title. A fenced caller (see "
+        "session_handoff) may target only sessions it created or was handed with "
+        "session_handoff; others are refused `not_creator`."
+    )
     return (
         Tool(
             name="session_create",
@@ -296,7 +292,7 @@ def _session_tools() -> tuple[Tool, ...]:
                 "properties": {
                     "target": {
                         "type": "string",
-                        "description": _FENCED_TARGET_DESC,
+                        "description": fenced_target_desc,
                     },
                 },
                 "required": ["target"],
@@ -611,7 +607,7 @@ def _session_tools() -> tuple[Tool, ...]:
                 "properties": {
                     "target": {
                         "type": "string",
-                        "description": _FENCED_TARGET_DESC,
+                        "description": fenced_target_desc,
                     },
                 },
                 "required": ["target"],
@@ -733,7 +729,7 @@ def _session_tools() -> tuple[Tool, ...]:
                 "properties": {
                     "target": {
                         "type": "string",
-                        "description": _FENCED_TARGET_DESC,
+                        "description": fenced_target_desc,
                     },
                     "message": {
                         "type": "string",
@@ -1100,7 +1096,7 @@ def _session_tools() -> tuple[Tool, ...]:
                 "properties": {
                     "target": {
                         "type": "string",
-                        "description": _FENCED_TARGET_DESC,
+                        "description": fenced_target_desc,
                     },
                     "limit": {
                         "type": "integer",
