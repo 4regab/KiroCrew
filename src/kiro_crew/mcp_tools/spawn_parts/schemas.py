@@ -249,6 +249,33 @@ def _agent_roster_hint() -> str:
     return hint + "."
 
 
+def _cwd_roots_hint() -> str:
+    """The roots sentence both spawn ``cwd`` descriptions end with.
+
+    Read from ``agent.subagent_cwd_allowed_roots``, the list the admission gate hands
+    ``validate_cwd``, so the model sees the rule before a refusal teaches it. An
+    unreadable config prints the shipped default, labelled as the default: this text
+    is advice and the gate still decides.
+    """
+    # Imported here, not at module level: every module-level name an owner binds is
+    # served by the ``spawn`` facade, and this constant is no part of that surface.
+    from kiro_crew.config.sections_agent_fields import DEFAULT_CWD_ALLOWED_ROOTS
+
+    try:
+        roots = list(KiroCrewConfig.load().agent.subagent_cwd_allowed_roots)
+    except Exception:
+        return (
+            " Must be under an agent.subagent_cwd_allowed_roots entry (shipped default: "
+            f"[{', '.join(DEFAULT_CWD_ALLOWED_ROOTS)}]); any other path is refused."
+        )
+    if not roots:
+        return " cwd is disabled: agent.subagent_cwd_allowed_roots is empty, so any cwd is refused."
+    return (
+        f" Must be under one of agent.subagent_cwd_allowed_roots: [{', '.join(roots)}]; "
+        "any other path is refused."
+    )
+
+
 def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
     """Descriptors for the spawn tools.
 
@@ -292,7 +319,9 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
     # running-loop skip -- the names path never reaches them.
     _cap_hint = ""
     _agent_hint = ""
+    _cwd_hint = ""
     if not names_only:
+        _cwd_hint = _cwd_roots_hint()
         # A list the gateway builds for a tool server to relay reads as that server's
         # own, so it prints the ceiling sentence below, never the gateway's.
         _live_cap = 0 if built_for_a_tool_server() else host_status.adaptive_exec_cap()
@@ -476,9 +505,7 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
                             "Optional absolute path to launch the subagent subprocess in, "
                             "instead of the default sandbox. Enables cwd-relative resource globs "
                             "(.kiro/steering, AGENTS.md, CLAUDE.md) to resolve against this directory. "
-                            "Must be under a configured subagent_cwd_allowed_roots entry "
-                            "(default: [~/workspace, ~/workspaces, ~/workplace, "
-                            "~/workplaces]). Applies to all tasks in a batch spawn."
+                            "Applies to all tasks in a batch spawn." + _cwd_hint
                         ),
                     },
                     "isolate": {
@@ -782,8 +809,7 @@ def schemas(*, names_only: bool = False) -> list[dict[str, Any]]:
                     "cwd": {
                         "type": "string",
                         "description": (
-                            "Optional absolute path to launch sub-agents in. "
-                            "Must be under a configured subagent_cwd_allowed_roots entry."
+                            "Optional absolute path to launch sub-agents in." + _cwd_hint
                         ),
                     },
                     "silent": {
