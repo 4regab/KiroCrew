@@ -29,6 +29,7 @@ from .argv_floor_ssh import (
 )
 from .shell_commands import (
     _heredoc_body_substitutions,
+    _is_message_line,
     _without_quoted_heredoc_text,
     read_commands,
 )
@@ -138,8 +139,9 @@ def _substitution_reaches_self(text_lower: str) -> bool:
             fresh = [p for p in nested if (p, False) not in seen]
             seen.update((p, False) for p in fresh)
             work += [(p, False, p not in joined_here) for p in fresh]
+        message = bool(subs) and _is_message_line(text, [(s, e) for s, e, _b in subs])
         for _start, _end, body in subs:
-            body = _without_quoted_heredoc_text(body)
+            body = _without_quoted_heredoc_text(body, message)
             if (body, True) not in seen:
                 seen.add((body, True))
                 work.append((body, True, True))

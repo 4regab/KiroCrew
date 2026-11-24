@@ -438,6 +438,7 @@ if TYPE_CHECKING:  # names it serves from outside its owners, from their homes
     from kiro_crew.security.shell_commands import (  # noqa: F401
         _double_quoted_substitution_bodies,
         _heredoc_body_substitutions,
+        _is_message_line,
         _proven_body_spans,
         _without_quoted_heredoc_text,
         heredoc_text_spans,

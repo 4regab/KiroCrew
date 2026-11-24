@@ -1670,6 +1670,17 @@ class TestSandboxEscapeSshSelf:
             "x=\"$(cat <<'E' | sh\nssh -p 22 %s id\nE\n)\"",
             "x=\"$(cat <<'E' >s; sh s\nssh -p 22 %s id\nE\n)\"",
             'x="$(cat <<<y; ssh -p 22 %s id)"',
+            # ``cat -`` text is read off a message line, beside another command (also
+            # after text leaving a quote open), piped, written to a file, under an
+            # unquoted tag or one bash spells differently, or in a body with a backslash.
+            "x=\"$(cat - <<'E'\nssh -p 22 %s id\nE\n)\"",
+            "gh pr create --body \"$(cat - <<'E'\nx\nE\nssh -p 22 %s id)\"",
+            "gh pr create --body \"$(cat - <<'E'\nit's\nE\nssh -p 22 %s id\n)\"",
+            "gh pr create --body \"`cat - <<'E\\\\OF'\nprinted\nE\\OF\nssh -p 22 %s id\n`\"",
+            'gh pr create --body "$(cat - <<\'A""B\'\nprinted\nA""B\nssh -p 22 %s id\n)"',
+            "gh pr create --body \"$(cat -- <<'E' | sh\nssh -p 22 %s id\nE\n)\"",
+            "gh pr create --body \"$(cat -n <<'E' >s; sh s\nssh -p 22 %s id\nE\n)\"",
+            'gh pr create --body "$(cat - <<E\n$(ssh -p 22 %s id)\nE\n)"',
             # A body inside an unquoted substitution, and after ``$$``.
             'echo $(echo "$(ssh -p 22 %s id)")',
             'echo "$$$(ssh -p 22 %s id)"',
@@ -1695,6 +1706,12 @@ class TestSandboxEscapeSshSelf:
             'echo "\\$(ssh -p 22 %s id)"',
             # The text that ``cat`` prints from a quoted-tag heredoc is data.
             "gh pr create --body \"$(cat <<'EOF'\n- ssh -p 22 %s id\nEOF\n)\"",
+            # So is that of ``cat -``, ``cat --`` or ``cat -n`` alone in a message body.
+            "gh pr create --body \"$(cat - <<'EOF'\n- ssh -p 22 %s id\nEOF\n)\"",
+            "gh issue comment 5 -b \"$(cat -- <<'EOF'\n- ssh -p 22 %s id\nEOF\n)\"",
+            "git commit -m \"$(cat -n <<'EOF'\nfix: ssh -p 22 %s id\nEOF\n)\"",
+            "gh pr create --body \"`cat - <<'EOF'\n- ssh -p 22 %s id\nEOF\n`\"",
+            'gh pr create --body "$(cat - <<\'EOF\'\nSee "a (b)": ssh -p 22 %s id\nEOF\n)"',
         ],
     )
     def test_double_quoted_substitution_rows_that_stay_allowed(self, cmd):
@@ -1935,9 +1952,9 @@ class TestSshFloorNestingDepth:
         real = ssh._double_quoted_substitution_bodies
         calls = [0]
 
-        def counting(text):
+        def counting(text, *rest):
             calls[0] += 1
-            return real(text)
+            return real(text, *rest)
 
         cmd = _nested_double_quoted(1000, "true; echo ssh")
         with patch.object(ssh, "_double_quoted_substitution_bodies", counting):
@@ -1961,9 +1978,9 @@ class TestSshFloorNestingDepth:
         real = ssh._double_quoted_substitution_bodies
         deepest = [0]
 
-        def counting(text):
+        def counting(text, *rest):
             deepest[0] = max(deepest[0], ssh._ssh_reading_depth.get())
-            return real(text)
+            return real(text, *rest)
 
         with patch.object(ssh, "_double_quoted_substitution_bodies", counting):
             assert (
