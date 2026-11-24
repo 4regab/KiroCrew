@@ -50,6 +50,7 @@ from kiro_crew.constants import MIN_NODE_VERSION, format_node_version
 from kiro_crew.dashboard.urls import _resolve_hostname_bounded
 from kiro_crew.hidden_leaf_staging import EnvStagingRefused
 from kiro_crew.host_timezone import LOCAL_TIMEZONE, detect_host_timezone, is_local_timezone
+from kiro_crew.http_proxy import SLACK_API_URL, resolve_proxy, slack_web_client
 from kiro_crew.sandbox import (
     REMEDY_APPARMOR_USERNS,
     configured_sandbox_mode,
@@ -740,7 +741,9 @@ def _verify_slack_secret(key: str, token: str) -> tuple[bool | None, str]:
     token = resolve_env_credential(key, token)
     if not token:
         return False, "the secret:// reference cannot be resolved from the vault"
-    client = WebClient(token=token, timeout=_SLACK_VERIFY_TIMEOUT)
+    client = slack_web_client(
+        token, resolve_proxy(SLACK_API_URL), client_cls=WebClient, timeout=_SLACK_VERIFY_TIMEOUT
+    )
     try:
         if key == CRED_SLACK_APP_TOKEN:
             client.apps_connections_open(app_token=token)
@@ -774,8 +777,10 @@ def _verify_slack_owner_id(bot_token: str, owner_id: str) -> tuple[bool | None, 
             "not a member ID — 'C…' is a channel and 'B…' is a bot; yours starts "
             "with U (or W on Enterprise Grid), from your profile → ⋯ More → Copy member ID"
         )
-    client = WebClient(
-        token=resolve_env_credential(CRED_SLACK_BOT_TOKEN, bot_token),
+    client = slack_web_client(
+        resolve_env_credential(CRED_SLACK_BOT_TOKEN, bot_token),
+        resolve_proxy(SLACK_API_URL),
+        client_cls=WebClient,
         timeout=_SLACK_VERIFY_TIMEOUT,
     )
     try:

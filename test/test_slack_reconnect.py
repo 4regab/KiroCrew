@@ -159,10 +159,19 @@ def seams(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
             orch.slack = None
 
     monkeypatch.setattr(slack_events, "init_socket_mode", _init)
-    monkeypatch.setattr(slack_client_mod, "RealSlackClient", lambda token: f"client:{token}")
+    monkeypatch.setattr(
+        slack_client_mod, "RealSlackClient", lambda token: _ClientName(f"client:{token}")
+    )
     monkeypatch.setattr(slack_handler, "set_owner_id", seen.owner_ids.append)
     monkeypatch.setattr(slack_handler, "set_allowed_users", seen.allowed.append)
     return seen
+
+
+class _ClientName(str):
+    """A stand-in RealSlackClient that compares by name; the reconnect sets its proxy."""
+
+    def use_proxy(self, proxy: str | None) -> None:
+        pass
 
 
 def _run(orch: _Orch) -> dict[str, Any]:
@@ -495,6 +504,9 @@ def test_a_reconnect_attaches_the_agent_session_driver_to_its_client(seams, monk
 
 class _StatusClient:
     """The two attributes the code-channel status driver uses on a Slack client."""
+
+    def use_proxy(self, proxy: str | None) -> None:
+        pass
 
     def __init__(self) -> None:
         self.sent: list[str] = []

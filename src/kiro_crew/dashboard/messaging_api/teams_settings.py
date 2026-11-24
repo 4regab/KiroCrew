@@ -136,7 +136,7 @@ async def _validate_teams_app_credentials(
     """
     import aiohttp  # noqa: F811
 
-    from kiro_crew.http_proxy import resolve_proxy  # noqa: F811
+    from kiro_crew.http_proxy import resolve_proxy_off_loop  # noqa: F811
     from kiro_crew.teams.client import (  # noqa: F811
         _TOKEN_SCOPE,
         _TOKEN_URL_TMPL,
@@ -153,7 +153,7 @@ async def _validate_teams_app_credentials(
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
             url,
-            proxy=resolve_proxy(url),
+            proxy=await resolve_proxy_off_loop(url),
             data={
                 "grant_type": "client_credentials",
                 "client_id": app_id,

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
         _SIGNING_KEY_PREFLIGHT_TIMEOUT_SECS,
         BOOT_RESTART_HINT,
         MAX_SESSION_TTL_SECS,
+        SLACK_API_URL,
         ChannelHistory,
         ContextBuilder,
         ConversationLog,
@@ -82,6 +83,7 @@ if TYPE_CHECKING:
         redact_credentials,
         redact_exfiltration_urls,
         resolve_dashboard_host,
+        resolve_proxy_off_loop,
         resolve_session_start_sizing,
         run_persistence_watchdog,
         run_sign_in_refresher,
@@ -252,6 +254,8 @@ async def _init_services(self: GatewayOrchestrator) -> None:
     except Exception:
         logger.debug("Agent spec verification failed", exc_info=True)
 
+    # No proxy lookup here (no-new-work-on-gateway-boot-path): ``run`` applies
+    # the system proxy past KIROCREW_READY, before any Slack connection.
     self.slack = RealSlackClient(self._bot_token) if self._slack_enabled else None
     # Slack agent sessions (status, title, native Stop): the driver is attached
     # at boot and reads slack.agent_sessions (and the install's capability) live.
@@ -1533,6 +1537,11 @@ async def run(self: GatewayOrchestrator) -> None:
     # are offloaded individually within the coroutine instead, preserving
     # the security-relevant early-return ordering.  Pinned by
     # test_slack_events_coverage.py::TestInitSocketMode.
+    # Past KIROCREW_READY: the Web API client takes the system proxy here, off
+    # the loop, before the socket connects. A Slack call made earlier resolves
+    # it itself (slack.client._SystemProxyWebClient).
+    if self.slack is not None:
+        self.slack.use_proxy(await resolve_proxy_off_loop(SLACK_API_URL))
     await init_socket_mode(self, seen)
 
     await self._start_channel_transports()

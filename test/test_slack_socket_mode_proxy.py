@@ -38,12 +38,28 @@ def proxies(monkeypatch):
     table: dict[str, str] = {}
     monkeypatch.setattr(urllib.request, "getproxies", lambda: dict(table))
     monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    # connect reads the OS settings through _os_proxies when no proxy variable is set.
+    import kiro_crew.http_proxy as http_proxy
+
+    monkeypatch.setattr(http_proxy, "_os_proxies", lambda: dict(table))
+    monkeypatch.setattr(http_proxy, "_os_bypass", lambda: None)
     return table
 
 
 @pytest.fixture
 def no_python_socks(monkeypatch):
     monkeypatch.setattr(smp, "_socks_supported", lambda: False)
+
+
+@pytest.fixture
+def env_sourced(proxies, monkeypatch):
+    """Present the table as the operator's environment, not the OS settings.
+
+    A SOCKS-only pick raises only for an environment proxy: an OS-sourced map
+    goes through the Web API's filter and never raises.
+    """
+    monkeypatch.setattr(urllib.request, "getproxies_environment", lambda: dict(proxies))
+    return proxies
 
 
 class TestSelectSocketModeProxy:
@@ -53,13 +69,28 @@ class TestSelectSocketModeProxy:
         proxies.update(MACOS_ALL_THREE)
         assert select_socket_mode_proxy(WSS) == "http://127.0.0.1:7890"
 
-    def test_socks_is_kept_when_python_socks_is_installed(self, proxies, monkeypatch):
-        proxies.update(MACOS_ALL_THREE)
+    def test_socks_is_kept_when_python_socks_is_installed(self, env_sourced, monkeypatch):
+        env_sourced.update(MACOS_ALL_THREE)
         monkeypatch.setattr(smp, "_socks_supported", lambda: True)
         assert select_socket_mode_proxy(WSS) == "socks5h://127.0.0.1:7890"
 
-    def test_socks_only_raises_an_actionable_error(self, proxies, no_python_socks):
-        proxies["socks"] = "http://127.0.0.1:7890"
+    def test_no_proxy_alone_uses_the_os_proxy_the_web_api_uses(
+        self, proxies, monkeypatch, no_python_socks
+    ):
+        # The stdlib's getproxies() returns {"no": ...} here and skips the OS.
+        import kiro_crew.http_proxy as http_proxy
+
+        proxies["no"] = "example.test"
+        monkeypatch.setattr(
+            urllib.request, "getproxies_environment", lambda: {"no": "example.test"}
+        )
+        monkeypatch.setattr(http_proxy, "_os_proxies", lambda: dict(MACOS_ALL_THREE))
+        monkeypatch.setattr(http_proxy, "_os_bypass", lambda: None)  # never the host's own list
+        assert select_socket_mode_proxy(WSS) == "http://127.0.0.1:7890"
+        assert http_proxy.resolve_proxy(http_proxy.SLACK_API_URL) == "http://127.0.0.1:7890"
+
+    def test_socks_only_raises_an_actionable_error(self, env_sourced, no_python_socks):
+        env_sourced["socks"] = "http://127.0.0.1:7890"
         with pytest.raises(SocksProxyUnavailable) as caught:
             select_socket_mode_proxy(WSS)
         reason = caught.value.status_reason
@@ -71,14 +102,28 @@ class TestSelectSocketModeProxy:
         proxies.update({"https": "socks5h://127.0.0.1:1080", "http": "http://127.0.0.1:3128"})
         assert select_socket_mode_proxy(WSS) == "http://127.0.0.1:3128"
 
-    def test_env_socks_https_proxy_alone_raises(self, proxies, no_python_socks):
-        proxies["https"] = "socks5h://127.0.0.1:1080"
+    def test_env_socks_https_proxy_alone_raises(self, env_sourced, no_python_socks):
+        env_sourced["https"] = "socks5h://127.0.0.1:1080"
         with pytest.raises(SocksProxyUnavailable):
             select_socket_mode_proxy(WSS)
 
     def test_plain_https_proxy_is_used_as_is(self, proxies, no_python_socks):
         proxies["https"] = "http://proxy.example:3128"
         assert select_socket_mode_proxy(WSS) == "http://proxy.example:3128"
+
+    def test_an_http_only_os_proxy_carries_the_websocket_and_the_web_api(
+        self, proxies, monkeypatch, no_python_socks
+    ):
+        # websockets skips an http entry for wss://; resolve_proxy takes it.
+        import kiro_crew.http_proxy as http_proxy
+
+        monkeypatch.setattr(urllib.request, "getproxies_environment", lambda: {})
+        proxies["http"] = "http://proxy:3128"
+        monkeypatch.setattr(http_proxy, "_os_proxies", lambda: dict(proxies))
+        monkeypatch.setattr(http_proxy, "_os_bypass", lambda: None)
+        web_api = http_proxy.resolve_proxy(http_proxy.SLACK_API_URL)
+        assert web_api == "http://proxy:3128"
+        assert select_socket_mode_proxy(WSS) == web_api
 
     def test_no_proxy_connects_directly(self, proxies, no_python_socks):
         assert select_socket_mode_proxy(WSS) is None
@@ -93,6 +138,67 @@ class TestSelectSocketModeProxy:
             urllib.request, "proxy_bypass", lambda host: host == "wss-primary.slack.com"
         )
         assert select_socket_mode_proxy(WSS) is None
+
+
+# A Windows registry map with a `socks=` entry, as getproxies_registry returns it.
+REGISTRY_SOCKS = {"socks": "socks://h:1080", "http": "socks4://h:1080", "https": "socks4://h:1080"}
+SLACK_API = "https://slack.com/api/"
+
+
+class TestOneRoutePerSource:
+    """An OS map reaches both Slack legs through one filter; the environment is as written."""
+
+    @pytest.fixture
+    def os_map(self, monkeypatch):
+        import kiro_crew.http_proxy as http_proxy
+
+        table: dict[str, str] = {}
+        monkeypatch.setattr(
+            urllib.request, "getproxies_environment", lambda: {"no": "example.test"}
+        )
+        monkeypatch.setattr(http_proxy, "_os_proxies", lambda: dict(table))
+        monkeypatch.setattr(http_proxy, "_os_bypass", lambda: None)
+        monkeypatch.setattr(http_proxy, "_warned_schemes", set())
+        return table
+
+    def test_a_registry_socks_entry_sends_both_legs_direct_with_one_warning(self, os_map, caplog):
+        import kiro_crew.http_proxy as http_proxy
+
+        os_map.update(REGISTRY_SOCKS)
+        with caplog.at_level("WARNING", logger=http_proxy.logger.name):
+            assert select_socket_mode_proxy(WSS) is None
+            assert smp.select_socket_mode_proxy_from_os(WSS, {"no": "example.test"}) is None
+            assert http_proxy.resolve_proxy(SLACK_API) is None
+        assert len([r for r in caplog.records if "system proxy" in r.getMessage()]) == 1
+
+    def test_a_usable_https_entry_beside_it_carries_both_legs(self, os_map, monkeypatch):
+        import kiro_crew.http_proxy as http_proxy
+
+        # Even with python-socks importable, the OS socks= entry is not used.
+        monkeypatch.setattr(smp, "_socks_supported", lambda: True)
+
+        os_map.update(REGISTRY_SOCKS, https="http://p:3128")
+        assert select_socket_mode_proxy(WSS) == "http://p:3128"
+        assert smp.select_socket_mode_proxy_from_os(WSS, {"no": "example.test"}) == "http://p:3128"
+        assert http_proxy.resolve_proxy(SLACK_API) == "http://p:3128"
+
+    def test_an_environment_socks_proxy_without_python_socks_still_raises(
+        self, monkeypatch, no_python_socks
+    ):
+        monkeypatch.setattr(
+            urllib.request, "getproxies_environment", lambda: {"https": "socks5://h:1080"}
+        )
+        monkeypatch.setattr(urllib.request, "getproxies", lambda: {"https": "socks5://h:1080"})
+        monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+        with pytest.raises(SocksProxyUnavailable):
+            select_socket_mode_proxy(WSS)
+
+    def test_an_environment_http_proxy_reaches_websockets_unchanged(self, monkeypatch):
+        env = {"https": "http://envproxy:8080"}
+        monkeypatch.setattr(urllib.request, "getproxies_environment", lambda: dict(env))
+        monkeypatch.setattr(urllib.request, "getproxies", lambda: dict(env))
+        monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+        assert select_socket_mode_proxy(WSS) == "http://envproxy:8080"
 
 
 class TestConnectPassesTheChosenProxy:
@@ -122,3 +228,132 @@ class TestConnectPassesTheChosenProxy:
         assert kwargs["uri"] == WSS
         assert kwargs["proxy"] == "http://127.0.0.1:7890"
         assert client.current_session is session
+
+    @pytest.mark.asyncio
+    async def test_connect_runs_the_os_bypass_matcher_off_the_loop(
+        self, proxies, no_python_socks, monkeypatch
+    ):
+        # NO_PROXY alone: the OS bypass list applies, and it can block on DNS.
+        import threading
+
+        import kiro_crew.http_proxy as http_proxy
+
+        threads: list[int] = []
+
+        def _matcher(host: str) -> bool:
+            threads.append(threading.get_ident())
+            return False
+
+        monkeypatch.setattr(
+            urllib.request, "getproxies_environment", lambda: {"no": "example.test"}
+        )
+        monkeypatch.setattr(http_proxy, "_os_proxies", lambda: dict(MACOS_ALL_THREE))
+        monkeypatch.setattr(http_proxy, "_os_bypass", lambda: _matcher)
+        session = MagicMock()
+        session.close = AsyncMock()
+        monkeypatch.setattr(websockets, "connect", AsyncMock(return_value=session))
+
+        client = WSSocketModeClient(app_token="xapp-test")
+        client.wss_uri = WSS
+        monkeypatch.setattr(client, "monitor_current_session", AsyncMock())
+        monkeypatch.setattr(client, "receive_messages", AsyncMock())
+        try:
+            await client.connect()
+        finally:
+            await client.close()
+
+        assert threads and threading.get_ident() not in threads
+
+
+class TestSelectionBranches:
+    """Branches of the selection helpers the end-to-end cases above do not reach."""
+
+    def test_socks_support_is_false_when_python_socks_does_not_import(self, monkeypatch):
+        def _missing(name):
+            raise ImportError(name)
+
+        monkeypatch.setattr(smp.importlib, "import_module", _missing)
+        assert smp._socks_supported() is False
+
+    def test_socks_support_is_true_when_python_socks_imports(self, monkeypatch):
+        monkeypatch.setattr(smp.importlib, "import_module", lambda name: object())
+        assert smp._socks_supported() is True
+
+    def test_http_fallback_takes_the_http_entry_when_https_is_socks(self):
+        proxies = {"https": "socks5://h:1080", "http": "http://p:3128"}
+        assert smp._http_fallback(proxies) == "http://p:3128"
+
+    def test_http_fallback_is_none_with_only_socks_entries(self):
+        assert smp._http_fallback({"https": "socks5://h:1080"}) is None
+
+    def test_an_os_bypassed_host_connects_direct(self, monkeypatch):
+        import kiro_crew.http_proxy as http_proxy
+
+        monkeypatch.setattr(http_proxy, "_os_proxies", lambda: {"https": "http://p:3128"})
+        monkeypatch.setattr(http_proxy, "_os_bypass", lambda: None)
+        env = {"no": "wss-primary.slack.com"}
+        assert smp.select_socket_mode_proxy_from_os(WSS, env) is None
+
+    def test_settle_sends_a_secure_uri_with_no_pick_through_the_http_entry(self):
+        assert smp._settle(None, {"http": "http://p:3128"}, secure=True) == "http://p:3128"
+
+    def test_settle_keeps_no_proxy_for_a_plain_uri(self):
+        assert smp._settle(None, {"http": "http://p:3128"}, secure=False) is None
+
+    def test_settle_replaces_socks_with_http_and_says_so(self, no_python_socks, caplog):
+        proxies = {"https": "socks5://h:1080", "http": "http://p:3128"}
+        with caplog.at_level("INFO", logger=smp.logger.name):
+            assert smp._settle("socks5://h:1080", proxies, secure=True) == "http://p:3128"
+        assert any("python-socks is not installed" in r.getMessage() for r in caplog.records)
+
+    def test_settle_raises_when_socks_is_the_only_proxy(self, no_python_socks):
+        with pytest.raises(SocksProxyUnavailable):
+            smp._settle("socks5://h:1080", {"https": "socks5://h:1080"}, secure=True)
+
+
+class TestConnectBranches:
+    """``connect``: the URL issue, the environment path, and replacing a live session."""
+
+    @pytest.mark.asyncio
+    async def test_an_environment_proxy_is_picked_on_the_loop_and_old_tasks_replaced(
+        self, monkeypatch
+    ):
+        env = {"https": "http://envproxy:8080"}
+        monkeypatch.setattr(urllib.request, "getproxies_environment", lambda: dict(env))
+        monkeypatch.setattr(urllib.request, "getproxies", lambda: dict(env))
+        monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+        thread_calls: list[object] = []
+
+        async def _no_thread(fn, *args, **kwargs):
+            thread_calls.append(fn)
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr(smp.asyncio, "to_thread", _no_thread)
+        session = MagicMock()
+        session.close = AsyncMock()
+        old_session = MagicMock()
+        old_session.close = AsyncMock()
+        fake_connect = AsyncMock(return_value=session)
+        monkeypatch.setattr(websockets, "connect", fake_connect)
+
+        client = WSSocketModeClient(app_token="xapp-test")
+        client.wss_uri = None
+        monkeypatch.setattr(client, "issue_new_wss_url", AsyncMock(return_value=WSS))
+        monkeypatch.setattr(client, "monitor_current_session", AsyncMock())
+        monkeypatch.setattr(client, "receive_messages", AsyncMock())
+        old_monitor = MagicMock()
+        old_receiver = MagicMock()
+        client.current_session = old_session
+        client.current_session_monitor = old_monitor
+        client.message_receiver = old_receiver
+        try:
+            await client.connect()
+        finally:
+            await client.close()
+
+        assert client.wss_uri == WSS
+        assert fake_connect.await_args.kwargs["proxy"] == "http://envproxy:8080"
+        assert thread_calls == []
+        old_monitor.cancel.assert_called_once()
+        old_receiver.cancel.assert_called_once()
+        old_session.close.assert_awaited_once()
