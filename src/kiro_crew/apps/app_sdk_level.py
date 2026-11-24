@@ -21,7 +21,8 @@ Level 14 adds backend SDK names, one batch: ``canonical_file_path``, the gateway
 file path gate (the UNC and link screens and the sensitive-path list, answered as the
 canonical path or None); and ``vet_public_url``, ``UrlRejectedError`` and
 ``address_is_not_public``, the gateway's outbound public-address check for a URL, or
-a resolved address, an app's backend fetches.
+a resolved address, an app's backend fetches; and the SDK's ``isStatusRow``, the
+chat's verdict on a row the gateway wrote.
 """
 
 APP_SDK_LEVEL = 14

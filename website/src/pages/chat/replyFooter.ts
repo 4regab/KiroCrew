@@ -2,7 +2,7 @@ import type { ChatMessage } from '../../types'
 import { isHiddenReplyAt } from '../../app-sdk/turnPolicyBlock'
 import { isHiddenInvisibleAssistantRow } from '../../utils/invisibleText'
 import type { TurnStats } from './AssistantMessage'
-import { isSystemNoticeRow } from './CompactionCard'
+import { isSystemNoticeRow } from '../../lib/systemNotice'
 import { opensTurn } from './RecoveryCard'
 
 /**

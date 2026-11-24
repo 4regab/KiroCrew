@@ -7967,7 +7967,7 @@ on an installed app's `credentialMasks` (§37), `permissions.chatLaunch` and
 `ctx.kiro_call` (§47), and the SDK's `SessionChanges` and `DiffView` (§18l); level 13 adds
 `/api/apps/<name>/browser-sites` and the SDK's `useBrowserSites` (§45); level 14 adds backend
 SDK names, one batch: `canonical_file_path`, `vet_public_url`, `UrlRejectedError` and
-`address_is_not_public` (§40). Several seams share level 7,
+`address_is_not_public` (§40), and the SDK's `isStatusRow`. Several seams share level 7,
 three share level 8, the open batch that level 10 starts shares level 10, and the backend SDK
 batch shares level 14, so an app that needs one
 feature-detects it (the manifest key or attribute, or the SDK export), never the level alone. An app reads `ctx.sdk_level` or the SDK export to detect an
