@@ -8199,9 +8199,15 @@ A built-in app that moves to its own repository keeps working for everyone who
 already has it. A release that pins the app still ships its wheel copy; on a host
 whose record is builtin-owned, the gateway swaps the record **in place** onto the
 pinned repository tree, keeping `data/`, `.app_secret`, the approved grants and
-`enabled`. A host that cannot adopt keeps running the wheel copy unchanged. Core
-names no app anywhere in this machinery but one stated place, the row keys of
-`apps/legacy_state_moves` ("A legacy state move holds the swap" below): the pin table
+`enabled`. A host that cannot adopt keeps running the wheel copy unchanged, until
+a later release deletes that copy and keeps the pin row (Personal Shopper first).
+On that release an adopted host keeps running the tree in its data home. A host
+whose record is still builtin-owned keeps the record, `data/` and `.app_secret` (the
+pin keeps it from the orphan scan) but has no wheel copy to run, so the app is
+missing until it adopts: STAGE fetches on the first boot of that release and APPLY
+swaps at the next restart, and a host that cannot fetch stays without the app until
+it can. Core names no app anywhere in this machinery but one stated place, the row
+keys of `apps/legacy_state_moves` ("A legacy state move holds the swap" below): the pin table
 is data, and `test_builtin_adoption_pins.py` fails on a shipped built-in name in any
 adoption module other than that listed exception, and on a row key it does not list.
 
@@ -8705,8 +8711,9 @@ failed (no 404 came back) is not cached as an answer: it takes the shared retry
 ladder, keeps the compiled page, shows its error in an `ErrorNotice` (agent
 hand-off) above the page once the retries are spent, and is asked again on the
 next mount. A
-legacy route this dashboard compiles no page for (the release that drops the app's
-pin row drops its page too) is the one path the route waits on: it reads the list
+legacy route this dashboard compiles no page for (the release that deletes the
+app's wheel copy deletes its page too, and keeps the pin row) is the one path the
+route waits on: it reads the list
 through `useInstalledAppsWhen(true)`, which asks for it when nothing cached it,
 shows the skeleton until an answer is in, renders the adopted copy when the list
 names one for the route, shows an `ErrorNotice` (agent hand-off) with a Retry when

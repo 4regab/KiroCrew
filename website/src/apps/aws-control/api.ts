@@ -1,11 +1,10 @@
 /**
  * AWS Control API client — a thin same-origin fetch wrapper.
  *
- * Mirrors the personal-shopper client: it prefers the response body's machine
- * readable `code` over the untranslated English `error` prose, so the UI has a
- * stable token to localise (RFC 9457 §3.1.3). The two P0 endpoints are both
- * reads; every mutation in this subsystem goes through the crew or a dashboard
- * confirmation card, not this page.
+ * It prefers the response body's machine readable `code` over the untranslated
+ * English `error` prose, so the UI has a stable token to localise (RFC 9457
+ * §3.1.3). The two P0 endpoints are both reads; every mutation in this subsystem
+ * goes through the crew or a dashboard confirmation card, not this page.
  */
 
 import type {
