@@ -60,6 +60,12 @@ ROUTES: Final[dict[tuple[str, str], RouteAccess]] = {
     ("GET", "/api/apps/{name}/browser-sites"): RouteAccess("apps.browser_sites.read", UNSTABLE),
     # Owner dashboard only: 403 for an app token and an internal caller.
     ("POST", "/api/apps/{name}/browser-sites"): RouteAccess("apps.browser_sites.change", UNSTABLE),
+    # Owner dashboard only (handlers/browser_live_views.py); returns the slot's tab list.
+    ("POST", "/api/browser/live/views/tabs"): RouteAccess("browser.live.views.list", UNSTABLE),
+    # Owner dashboard only; starts a second live view of one of the slot's own tabs.
+    ("POST", "/api/browser/live/views/open"): RouteAccess("browser.live.views.open", UNSTABLE),
+    # Owner dashboard only; ends a second live view.
+    ("POST", "/api/browser/live/views/close"): RouteAccess("browser.live.views.close", UNSTABLE),
     # Owner gate (handlers/connections_app_manifest.py); writes nothing.
     ("GET", "/api/connections/app-manifests"): RouteAccess(
         "connections.app_manifests.read", UNSTABLE
