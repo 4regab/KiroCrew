@@ -21,5 +21,8 @@
  * resolved address, an app's backend fetches.
  * Level 14 also adds `sniff_raster_mime` and `RASTER_SNIFF_BYTES`: the gateway's
  * raster sniffer, by reference.
+ *
+ * Level 15 adds `permissions.browserRecipes` and `useBrowserMedia().runRecipe`: fixed
+ * clicks on selectors the gateway runs on the app's own agent's tab, no model asked.
  */
-export const APP_SDK_LEVEL = 14
+export const APP_SDK_LEVEL = 15

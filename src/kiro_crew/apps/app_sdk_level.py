@@ -23,6 +23,11 @@ canonical path or None); and ``vet_public_url``, ``UrlRejectedError`` and
 ``address_is_not_public``, the gateway's outbound public-address check for a URL, or
 a resolved address, an app's backend fetches. Level 14 also adds ``sniff_raster_mime``
 and ``RASTER_SNIFF_BYTES``: the gateway's own raster sniffer, by reference.
+
+Level 15 adds ``permissions.browserRecipes``: fixed clicks on CSS selectors the gateway
+runs on the app's own agent's tab, through ``POST /api/browser/media`` (``action:
+"recipe"``, the SDK's ``useBrowserMedia().runRecipe``) and, for a ``watch`` recipe, by
+itself while the app's media plays.
 """
 
-APP_SDK_LEVEL = 14
+APP_SDK_LEVEL = 15
