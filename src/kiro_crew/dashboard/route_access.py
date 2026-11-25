@@ -60,6 +60,9 @@ ROUTES: Final[dict[tuple[str, str], RouteAccess]] = {
     ("GET", "/api/apps/{name}/browser-sites"): RouteAccess("apps.browser_sites.read", UNSTABLE),
     # Owner dashboard only: 403 for an app token and an internal caller.
     ("POST", "/api/apps/{name}/browser-sites"): RouteAccess("apps.browser_sites.change", UNSTABLE),
+    # Internal secret plus an attested bot turn in its own thread
+    # (handlers/member_memory_self.py); reads the bot's own memory, writes nothing.
+    ("POST", "/api/member/self/memory/list"): RouteAccess("member.memory.list", UNSTABLE),
     # Owner gate (handlers/connections_app_manifest.py); writes nothing.
     ("GET", "/api/connections/app-manifests"): RouteAccess(
         "connections.app_manifests.read", UNSTABLE

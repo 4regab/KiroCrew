@@ -114,11 +114,14 @@ FORBIDDEN_BEFORE_THE_LIST = (
 #: ``kiro_crew.enqueue_only_pool.EnqueueOnlyThreadPoolExecutor``, which the module imports
 #: at its top (it was imported inside ``configure_default_executor()`` alone); that
 #: stdlib-only module is the one file added, and nothing else loads.
+#: Raised by 1 for ``mcp-mate`` (365 to 366): the memory-change card tools read their
+#: limits and kind names from ``kiro_crew.change_card_memory``, a ``typing``-only leaf;
+#: that one file is the whole rise.
 PACKAGE_MODULE_CEILING = {
     "mcp-core": 502,
     "mcp-cron": 369,
     "mcp-guide": 363,
-    "mcp-mate": 365,
+    "mcp-mate": 366,
 }
 
 #: The modules that read the two live values in the spawn tools' descriptions. They are

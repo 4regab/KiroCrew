@@ -23,6 +23,7 @@ import shlex
 import urllib.parse
 from typing import Any
 
+from kiro_crew import change_card_memory as _memory_kind
 from kiro_crew import guide_catalog
 from kiro_crew import mate_capability_catalog as _mate_catalog
 from kiro_crew import member_goals as _goals
@@ -922,6 +923,8 @@ def build_preview(
         from kiro_crew.change_card_mcp_server import build_preview as _mcp_server_preview
 
         _mcp_server_preview(p, snapshot, out)
+    elif kind == _memory_kind.KIND_CREWMATE_MEMORY:
+        _memory_kind.build_preview(p, snapshot, out, str(context.get("label") or p["member"]))
     elif kind == KIND_MCP_TOGGLE:
         if not snapshot.get("exists"):
             raise _fail("not_found", "that MCP server is not configured")
@@ -1290,6 +1293,8 @@ def offers_no_undo(kind: str, params: dict[str, Any]) -> bool:
         # revision stays in the definition's history.
         KIND_WORKFLOW_SAVE,
         KIND_WORKFLOW_UPDATE,
+        # Each record keeps its history on the memory page, which restores a version.
+        _memory_kind.KIND_CREWMATE_MEMORY,
     ):
         return True
     return kind == KIND_DENIED_COMMAND and params.get("action") == "add"
