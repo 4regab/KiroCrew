@@ -114,8 +114,11 @@ FORBIDDEN_BEFORE_THE_LIST = (
 #: ``kiro_crew.enqueue_only_pool.EnqueueOnlyThreadPoolExecutor``, which the module imports
 #: at its top (it was imported inside ``configure_default_executor()`` alone); that
 #: stdlib-only module is the one file added, and nothing else loads.
+#: Raised by 1 for ``mcp-core`` (502 to 503): the App Store search's declaration lives in
+#: its own ``kiro_crew.mcp_tools.catalog.app_store``, which the core listing loads from
+#: ``mcp_tools.DOMAIN_MODULES`` like every other domain.
 PACKAGE_MODULE_CEILING = {
-    "mcp-core": 502,
+    "mcp-core": 503,
     "mcp-cron": 369,
     "mcp-guide": 363,
     "mcp-mate": 365,
