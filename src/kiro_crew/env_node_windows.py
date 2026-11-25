@@ -2,11 +2,12 @@
 
 On Windows fnm, nvm-windows and Volta keep Node under ``%APPDATA%``,
 ``%LOCALAPPDATA%`` or ``%ProgramFiles%``, and fnm puts ``node.exe`` directly in
-``installation\\`` (no ``bin``). :mod:`kiro_crew.env` scans these only on
+``installation\\`` (no ``bin``); the nodejs.org installer puts it in
+``%ProgramFiles%\\nodejs``. :mod:`kiro_crew.env` scans these only on
 Windows, AFTER its POSIX and macOS lists. Each candidate is still probed (an
 executable ``node``, or ``is_dir`` for MCP-binary discovery), so an absent root
-drops out. Volta's dirs also go on ``env.augmented_path``: a shim dir appears in
-BOTH lists.
+drops out. The single dirs (Volta's and the installer's) also go on
+``env.augmented_path``, so each appears in BOTH lists.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ MANAGER_GLOBS = (
 MANAGER_DIRS = (
     "{localappdata}/Volta/bin",
     "{programfiles}/Volta",
+    "{programfiles}/nodejs",
 )
 
 

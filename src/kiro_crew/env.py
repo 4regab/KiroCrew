@@ -471,7 +471,8 @@ def node_bin_dirs() -> tuple[str, ...]:
     3. The highest version found under each per-version manager root
        (mise / asdf / nvm / fnm; nvm under both ``~/.nvm`` and the XDG config
        dir; on Windows also fnm and nvm-windows under ``%APPDATA%``).
-    4. Shim dirs (mise shims, volta, n; on Windows also Volta's two roots).
+    4. Shim and single-dir roots (mise shims, volta, n; on Windows also Volta's
+       two roots and the nodejs.org installer's ``%ProgramFiles%\\nodejs``).
     5. Standalone Node trees -- the glibc-2.17 build ``ensure-node.sh`` unpacks
        into the data home (:data:`_NODE_TREE_DATA_HOME_DIRS`), then a
        hand-unpacked nodejs.org tarball under ``~/.local``
