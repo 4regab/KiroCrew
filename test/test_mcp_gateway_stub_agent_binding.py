@@ -27,7 +27,6 @@ import json
 import os
 import sys
 import tempfile
-import time
 import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -525,6 +524,15 @@ async def test_a_non_owner_binding_leaves_the_stub_with_no_declared_env(
     """
     # The dashboard owns the daemon; this stub is not descended from it.
     monkeypatch.setattr(gw, "_OWNER_PID", os.getpid())
+
+    def _must_not_wait() -> Any:
+        raise AssertionError("entered the wait: a non-owner binding can never arrive")
+
+    # Deterministic stand-in for "without waiting" (no wall-clock bound, per the
+    # Determinism contract): the wait loop's first step is `_agent_binding_event`,
+    # so if the guard fails to return early this fires and fails the test.
+    monkeypatch.setattr(gw, "_agent_binding_event", _must_not_wait)
+
     conn = connection_mod._StubConn(
         stub_uuid="s-cli-local",
         ancestor_pids=[RUNTIME_PID],
@@ -534,15 +542,11 @@ async def test_a_non_owner_binding_leaves_the_stub_with_no_declared_env(
     )
     conn.attested_pids = (RUNTIME_PID,)  # the owner pid (os.getpid()) is NOT here
     assert not conn.bound_agents
-    t0 = time.monotonic()
     with caplog.at_level("WARNING", logger=connection_mod.logger.name):
         resolved = await connection_mod._await_declaring_agent(
             OWN_AGENT, "", conn, "s-cli-local", None, MagicMock(), server_name=SERVER
         )
-    elapsed = time.monotonic() - t0
     assert resolved == ""
-    # It returned without waiting out the keepalive (the blocker this fixes).
-    assert elapsed < connection_mod.QUEUED_KEEPALIVE_SECS / 2
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert len(warnings) == 1
     assert repr(SERVER) in warnings[0]
