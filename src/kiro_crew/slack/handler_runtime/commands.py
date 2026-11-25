@@ -53,6 +53,7 @@ if TYPE_CHECKING:
         bots_text,
         build_timing_footer,
         canonical_key,
+        channel_handler,
         compact_unsupported_backend,
         compact_unsupported_reply,
         compaction_in_flight,
@@ -1338,7 +1339,7 @@ async def _bang_allowlist(
     return ""
 
 
-# ── !channel always|mention|observe|off / !channel agent <name> (owner-only) ──
+# ── !channel always|mention|observe|off / agent / bot / conductor (owner-only) ──
 async def _bang_channel(
     cmd_text: str,
     slack: SlackClientOps,
@@ -1367,16 +1368,18 @@ async def _bang_channel(
     if len(parts) == 1:
         cfg = KiroCrewConfig.load()
         ch_cfg = cfg.channel_config(channel)
-        agent_info = f", agent=*{ch_cfg.agent}*" if ch_cfg.agent else ""
-        await slack.post_message(
-            channel,
-            f"Channel `{channel}` activation: *{ch_cfg.activation}*{agent_info}\n"
-            f"Usage: `!channel always|mention|observe|off` or `!channel agent <name|off>`",
-            reply_ts,
-        )
+        line = f"{channel_handler.status_line(channel)} Channel activation: *{ch_cfg.activation}*."
+        await slack.post_message(channel, f"{line}\n{channel_handler.CHANNEL_USAGE}", reply_ts)
         return ""
 
     subcmd = parts[1].lower()
+
+    if subcmd == "bot":
+        return await channel_handler.set_bot(cmd_text, slack, channel, reply_ts, user_id)
+    if subcmd == "conductor":
+        return await channel_handler.set_conductor(
+            parts, slack, channel, reply_ts, msg_ts, session_key, user_id
+        )
 
     # !channel agent <name|off>
     if subcmd == "agent":
@@ -1387,35 +1390,41 @@ async def _bang_channel(
             return ""
         # The name is the whole remainder, so a multi-word Bot display name stays whole.
         agent_name = cmd_text.split(maxsplit=2)[2].strip()
-        if agent_name.lower() == "off":
-            agent_name = ""
-        else:
-            project = _thread_projects.get(session_key)
-
-            def _channel_agent(typed: str) -> str | None:
-                # A Bot key runs the channel as that Bot (channel_crew), so an exact key
-                # wins; a Bot named only by case or display name is matched last.
-                if typed in crew_bots():
-                    return typed
-                return _resolve_agent_name(typed, project) or resolve_bot_name(typed)
-
-            resolved = await asyncio.to_thread(_channel_agent, agent_name)
-            if not resolved:
-                names = await asyncio.to_thread(_list_all_agent_names)
-                bots = await asyncio.to_thread(bots_text)
+        async with channel_handler.lock(channel):
+            if agent_name.lower() == "off":
+                agent_name = ""
+            elif channel_handler.handler_refusal(channel):
                 await slack.post_message(
-                    channel,
-                    f"Unknown agent `{agent_name}`. Available: {names}. Crew Bots: {bots}",
-                    reply_ts,
+                    channel, channel_handler.handler_refusal(channel), reply_ts
                 )
                 return ""
-            agent_name = resolved
-        try:
-            await run_config_write(_persist_channel_config, channel, agent=agent_name)
-        except ValueError as e:
-            await slack.post_message(channel, f"❌ {e}", reply_ts)
-            return ""
-        _reload_orch_cfg()
+            else:
+                project = _thread_projects.get(session_key)
+
+                def _channel_agent(typed: str) -> str | None:
+                    # A Bot key runs the channel as that Bot (channel_crew), so an exact key
+                    # wins; a Bot named only by case or display name is matched last.
+                    if typed in crew_bots():
+                        return typed
+                    return _resolve_agent_name(typed, project) or resolve_bot_name(typed)
+
+                resolved = await asyncio.to_thread(_channel_agent, agent_name)
+                if not resolved:
+                    names = await asyncio.to_thread(_list_all_agent_names)
+                    bots = await asyncio.to_thread(bots_text)
+                    await slack.post_message(
+                        channel,
+                        f"Unknown agent `{agent_name}`. Available: {names}. Crew Bots: {bots}",
+                        reply_ts,
+                    )
+                    return ""
+                agent_name = resolved
+            try:
+                await run_config_write(_persist_channel_config, channel, agent=agent_name)
+                _reload_orch_cfg()
+            except ValueError as e:
+                await slack.post_message(channel, f"❌ {e}", reply_ts)
+                return ""
         sel().log_api_access(
             caller=user_id,
             operation="slack.channel_agent",
@@ -1431,7 +1440,8 @@ async def _bang_channel(
     if subcmd not in _VALID_ACTIVATIONS:
         await slack.post_message(
             channel,
-            f"Invalid mode `{subcmd}`. Use: `always`, `mention`, `observe`, or `off`.",
+            f"Invalid mode `{subcmd}`. Use: `always`, `mention`, `observe`, or `off`.\n"
+            f"{channel_handler.CHANNEL_USAGE}",
             reply_ts,
         )
         return ""

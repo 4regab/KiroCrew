@@ -33,9 +33,11 @@ Only the owner (set via `KIROCREW_OWNER_ID`) can use these:
 | `!ta off` | Remove thread agent override |
 | `!ta` | Show the current thread agent |
 | `/agent <name>` | Same as `!ta <name>` (type a space first if Slack offers it as a slash command) |
-| `!channel` | Show current channel activation mode |
+| `!channel` | One line: who answers this channel now, and its activation mode |
 | `!channel always/mention/observe/review/off` | Set channel activation mode |
-| `!channel agent <name/off>` | Set per-channel agent override; a Crew Bot's name runs the whole channel as that Bot |
+| `!channel agent <name/off>` | Set per-channel agent override; a Crew Bot's name runs the whole channel as that Bot, one session per thread |
+| `!channel bot <name/off>` | Owner only. One Bot answers every thread in this channel in its own chat, so all of it shows on the Bots page; each reply goes to the thread it answers. The Bot's chat must be open. While it or a helper it started is working for one thread, a message in another thread is asked to wait. Anything the Bot says with no Slack message behind it (typed on the dashboard, a check-in, a late helper report) posts to the last thread it answered |
+| `!channel conductor on/off` | Owner only. One Conductor chat answers every thread in this channel and sends work to workers, like a Conductor thread; each reply goes to the thread it answers, and only the owner's messages reach it. Needs Conductor threads on (and, in a public channel, the public-channel opt-in). `off` ends it; its chat stays on the dashboard |
 | `!project <path>` / `!project off` | Set or clear the project whose `.kiro` agents `!ta` can find in this thread (does not change the working directory); bare `!project` shows it |
 | `!voice on/off` | Speak this thread's answers as well as typing them |
 | `!voice global on/off` | On: voice replies in every thread. Off: only in threads that ran `!voice on` (or set a voice, engine, speed or pitch), plus replies to voice memos if you set `voice_reply.auto_reply_to_voice` to `true`. Saved, so a restart keeps it; bare `!voice global` toggles it |
@@ -134,7 +136,9 @@ may still run without asking. Set that tab to Normal in its approval picker.
 
 A Slack Code channel or Conductor thread has its own setting: use
 `/kirocrew approval trust` there. A thread linked to a dashboard chat follows that
-chat: set Trust in the chat's approval picker.
+chat: set Trust in the chat's approval picker. The same holds in every thread of a
+channel that a Channel Bot or Channel Conductor answers: the command turns nothing
+on there, and its `off` and `status` forms still work.
 
 Approval buttons appear in both Slack and the dashboard. Approving in either
 place resolves both.

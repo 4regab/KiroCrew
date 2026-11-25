@@ -560,6 +560,14 @@ class ChannelConfig:
         default="",
         metadata=_meta("Agent", "Agent override for this channel (empty = default)."),
     )
+    bot: str = field(
+        default="",
+        metadata=_meta(
+            "Channel Bot",
+            "Crew Bot (a config.agents key) whose own chat answers every thread in this "
+            "channel (empty = none). Set with !channel bot <name>.",
+        ),
+    )
     thread_follow: bool = field(
         default=True,
         metadata=_meta(
@@ -579,6 +587,7 @@ class ChannelConfig:
         return cls(
             activation=activation,
             agent=section.get("agent"),
+            bot=section.get("bot"),
             thread_follow=section.get("thread_follow"),
         )
 
