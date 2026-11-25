@@ -88,7 +88,8 @@ def schemas() -> list[dict[str, Any]]:
                             "run gets when its originating chat is gone (e.g. a webhook-driven "
                             "run). Lets many runs of one workflow be told apart in the sidebar. "
                             "Ignored when the originating chat is still live. Omit to keep the "
-                            "default `Workflow: <name>`."
+                            "originating conversation's saved title, or `Workflow: <name>` "
+                            "when it has none."
                         ),
                     },
                     "folder": {
@@ -98,8 +99,9 @@ def schemas() -> list[dict[str, Any]]:
                             "like session_create's `folder`) for the fallback "
                             "`workflow-<run_id>` session. Must already exist — nothing is "
                             "created; a missing or ambiguous folder rejects the run. "
-                            "Ignored when the originating chat is still live. Omit to leave "
-                            "the fallback unfiled."
+                            "Ignored when the originating chat is still live. Omit to keep the "
+                            "originating conversation's saved folder, or leave the fallback "
+                            "unfiled."
                         ),
                     },
                 },
