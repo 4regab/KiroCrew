@@ -313,7 +313,6 @@ from conftest_resets import (  # noqa: E402,F401 -- bound for pytest and importe
     _forget_pinned_gateway_spec_path,
     _forget_registry_ssh_sign_in_refusals,
     _forget_sandbox_launch_mark,
-    _forget_stub_agent_bindings,
     _forget_tracing_switch,
     _fresh_aws_bin_dir_trust,
     _fresh_config_load_debug_memories,
@@ -390,6 +389,11 @@ from conftest_resets_connected_computers import (  # noqa: E402,F401 -- bound fo
 )
 from conftest_resets_decisions import (  # noqa: E402,F401 -- bound for pytest and importers
     _fresh_decision_provider_error_warnings,
+)
+
+# MCP-gateway per-test resets, split from conftest_resets for the file-line cap.
+from conftest_resets_gateway import (  # noqa: E402,F401 -- bound for pytest and importers
+    _forget_stub_agent_bindings,
 )
 from conftest_resets_managed_env import (  # noqa: E402,F401 -- bound for pytest and importers
     _reset_managed_env_shared_client,

@@ -234,9 +234,10 @@ async def _bind_stub_agents(client: AcpClient, params: dict) -> None:
     while it serves that request and gatewayd serves each one with the declared
     env of an agent bound to this client's stub session token only. The token
     reaches every stub through the child's environment (``client_spawn_env``),
-    so every stub entry in *params* counts, including the ones nested in a
-    KAS session's custom agents. No-op without a token, a gateway socket, a
-    live process or a stub entry.
+    so every stub entry counts, including the ones nested in a KAS session's
+    custom agents and the ones a launch harness (Strands, pi, claude) mounts
+    through its launch file rather than the wire array, which is left empty.
+    No-op without a token, a gateway socket, a live process or a stub entry.
     """
     token = getattr(client, "_stub_session_token", "")
     socket_path = getattr(client, "_mcp_gateway_socket", None)
@@ -244,6 +245,11 @@ async def _bind_stub_agents(client: AcpClient, params: dict) -> None:
     if not token or not socket_path or process is None:
         return
     agents = stub_entry_agents(params)
+    # A launch harness puts its stubs in the launch file and sends an empty wire
+    # array, so the agents are not in ``params``; read them off the launch roster.
+    launched = getattr(client, "_launch_mcp_servers", None)
+    if launched:
+        agents = agents | stub_entry_agents({"mcpServers": launched})
     if agents:
         await send_agent_binding(socket_path, process.pid, token, agents)
 

@@ -506,3 +506,33 @@ def test_a_cli_local_factory_starts_its_servers_itself(monkeypatch) -> None:
     assert local["mcp_gateway_socket"] is None
     assert local["mcp_gateway_overlay"] is None
     assert cfg.mcp_gateway.stub_servers == [SERVER], "the caller's config is unchanged"
+
+
+@pytest.mark.asyncio
+async def test_launch_mounted_stubs_are_bound_from_the_launch_roster(monkeypatch) -> None:
+    """A launch harness mounts its stubs off the wire array, so the roster binds them.
+
+    Strands, pi and claude send an empty ``session/new`` ``mcpServers`` and put
+    their stubs in ``_launch_mcp_servers``; the binding reads them from there.
+    """
+    from types import SimpleNamespace
+
+    from kiro_crew.acp import client_transport
+
+    sent: list[frozenset[str]] = []
+
+    async def _bind(socket_path, pid, token, agents):
+        sent.append(agents)
+        return True
+
+    monkeypatch.setattr(client_transport, "send_agent_binding", _bind)
+    stub = {"name": SERVER, "args": ["--server", SERVER, "--agent", OWN_AGENT]}
+    client = SimpleNamespace(
+        _process=SimpleNamespace(pid=RUNTIME_PID),
+        _stub_session_token=TOKEN,
+        _mcp_gateway_socket="/s",
+        _launch_mcp_servers=[stub],
+    )
+    # The wire array is empty, as a launch harness sends it.
+    await client_transport._bind_stub_agents(client, {"mcpServers": []})
+    assert sent == [frozenset({OWN_AGENT})]
