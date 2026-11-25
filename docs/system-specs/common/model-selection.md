@@ -722,6 +722,18 @@ its own once the cache refreshes with a list that carries it.
   the dashboard resets the session so a cold start runs the inherited level or none.
   The dashboard's clear passes `every_model=True`, so a live clear also drops the
   levels stored for models the session ran before, as the reset would.
+- A slot keeps a level the serving model does not offer, for a model that does.
+  Where the harness advertises its vocabulary (`ACP_BACKENDS_EFFORT_FROM_ADVERTISED_OPTION`),
+  a live session's `selection-capabilities` answer then adds `effort_unapplied`
+  (the slot's level, or with no pick the level it inherits through
+  `resolve_session_effort`) and `effort_running`: the effort option's `currentValue`,
+  else the level the session resolves, else `""` for the model's own
+  (`AcpProvider.effort_left_unapplied`). The composer, split-pane and crew-window
+  chips name the running level, and their title and accessible name say the
+  picked one is not offered by this model; the picker keeps showing the pick.
+  A session start that drops a stored level logs `ACP stored effort not applied`.
+  Where the level rides the model (kiro-cli, claude, codex) neither field is
+  reported: a kiro-cli refusal keeps the slot's level as before.
 - The chat composer reads `GET /api/chat/slots/{slot}/selection-capabilities` for
   the active ACP session's backend, effort support, and ordered effort levels. A
   missing session answers `known: false`. Where the level rides the model

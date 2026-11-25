@@ -39,7 +39,7 @@ function renderPicker() {
   return { ...view, seen, client }
 }
 
-const capsKey = ['crew-window', 'peer-1', 'api/chat/slots/s1', 'selection-capabilities', 'claude-opus-5-5']
+const capsKey = ['crew-window', 'peer-1', 'api/chat/slots/s1', 'selection-capabilities', 'claude-opus-5-5', '']
 
 describe('useCrewWindowModelPicker effort-capability read', () => {
   beforeEach(() => { peerGet.mockReset() })
@@ -67,6 +67,180 @@ describe('useCrewWindowModelPicker effort-capability read', () => {
     const { result } = renderPicker()
 
     await waitFor(() => expect(result.current.effortCapsFailed).toBe(true))
+  })
+})
+
+describe('a picked level the peer model does not offer (#42115)', () => {
+  beforeEach(() => { peerGet.mockReset() })
+
+  it('names the level that runs on the chip and keeps the pick', async () => {
+    peerGet.mockResolvedValue({
+      known: true, effort_supported: true, effort_levels: ['low', 'high'],
+      effort_unapplied: 'max', effort_running: 'high',
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    const { result } = renderHook(() => useCrewWindowModelPicker({
+      instanceId: 'peer-1',
+      slotKey: 'crew-window:peer-1:s1',
+      slotPath: 'api/chat/slots/s1',
+      slot: { model: 'claude-opus-5-5', reasoning_effort: 'max' },
+      caps: undefined,
+      enabled: true,
+      onWritten: vi.fn(),
+    }), { wrapper })
+
+    expect(result.current.chipProps.reasoningEffort).toBe('max')
+    await waitFor(() => expect(result.current.chipProps.reasoningEffort).toBe('high'))
+    expect(result.current.chipProps.effortNotOffered).toBe('max')
+  })
+
+  it('uses the server pair when the peer slot has no effort pick', async () => {
+    peerGet.mockResolvedValue({
+      known: true, effort_supported: true, effort_levels: ['low', 'high'],
+      effort_unapplied: 'max', effort_running: 'high',
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    const { result } = renderHook(() => useCrewWindowModelPicker({
+      instanceId: 'peer-1',
+      slotKey: 'crew-window:peer-1:s1',
+      slotPath: 'api/chat/slots/s1',
+      slot: { model: 'claude-opus-5-5' },
+      caps: undefined,
+      enabled: true,
+      onWritten: vi.fn(),
+    }), { wrapper })
+
+    await waitFor(() => expect(result.current.chipProps.reasoningEffort).toBe('high'))
+    expect(result.current.chipProps.effortNotOffered).toBe('max')
+  })
+
+  it('refetches the pair when the peer clears its effort pick', async () => {
+    peerGet
+      .mockResolvedValueOnce({
+        known: true, effort_supported: true, effort_levels: ['low', 'high'],
+        effort_unapplied: 'max', effort_running: 'high',
+      })
+      .mockResolvedValueOnce({ known: true, effort_supported: true, effort_levels: ['low', 'high'] })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    const { result, rerender } = renderHook(
+      ({ reasoningEffort }: { reasoningEffort?: string }) => useCrewWindowModelPicker({
+        instanceId: 'peer-1',
+        slotKey: 'crew-window:peer-1:s1',
+        slotPath: 'api/chat/slots/s1',
+        slot: { model: 'claude-opus-5-5', reasoning_effort: reasoningEffort },
+        caps: undefined,
+        enabled: true,
+        onWritten: vi.fn(),
+      }),
+      { wrapper, initialProps: { reasoningEffort: 'max' } },
+    )
+
+    await waitFor(() => expect(result.current.chipProps.reasoningEffort).toBe('high'))
+    expect(result.current.chipProps.effortNotOffered).toBe('max')
+
+    rerender({ reasoningEffort: undefined })
+
+    await waitFor(() => expect(peerGet).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(client.getQueryState(capsKey)?.status).toBe('success'))
+    expect(result.current.chipProps.reasoningEffort).toBe('')
+    expect(result.current.chipProps.effortNotOffered).toBe('')
+  })
+})
+
+describe('the effort slider while a new pick is read', () => {
+  beforeEach(() => { peerGet.mockReset() })
+
+  /** A peer GET the test answers itself. */
+  function held() {
+    let answer!: (v: unknown) => void
+    peerGet.mockReturnValueOnce(new Promise(r => { answer = r }))
+    return (v: unknown) => answer(v)
+  }
+
+  function renderSlot(initial: { model: string; reasoningEffort?: string }) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    const view = renderHook(
+      ({ model, reasoningEffort }: { model: string; reasoningEffort?: string }) => useCrewWindowModelPicker({
+        instanceId: 'peer-1',
+        slotKey: 'crew-window:peer-1:s1',
+        slotPath: 'api/chat/slots/s1',
+        slot: { model, reasoning_effort: reasoningEffort },
+        caps: undefined,
+        enabled: true,
+        onWritten: vi.fn(),
+      }),
+      { wrapper, initialProps: initial },
+    )
+    return { ...view, client }
+  }
+
+  const unappliedMax = {
+    known: true, effort_supported: true, effort_levels: ['low', 'high'],
+    effort_unapplied: 'max', effort_running: 'high',
+  }
+
+  it('keeps the slider mounted until the peer answers for the new level', async () => {
+    peerGet.mockResolvedValueOnce(unappliedMax)
+    const answer = held()
+    const { result, rerender } = renderSlot({ model: 'claude-opus-5-5', reasoningEffort: 'max' })
+    await waitFor(() => expect(result.current.chipProps.reasoningEffort).toBe('high'))
+
+    rerender({ model: 'claude-opus-5-5', reasoningEffort: 'high' })
+    await waitFor(() => expect(peerGet).toHaveBeenCalledTimes(2))
+    expect(result.current.chipProps.hasEffort).toBe(true)
+    expect(result.current.chipProps.reasoningEffort).toBe('high')
+    expect(result.current.chipProps.effortNotOffered).toBe('')
+
+    answer({
+      known: true, effort_supported: true, effort_levels: ['low', 'medium'],
+      effort_unapplied: 'high', effort_running: 'medium',
+    })
+    await waitFor(() => expect(result.current.chipProps.reasoningEffort).toBe('medium'))
+    expect(result.current.chipProps.effortNotOffered).toBe('high')
+    expect(result.current.chipProps.hasEffort).toBe(true)
+  })
+
+  it('does not name the previous level as running after the pick is cleared', async () => {
+    peerGet.mockResolvedValueOnce(unappliedMax)
+    const answer = held()
+    const { result, rerender, client } = renderSlot({ model: 'claude-opus-5-5', reasoningEffort: 'max' })
+    await waitFor(() => expect(result.current.chipProps.reasoningEffort).toBe('high'))
+
+    rerender({ model: 'claude-opus-5-5', reasoningEffort: undefined })
+    await waitFor(() => expect(peerGet).toHaveBeenCalledTimes(2))
+    expect(result.current.chipProps.hasEffort).toBe(true)
+    expect(result.current.chipProps.reasoningEffort).toBe('')
+    expect(result.current.chipProps.effortNotOffered).toBe('')
+
+    answer({ known: true, effort_supported: true, effort_levels: ['low', 'high'] })
+    await waitFor(() => expect(client.getQueryState(capsKey)?.status).toBe('success'))
+  })
+
+  it('does not carry the old model answer over to a new model', async () => {
+    peerGet.mockResolvedValueOnce(unappliedMax)
+    const answerHigh = held()
+    const answerOther = held()
+    const { result, rerender, client } = renderSlot({ model: 'claude-opus-5-5', reasoningEffort: 'max' })
+    await waitFor(() => expect(result.current.chipProps.hasEffort).toBe(true))
+
+    // A model change while a same-model placeholder is showing asks again.
+    rerender({ model: 'claude-opus-5-5', reasoningEffort: 'high' })
+    await waitFor(() => expect(peerGet).toHaveBeenCalledTimes(2))
+    expect(result.current.chipProps.hasEffort).toBe(true)
+
+    rerender({ model: 'model-x', reasoningEffort: 'high' })
+    await waitFor(() => expect(peerGet).toHaveBeenCalledTimes(3))
+    expect(result.current.chipProps.hasEffort).toBe(false)
+
+    answerOther({ known: true, effort_supported: false, effort_levels: [] })
+    answerHigh({ known: true, effort_supported: true, effort_levels: ['low', 'high'] })
+    const otherKey = ['crew-window', 'peer-1', 'api/chat/slots/s1', 'selection-capabilities', 'model-x', 'high']
+    await waitFor(() => expect(client.getQueryState(otherKey)?.status).toBe('success'))
+    expect(result.current.chipProps.hasEffort).toBe(false)
   })
 })
 
@@ -104,7 +278,7 @@ function renderOpen(slot: { model?: string; served_model?: string }, effortLevel
 
 /** The picker's selection-capability read for *model*, as its query keys it. */
 function selectionStatus(client: QueryClient, model: string) {
-  return client.getQueryState(['crew-window', 'peer-1', 'api/chat/slots/s1', 'selection-capabilities', model])?.status
+  return client.getQueryState(['crew-window', 'peer-1', 'api/chat/slots/s1', 'selection-capabilities', model, ''])?.status
 }
 
 describe('the crew window model picker on auto', () => {

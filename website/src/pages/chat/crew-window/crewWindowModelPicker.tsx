@@ -11,7 +11,7 @@ import { OverlayPortal } from '../../../components/overlayRoot'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import { retryThroughRestart } from '../../../api/queryClient'
-import { effortOffOnAuto, selectionCapabilitiesFailed } from '../../../lib/effort'
+import { effortInForce, effortOffOnAuto, selectionCapabilitiesFailed } from '../../../lib/effort'
 import ModelEffortDropdown from '../../../components/ModelEffortDropdown'
 import type { ModelItem } from '../../../components/ModelDropdownList'
 import { useAnchoredTriggerRect } from '../../../hooks/useAnchoredTriggerRect'
@@ -22,7 +22,7 @@ import type { RemoteCrewCapabilities } from '../../../types'
 /** The model fields of the peer's slot row. */
 export interface PeerModelFields { model?: string; served_model?: string; reasoning_effort?: string }
 
-interface PeerSelectionCaps { known?: boolean; effort_supported?: boolean; effort_levels?: string[] }
+interface PeerSelectionCaps { known?: boolean; effort_supported?: boolean; effort_levels?: string[]; effort_unapplied?: string; effort_running?: string }
 
 /** How often a not-yet-known capability answer is asked again. */
 const CAPS_RETRY_MS = 5000
@@ -40,9 +40,22 @@ export function useCrewWindowModelPicker({ instanceId, slotKey, slotPath, slot, 
   onWritten: () => void
 }) {
   const selectionQ = useQuery({
-    queryKey: ['crew-window', instanceId, slotPath, 'selection-capabilities', slot?.model ?? ''],
+    queryKey: ['crew-window', instanceId, slotPath, 'selection-capabilities', slot?.model ?? '', slot?.reasoning_effort ?? ''],
     queryFn: () => api.crewPeerGet(instanceId, slotPath + '/selection-capabilities') as Promise<PeerSelectionCaps>,
     enabled,
+    // An effort pick re-keys this read, and a key with no answer would hide the
+    // slider while it is in use. Keep the previous answer while the new one
+    // loads, but only for the same peer, slot and model: another model's
+    // levels are not this one's. Drop its running/unapplied pair, which
+    // belongs to the previous level: after a cleared pick it would name the
+    // old level as running. Inline, so react-query re-asks on every key change
+    // instead of carrying a placeholder across a later model change.
+    placeholderData: (prev, prevQuery) => {
+      const k = prevQuery?.queryKey
+      return prev && k?.[1] === instanceId && k[2] === slotPath && k[4] === (slot?.model ?? '')
+        ? { ...prev, effort_unapplied: undefined, effort_running: undefined }
+        : undefined
+    },
     // A failure shows the "could not verify" notice, so a restart or a dropped
     // link is ridden out first (see `retryThroughRestart`).
     retry: retryThroughRestart,
@@ -103,10 +116,13 @@ export function useCrewWindowModelPicker({ instanceId, slotKey, slotPath, slot, 
     selectionCapabilitiesFailed(selectionQ),
     shownModel,
   )
+  // What runs, when the peer's model does not offer the slot's level.
+  const effort = effortInForce(slot?.reasoning_effort || '', selectionQ.data, !!slot?.reasoning_effort)
   const chipProps = {
     modelName: shownModel,
     modelIsInheritedDefault: !slot?.model && !!slot?.served_model,
-    reasoningEffort: slot?.reasoning_effort || '',
+    reasoningEffort: effort.level,
+    effortNotOffered: effort.notOffered,
     effortIsDefault: !slot?.reasoning_effort,
     hasEffort,
     onModelClick: (r: DOMRect, trigger?: HTMLElement) => { anchorTo(r, trigger); dd.setOpen(!dd.open) },
