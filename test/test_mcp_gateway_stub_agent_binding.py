@@ -25,6 +25,7 @@ import asyncio
 import contextlib
 import json
 import os
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -33,10 +34,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
+from tmpdir_helpers import SHORT_TMP_PREFIX, short_tmp_base
 
 from kiro_crew.mcp_gateway import claim as claim_mod
 from kiro_crew.mcp_gateway import gatewayd as gw
 from kiro_crew.mcp_gateway import launch_approval
+from kiro_crew.mcp_gateway.daemon import connection as connection_mod
 from kiro_crew.mcp_gateway.daemon import control, session_describe
 from kiro_crew.mcp_gateway.hashing import hash_effective_env
 from kiro_crew.mcp_gateway.pool import PoolKey
@@ -45,29 +48,40 @@ from kiro_crew.mcp_gateway.rewriter_overlay import (
     env_sidecar_name,
     resolve_overlay_dir,
 )
+from kiro_crew.testing.ids import unallocatable_pids
+from kiro_crew.testing.wait import finished
 
-pytestmark = pytest.mark.xdist_group("mcp_gateway")
+pytestmark = [
+    pytest.mark.xdist_group("mcp_gateway"),
+    pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="the daemon under test listens on a Unix socket (gatewayd is unix-only)",
+    ),
+]
+
+#: The approval gate is stubbed by ``_clean_globals`` below, on purpose and visibly.
+ENFORCE_LAUNCH_APPROVAL = True
 
 OWN_AGENT = "own-agent"
 OTHER_AGENT = "other-agent"
 SERVER = "gh-mcp"
 TOKEN = "t" * 64
 #: The runtime pid the binding names, and the host chain the peer walk reports.
-RUNTIME_PID = 434343
+RUNTIME_PID, OTHER_RUNTIME_PID = unallocatable_pids(2)
 
 
 @pytest.fixture(autouse=True)
-def _clean_globals(monkeypatch, tmp_path):
-    monkeypatch.setenv("KIROCREW_HOME", str(tmp_path))
+def _clean_globals(_floor_monkeypatch, tmp_path):
+    _floor_monkeypatch.setenv("KIROCREW_HOME", str(tmp_path))
     for table in (gw._CONN_INDEX, gw._STUB_PROBES, gw._TOKEN_BINDINGS, gw._AGENT_BINDINGS):
         table.clear()
     claim_mod._BOUND_AGENTS.clear()
     session_describe._LIVE_CONNS.clear()
     # The test process is the gateway that owns the daemon.
-    monkeypatch.setattr(gw, "_OWNER_PID", os.getpid())
+    _floor_monkeypatch.setattr(gw, "_OWNER_PID", os.getpid())
     # The kernel-attested host chain of every registering peer: under RUNTIME_PID.
-    monkeypatch.setattr(gw, "_resolve_peer_identity", lambda _pid: ("", [RUNTIME_PID]))
-    monkeypatch.setattr(launch_approval, "launch_approved", lambda *_a, **_k: True)
+    _floor_monkeypatch.setattr(gw, "_resolve_peer_identity", lambda _pid: ("", [RUNTIME_PID]))
+    _floor_monkeypatch.setattr(launch_approval, "launch_approved", lambda *_a, **_k: True)
     yield
     for table in (gw._CONN_INDEX, gw._STUB_PROBES, gw._TOKEN_BINDINGS, gw._AGENT_BINDINGS):
         table.clear()
@@ -106,25 +120,39 @@ class _Daemon:
         self.sock = sock
         self.acquired = acquired
         self.backend = backend
+        self._writers: list[asyncio.StreamWriter] = []
+
+    async def _open(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        reader, writer = await asyncio.open_unix_connection(str(self.sock))
+        self._writers.append(writer)
+        return reader, writer
+
+    async def close_clients(self) -> None:
+        """Close every client connection so each handler reaches EOF and returns.
+
+        The daemon's own ``wait_closed`` only completes once its handler tasks
+        end, and a registered stub's handler runs until its socket does.
+        """
+        for writer in self._writers:
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
 
     async def control(self, frame: dict[str, Any]) -> dict[str, Any]:
-        reader, writer = await asyncio.open_unix_connection(str(self.sock))
-        try:
-            writer.write((json.dumps(frame) + "\n").encode())
-            await writer.drain()
-            return json.loads(await asyncio.wait_for(reader.readline(), 10))
-        finally:
-            writer.close()
-
-    async def register_and_ensure(self, frame: dict[str, Any]) -> tuple[Any, Any]:
-        reader, writer = await asyncio.open_unix_connection(str(self.sock))
+        reader, writer = await self._open()
         writer.write((json.dumps(frame) + "\n").encode())
         await writer.drain()
-        registered = json.loads(await asyncio.wait_for(reader.readline(), 10))
+        return json.loads(await finished(reader.readline(), "the daemon's reply"))
+
+    async def register_and_ensure(self, frame: dict[str, Any]) -> tuple[Any, Any]:
+        reader, writer = await self._open()
+        writer.write((json.dumps(frame) + "\n").encode())
+        await writer.drain()
+        registered = json.loads(await finished(reader.readline(), "the daemon's reply"))
         assert registered["type"] == "registered", registered
         writer.write(b'{"type":"ensure_backend"}\n')
         await writer.drain()
-        ready = json.loads(await asyncio.wait_for(reader.readline(), 10))
+        ready = json.loads(await finished(reader.readline(), "the daemon's reply"))
         assert ready["type"] == "ready", ready
         return reader, writer
 
@@ -134,15 +162,17 @@ async def daemon(monkeypatch) -> AsyncIterator[_Daemon]:
     acquired: list[dict[str, Any]] = []
     backend = MagicMock()
     backend.attach_stub = AsyncMock(side_effect=lambda *_a, **_k: asyncio.Queue())
-    backend.detach_stub = AsyncMock()
+    backend.detach_stub = AsyncMock(return_value=0)
+    backend.cancel_in_flight_for_stub = AsyncMock(return_value=[])
+    backend.recycle_if_idle = AsyncMock()
+    backend.quarantined = False
+    backend._pending_requests = {}
 
     async def _acquire(pool, pool_key, resolver, **kw):
         acquired.append({"pool_key": pool_key, **kw})
         return backend, True
 
     monkeypatch.setattr(gw, "_acquire_backend", _acquire)
-    sock_dir = Path(tempfile.mkdtemp(prefix="kc-", dir="/tmp"))
-    sock = sock_dir / "gw.sock"
     pool = MagicMock()
     pool.get = AsyncMock(return_value=None)
     pool.release_exclusive = AsyncMock(return_value=None)
@@ -151,17 +181,36 @@ async def daemon(monkeypatch) -> AsyncIterator[_Daemon]:
     def _resolver(pk: PoolKey):
         return "true", [], {}, pk.work_dir
 
-    server = await asyncio.start_unix_server(
-        lambda r, w: gw._handle_connection(r, w, pool, _resolver, sock), path=str(sock)
-    )
-    try:
-        yield _Daemon(sock, acquired, backend)
-    finally:
-        server.close()
-        with contextlib.suppress(asyncio.TimeoutError):
-            await asyncio.wait_for(server.wait_closed(), 5)
-        sock.unlink(missing_ok=True)
-        sock_dir.rmdir()
+    handlers: set[asyncio.Task[Any]] = set()
+
+    async def _serve(reader, writer):
+        task = asyncio.current_task()
+        if task is not None:
+            handlers.add(task)
+        try:
+            await gw._handle_connection(reader, writer, pool, _resolver, sock)
+        finally:
+            if task is not None:
+                handlers.discard(task)
+
+    # In the run's short root, not tmp_path: a unix socket path has a short length limit.
+    with tempfile.TemporaryDirectory(
+        prefix=SHORT_TMP_PREFIX + "agent-binding-", dir=short_tmp_base()
+    ) as sock_dir:
+        sock = Path(sock_dir) / "gw.sock"
+        server = await asyncio.start_unix_server(_serve, path=str(sock))
+        daemon_obj = _Daemon(sock, acquired, backend)
+        try:
+            yield daemon_obj
+        finally:
+            # Close the clients so each handler reaches EOF and returns, then
+            # await the handler tasks directly. ``Server.wait_closed`` is not
+            # used: on CPython 3.12 it never returns once the server has served
+            # a connection (the close waiter is never set).
+            await daemon_obj.close_clients()
+            server.close()
+            if handlers:
+                await asyncio.gather(*handlers, return_exceptions=True)
 
 
 def _binding(agents: list[str]) -> dict[str, Any]:
@@ -188,7 +237,6 @@ async def _settle(writer: asyncio.StreamWriter) -> None:
     writer.close()
     with contextlib.suppress(Exception):
         await writer.wait_closed()
-    await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio
@@ -284,7 +332,7 @@ async def test_an_unowned_daemon_records_no_binding(daemon, monkeypatch) -> None
 async def test_a_binding_for_another_runtime_does_not_reach_this_stub(daemon, monkeypatch) -> None:
     pairs = _write_sidecar(OWN_AGENT)
     frame = _binding([OWN_AGENT])
-    frame["pid"] = RUNTIME_PID + 1
+    frame["pid"] = OTHER_RUNTIME_PID
     assert (await daemon.control(frame))["type"] == "agent-bound"
     _stubs_are_not_the_owner(monkeypatch)
 
@@ -359,3 +407,102 @@ async def test_every_claim_sends_the_binding_again(monkeypatch) -> None:
     sent.clear()
     await claim_mod._claim_and_rebind("/s", RUNTIME_PID, "dashboard:a", None, "u" * 64)
     assert [kind for kind, _ in sent] == ["claim"]
+
+
+def test_stub_entry_agents_reads_a_rewritten_stub_entry(tmp_path) -> None:
+    """The rewriter packs ``--server`` / ``--agent`` into the stub-flags envelope."""
+    from kiro_crew.mcp_gateway.rewriter_spec import _refusing_stub_entry
+
+    entry = _refusing_stub_entry(server_name=SERVER, agent_name=OWN_AGENT, work_dir=tmp_path)
+    assert "--agent" not in entry["args"], "premise: the flags are inside the envelope"
+    params = {"mcpServers": [{"name": SERVER, "command": entry["command"], "args": entry["args"]}]}
+    assert claim_mod.stub_entry_agents(params) == frozenset({OWN_AGENT})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["session/new", "session/load", "session/resume"])
+async def test_the_binding_is_sent_before_the_request_that_starts_the_stubs(
+    monkeypatch, method
+) -> None:
+    from types import SimpleNamespace
+
+    from kiro_crew.acp import client_transport
+
+    order: list[str] = []
+
+    async def _bind(socket_path, pid, token, agents):
+        order.append(f"bind {pid} {sorted(agents)}")
+        return True
+
+    class _Written(Exception):
+        pass
+
+    def _next_req_id() -> int:
+        order.append("write")
+        raise _Written
+
+    monkeypatch.setattr(client_transport, "send_agent_binding", _bind)
+    client = SimpleNamespace(
+        _process=SimpleNamespace(pid=RUNTIME_PID, stdin=object()),
+        _native_skill_projection=None,
+        _stub_session_token=TOKEN,
+        _mcp_gateway_socket="/s",
+        _next_req_id=_next_req_id,
+    )
+    params = {"mcpServers": [{"name": "a", "args": ["--server", "a", "--agent", OWN_AGENT]}]}
+    with pytest.raises(_Written):
+        await client_transport._send_request(client, method, params)
+    assert order == [f"bind {RUNTIME_PID} {[OWN_AGENT]}", "write"]
+
+
+@pytest.mark.asyncio
+async def test_a_binding_after_register_reaches_the_live_connection(daemon, monkeypatch) -> None:
+    """A stub that reconnected before the binding was sent again picks it up."""
+    pairs = _write_sidecar(OWN_AGENT)
+    with monkeypatch.context() as stub_side:
+        _stubs_are_not_the_owner(stub_side)
+        _reader, writer = await daemon.register_and_ensure(_register(OWN_AGENT, pairs))
+    assert daemon.acquired[-1]["declaring_agent"] == ""
+    (conn,) = gw._CONN_INDEX[RUNTIME_PID]
+    relabel = AsyncMock()
+    monkeypatch.setattr(connection_mod, "_relabel_stub", relabel)
+    respawn = AsyncMock(return_value=None)
+    monkeypatch.setattr(gw, "_respawn_backend_for_stub", respawn)
+
+    reply = await daemon.control(_binding([OWN_AGENT]))
+    assert reply == {"type": "agent-bound", "agents": 1, "connections": 1}
+    assert conn.bound_agents == frozenset({OWN_AGENT})
+
+    writer.write(b'{"jsonrpc":"2.0","id":7,"method":"tools/list"}\n')
+    await writer.drain()
+    answer = json.loads(await finished(_reader.readline(), "the answer to the forwarded request"))
+    assert answer["id"] == 7
+    relabel.assert_awaited_once_with(daemon.backend, conn.stub_uuid, OWN_AGENT)
+    respawn.assert_awaited_once()
+    assert conn.register is not None and conn.register["agent_name"] == OWN_AGENT
+    await _settle(writer)
+
+
+def test_a_cli_local_factory_starts_its_servers_itself(monkeypatch) -> None:
+    """``kirocrew chat`` run locally builds its sessions with no stub daemon socket.
+
+    Its stubs would be served with no declared env (it is not the gateway that
+    owns the daemon), so its sessions start the stubbed servers themselves, as
+    with no server stubbed: the agent spec's own entries, with their declared env.
+    """
+    from kiro_crew.agent_sdk.drivers import acp as acp_driver
+    from kiro_crew.config import KiroCrewConfig
+
+    built: list[dict[str, Any]] = []
+    monkeypatch.setattr(acp_driver, "build_acp_provider", lambda *a, **kw: built.append(kw))
+    cfg = KiroCrewConfig()
+    cfg.mcp_gateway.stub_servers = [SERVER]
+
+    cfg.create_provider_factory()("cli:a", agent="kiro_default")
+    cfg.without_stub_servers().create_provider_factory()("cli:b", agent="kiro_default")
+
+    gateway, local = built
+    assert gateway["mcp_gateway_socket"], "premise: a stubbed server gets the daemon socket"
+    assert local["mcp_gateway_socket"] is None
+    assert local["mcp_gateway_overlay"] is None
+    assert cfg.mcp_gateway.stub_servers == [SERVER], "the caller's config is unchanged"

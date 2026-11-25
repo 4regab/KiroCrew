@@ -321,10 +321,15 @@ def stub_entry_agents(params: Any) -> frozenset[str]:
     """The ``--agent`` of every gateway stub entry anywhere in *params*.
 
     A stub entry is one whose ``args`` carry both ``--server`` and ``--agent``
-    (``mcp_gateway.stub``'s own flags). Read from the ``session/new`` /
+    (``mcp_gateway.stub``'s own flags), read after the ``--stub-flags-b64``
+    envelope the rewriter packs them into is expanded. Read from the ``session/new`` /
     ``session/load`` params the gateway itself built, so the answer is the
     agents whose stubs this session is about to start.
     """
+    # Local: every Kiro Crew MCP server imports this module, and only the gateway
+    # process calls this function.
+    from kiro_crew.mcp_gateway.hashing import expand_stub_flags
+
     found: set[str] = set()
 
     def _walk(node: Any, depth: int) -> None:
@@ -332,6 +337,12 @@ def stub_entry_agents(params: Any) -> frozenset[str]:
             return
         if isinstance(node, dict):
             args = node.get("args")
+            if isinstance(args, list):
+                try:
+                    # A rewritten stub carries its flags in one envelope token.
+                    args = expand_stub_flags(args)
+                except ValueError:
+                    args = []
             if isinstance(args, list) and "--server" in args:
                 for flag, value in zip(args, args[1:]):
                     if flag == "--agent" and isinstance(value, str) and value:

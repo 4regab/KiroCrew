@@ -228,7 +228,7 @@ def _next_req_id(self: AcpClient) -> int:
 
 
 async def _bind_stub_agents(client: AcpClient, params: dict) -> None:
-    """Tell gatewayd which agents' stubs this ``session/new`` / ``session/load`` starts.
+    """Tell gatewayd which agents' stubs a ``session/new``, ``/load`` or ``/resume`` starts.
 
     Awaited before the request is written, because the harness starts the stubs
     while it serves that request and gatewayd serves each one with the declared
@@ -270,7 +270,7 @@ async def _send_request(
     projection = getattr(self, "_native_skill_projection", None)
     if projection is not None:
         params = projection.request(method, params)
-    if method in (METHOD_SESSION_NEW, METHOD_SESSION_LOAD):
+    if method in (METHOD_SESSION_NEW, METHOD_SESSION_LOAD, METHOD_SESSION_RESUME):
         await _bind_stub_agents(self, params)
     req_id = self._next_req_id()
     if on_id is not None:

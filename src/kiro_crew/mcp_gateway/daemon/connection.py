@@ -27,6 +27,7 @@ from kiro_crew.mcp_gateway.backend import (
     BackendGone,
     has_recyclable_in_flight,
 )
+from kiro_crew.mcp_gateway.backend_stubs import _relabel_stub
 from kiro_crew.mcp_gateway.daemon import logger, session_describe
 from kiro_crew.mcp_gateway.daemon.admission_protocol import (
     _LEGACY_SPAWN_WAIT_SECS,
@@ -415,6 +416,9 @@ async def _handle_connection(
     # by ``_MAX_PENDING_FRAMES`` / ``_MAX_PENDING_BYTES``, since only the loop
     # below drains it and it cannot run while a wait is being served.
     pending: deque[bytes] = deque()
+    # Set when the agent-binding pickup below finds a private backend that was
+    # started with no declaring agent; consumed by the next forward.
+    restart_for_agent = False
     try:
         # Inside the ``try``: whatever tracking raises, the teardown below
         # still clears the claim index and the keepalive probe table.
@@ -461,6 +465,18 @@ async def _handle_connection(
             # re-targeted this connection's identity via ``conn.caller``.
             # Sync per-frame so the very next forward carries the new caller.
             caller = conn.caller
+            # Agent-binding pickup: a binding that arrived after this stub
+            # registered (``control._apply_agent_binding`` refreshes
+            # ``conn.bound_agents``). A private backend started without the
+            # declaration is replaced before the next forward, so it starts
+            # again with the agent's declared env.
+            if not stub_agent and frame_agent and frame_agent in conn.bound_agents:
+                stub_agent = frame_agent
+                if conn.register is not None and "agent_name" in conn.register:
+                    conn.register["agent_name"] = stub_agent
+                if backend is not None:
+                    await _relabel_stub(backend, stub_uuid, stub_agent)
+                    restart_for_agent = bool(exclusive_stub_uuid)
             if msg.get("type") == "unregister":
                 logger.info("stub %s sent Unregister; closing", stub_uuid)
                 return
@@ -620,6 +636,9 @@ async def _handle_connection(
                 session_describe.track_initialize(conn, captured_init)
 
             try:
+                if restart_for_agent:
+                    restart_for_agent = False
+                    raise BackendGone("its declaring agent was bound after it started")
                 if not bound_to_owner_port(backend):
                     # The owner announced a new port after this connection
                     # attached (``control._apply_owner_port``). The pool hands

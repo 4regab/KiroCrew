@@ -272,6 +272,32 @@ def _reset_browser_media_watches():
 
 
 @per_test_guard
+def _forget_stub_agent_bindings():
+    """Start each test with no agent bound to any stub session token.
+
+    ``mcp_gateway.claim._BOUND_AGENTS`` (what the gateway re-sends with each claim)
+    and ``mcp_gateway.daemon.identity._AGENT_BINDINGS`` (what the daemon serves a
+    stub's declared env by) are process-wide, and tests reuse tokens, so one test's
+    binding would grant an agent to, or send a frame for, the next test's stub.
+    """
+
+    def clear():
+        for name, table in (
+            ("kiro_crew.mcp_gateway.claim", "_BOUND_AGENTS"),
+            ("kiro_crew.mcp_gateway.daemon.identity", "_AGENT_BINDINGS"),
+        ):
+            module = sys.modules.get(name)
+            if module is not None:
+                getattr(module, table).clear()
+
+    clear()
+    try:
+        yield
+    finally:
+        clear()
+
+
+@per_test_guard
 def _reset_kas_machine_fence_config():
     """Start each test with no reused config read behind the machine token fence.
 

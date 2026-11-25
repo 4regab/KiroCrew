@@ -435,7 +435,7 @@ async def _run_task(args: argparse.Namespace) -> None:
     from kiro_crew.metrics import notice as usage_notice
 
     usage_notice.print_notice_in_background(cfg)
-    factory = build_provider_factory(cfg)
+    factory = build_provider_factory(cfg.without_stub_servers())
     sessions = SessionManager(cfg, provider_factory=factory)  # type: ignore[arg-type]
 
     auto_test = not getattr(args, "no_test", False)

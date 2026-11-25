@@ -85,6 +85,7 @@ class _StubConn:
         "oversized_server",
         "resource_holder",
         "bound_agents",
+        "attested_pids",
     )
 
     def __init__(
@@ -143,6 +144,10 @@ class _StubConn:
         #: sent names the token, and then the Register's ``agent_name`` is not
         #: taken unless the registrant is the gateway itself.
         self.bound_agents: frozenset[str] = frozenset()
+        #: The kernel-attested host chain of the registering peer, the second
+        #: factor :func:`_token_agents` is asked with again when a binding
+        #: arrives after this connection registered (:func:`_refresh_bound_agents`).
+        self.attested_pids: tuple[int, ...] = ()
 
 
 #: Live stub connections indexed by every ancestor PID of the kiro-cli
@@ -316,6 +321,24 @@ def _bind_agents(
     _AGENT_BINDINGS[token] = (agents, pid, pid_start_id)
     while len(_AGENT_BINDINGS) > _MAX_TOKEN_BINDINGS:
         _AGENT_BINDINGS.popitem(last=False)
+
+
+def _refresh_bound_agents(token: str, pid: int) -> int:
+    """Re-ask :func:`_token_agents` for every live connection carrying *token* under *pid*.
+
+    A stub that registered before its binding arrived (it reconnected to a
+    restarted daemon before the gateway's next claim sent the binding again)
+    holds an empty answer; this is what lets the connection pick the agent up
+    (``connection._handle_connection``). Returns how many connections now hold
+    a non-empty answer.
+    """
+    refreshed = 0
+    for conn in list(_CONN_INDEX.get(pid, ())):
+        if not token or conn.stub_session_token != token:
+            continue
+        conn.bound_agents = _token_agents(token, conn.attested_pids, conn.pid_start_ids)
+        refreshed += bool(conn.bound_agents)
+    return refreshed
 
 
 def _token_agents(
@@ -756,6 +779,7 @@ async def _resolve_register_identity(
     )
     # Asked beside the token's caller, after the last await, on the same two
     # factors: the kernel-attested host chain, never ``indexed_pids``.
+    conn.attested_pids = tuple(peer_host_pids)
     conn.bound_agents = facade._token_agents(stub_session_token, peer_host_pids, pid_start_ids)
     facade._conn_index_add(conn)
     return conn

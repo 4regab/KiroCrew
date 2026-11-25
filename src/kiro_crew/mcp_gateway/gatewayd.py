@@ -223,6 +223,7 @@ from kiro_crew.mcp_gateway.daemon.identity import (  # noqa: F401
     _peer_admitted,
     _pid_live_tenants,
     _record_session_mount,
+    _refresh_bound_agents,
     _register_pids,
     _resolve_peer_identity,
     _resolve_register_identity,

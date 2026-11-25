@@ -33,6 +33,7 @@ from kiro_crew.mcp_gateway.daemon.identity import (
     _bind_token,
     _caller_from_register,
     _pid_live_tenants,
+    _refresh_bound_agents,
     _session_mounts,
     _session_mounts_complete,
 )
@@ -575,7 +576,8 @@ async def _apply_agent_binding(
     _bind_agents(
         token, frozenset(raw_agents), pid, raw_start if isinstance(raw_start, str) else None
     )
-    return {"type": "agent-bound", "agents": len(set(raw_agents))}
+    refreshed = _refresh_bound_agents(token, pid)
+    return {"type": "agent-bound", "agents": len(set(raw_agents)), "connections": refreshed}
 
 
 async def _apply_owner_port(
