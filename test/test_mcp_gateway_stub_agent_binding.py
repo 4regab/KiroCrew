@@ -173,9 +173,12 @@ async def daemon(monkeypatch) -> AsyncIterator[_Daemon]:
         return backend, True
 
     monkeypatch.setattr(gw, "_acquire_backend", _acquire)
-    # A private backend with no binding yet waits up to this for a late one
-    # (connection._await_declaring_agent); keep the fail-closed tests fast.
-    monkeypatch.setattr(connection_mod, "_LEGACY_SPAWN_WAIT_SECS", 0.5)
+    # A private backend with no binding yet waits up to one keepalive interval
+    # for a late one (connection._await_declaring_agent); shrink it so the
+    # fail-closed tests do not sit on the real 5s.
+    monkeypatch.setattr(
+        connection_mod, "QUEUED_KEEPALIVE_SECS", 0.3
+    )  # flake-ok: bounds the fail-closed agent-binding wait in the test
     pool = MagicMock()
     pool.get = AsyncMock(return_value=None)
     pool.release_exclusive = AsyncMock(return_value=None)
@@ -394,7 +397,7 @@ async def test_every_claim_sends_the_binding_again(monkeypatch) -> None:
         sent.append(("claim", args))
         return True
 
-    async def _inner(socket_path, pid, token, agents):
+    async def _inner(socket_path, pid, token, agents, pid_start_id):
         sent.append(("bind", (pid, token, agents)))
         return True
 
@@ -597,7 +600,7 @@ async def test_replay_resends_every_live_binding(monkeypatch) -> None:
     """The gateway re-sends every remembered binding to a restarted daemon."""
     sent: list[tuple[int, str, frozenset[str]]] = []
 
-    async def _inner(socket_path, pid, token, agents):
+    async def _inner(socket_path, pid, token, agents, pid_start_id):
         sent.append((pid, token, agents))
         return True
 
@@ -614,3 +617,29 @@ async def test_replay_resends_every_live_binding(monkeypatch) -> None:
     assert (RUNTIME_PID, TOKEN, frozenset({OWN_AGENT})) in sent
     assert (OTHER_RUNTIME_PID, "u" * 64, frozenset({OTHER_AGENT})) in sent
     assert await claim_mod.replay_agent_bindings(None) == 0
+
+
+@pytest.mark.asyncio
+async def test_replay_carries_the_original_process_generation(monkeypatch) -> None:
+    """A replay sends the start token cached at first send, not a fresh read.
+
+    So a recycled pid is never re-authorized as the original runtime.
+    """
+    start_ids: list[Any] = []
+
+    async def _inner(socket_path, pid, token, agents, pid_start_id):
+        start_ids.append(pid_start_id)
+        return True
+
+    monkeypatch.setattr(claim_mod, "_send_agent_binding_inner", _inner)
+    # First send reads the start token once; pin it to a known generation.
+    monkeypatch.setattr(claim_mod.platform_compat, "get_process_start_id", lambda _pid: "gen-1")
+    claim_mod._BOUND_AGENTS.clear()
+    assert await claim_mod.send_agent_binding("/s", RUNTIME_PID, TOKEN, frozenset({OWN_AGENT}))
+    assert start_ids == ["gen-1"]
+
+    # The pid is recycled: a fresh read would now return a different generation.
+    monkeypatch.setattr(claim_mod.platform_compat, "get_process_start_id", lambda _pid: "gen-2")
+    start_ids.clear()
+    assert await claim_mod.replay_agent_bindings("/s") == 1
+    assert start_ids == ["gen-1"], "replay must carry the cached generation, not re-read it"

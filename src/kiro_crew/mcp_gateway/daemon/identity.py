@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Collection, Optional
 from kiro_crew.executors import subprocess_executor
 from kiro_crew.mcp_caller import CallerContext, new_tenant_nonce
 from kiro_crew.mcp_gateway import socketsec
+from kiro_crew.mcp_gateway.claim import MAX_SESSION_BINDINGS
 from kiro_crew.mcp_gateway.daemon import logger
 from kiro_crew.mcp_gateway.daemon.audit import (
     _audit_caller_rekey,
@@ -182,7 +183,10 @@ def _conn_index_add(conn: _StubConn) -> None:
 #: a few hundred covers any real host; the oldest is dropped past the cap rather
 #: than letting a long-running daemon accumulate them without bound. Dropping a
 #: binding only costs a re-claim — the identity itself is never invented here.
-_MAX_TOKEN_BINDINGS = 512
+#: ONE named bound, shared with the gateway-side binding cache
+#: (``mcp_gateway.claim.MAX_SESSION_BINDINGS``), so the gateway never replays a
+#: binding this table has already evicted.
+_MAX_TOKEN_BINDINGS = MAX_SESSION_BINDINGS
 
 #: ``stub_session_token`` -> (caller, runtime pid the claim named, that pid's
 #: process start token — the recycle guard, since a pid is a reusable NUMBER).

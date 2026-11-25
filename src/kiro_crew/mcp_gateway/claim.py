@@ -301,22 +301,29 @@ async def _claim_and_rebind(
     claimed = await send_claim(socket_path, pid, session_key, channel_id, stub_session_token)
     entry = _BOUND_AGENTS.get(stub_session_token) if stub_session_token else None
     if entry:
-        _bound_pid, agents = entry
-        await send_agent_binding(socket_path, pid, stub_session_token, agents)
+        _bound_pid, start_id, agents = entry
+        await send_agent_binding(
+            socket_path, pid, stub_session_token, agents, pid_start_id=start_id
+        )
     return claimed
 
 
-#: Cap on remembered token -> agents bindings, the same bound gatewayd keeps
-#: (``daemon.identity._MAX_TOKEN_BINDINGS``). The oldest is dropped past it; a
-#: dropped one is only not re-sent after a daemon respawn.
-_MAX_BOUND_AGENTS = 512
+#: Cap on remembered token -> binding entries, ONE named bound shared with the
+#: daemon's own table (``daemon.identity._MAX_TOKEN_BINDINGS`` imports it), so
+#: the gateway never replays a binding the daemon has already dropped. The
+#: oldest is evicted past it.
+MAX_SESSION_BINDINGS = 512
 
-#: ``stub_session_token`` -> the agents last bound to it (most recent last), so
-#: :func:`_claim_and_rebind` can send the binding again.
-#: ``stub_session_token`` -> (runtime pid, the agents last bound to it), most
-#: recent last, so :func:`_claim_and_rebind` and :func:`replay_agent_bindings`
-#: can send the binding again after a gatewayd restart.
-_BOUND_AGENTS: "OrderedDict[str, tuple[int, frozenset[str]]]" = OrderedDict()
+#: Sentinel for ``send_agent_binding``'s ``pid_start_id`` so ``None`` (a genuine
+#: "unknown token", which never denies a resolution) is told from "not supplied,
+#: read it fresh".
+_UNSET_START_ID = "\x00unset"
+
+#: ``stub_session_token`` -> (runtime pid, that pid's start token, the agents
+#: last bound to it), most recent last, so :func:`_claim_and_rebind` and
+#: :func:`replay_agent_bindings` can send the binding again after a gatewayd
+#: restart with the ORIGINAL process generation, never a recycled pid's.
+_BOUND_AGENTS: "OrderedDict[str, tuple[int, Optional[str], frozenset[str]]]" = OrderedDict()
 
 #: How deep :func:`stub_entry_agents` looks: the ``session/new`` params, a
 #: ``mcpServers`` array or map, an entry, and the ``_meta.kiro.customAgents``
@@ -364,23 +371,33 @@ def stub_entry_agents(params: Any) -> frozenset[str]:
     return frozenset(found)
 
 
-def build_agent_binding_frame(pid: int, stub_session_token: str, agents: frozenset[str]) -> dict:
-    """The ``agent-binding`` frame: these *agents*' stubs run under this token in *pid*."""
+def build_agent_binding_frame(
+    pid: int, stub_session_token: str, agents: frozenset[str], pid_start_id: Optional[str]
+) -> dict:
+    """The ``agent-binding`` frame: these *agents*' stubs run under this token in *pid*.
+
+    *pid_start_id* is the runtime's process-start token, captured when the
+    binding was first sent and carried unchanged through a replay, so a daemon
+    that restarted re-authorizes the ORIGINAL process and not a different one
+    that recycled its pid.
+    """
     return {
         "type": "agent-binding",
         "pid": pid,
-        "pid_start_id": platform_compat.get_process_start_id(pid),
+        "pid_start_id": pid_start_id,
         "stub_session_token": stub_session_token,
         "agents": sorted(agents),
     }
 
 
 async def _send_agent_binding_inner(
-    socket_path: str, pid: int, stub_session_token: str, agents: frozenset[str]
+    socket_path: str,
+    pid: int,
+    stub_session_token: str,
+    agents: frozenset[str],
+    pid_start_id: Optional[str],
 ) -> bool:
-    frame = await asyncio.get_running_loop().run_in_executor(
-        subprocess_executor(), build_agent_binding_frame, pid, stub_session_token, agents
-    )
+    frame = build_agent_binding_frame(pid, stub_session_token, agents, pid_start_id)
     reader, writer = await transport.connect(socket_path)
     try:
         writer.write(json.dumps(frame).encode("utf-8") + b"\n")
@@ -404,6 +421,7 @@ async def send_agent_binding(
     pid: Optional[int],
     stub_session_token: str,
     agents: frozenset[str],
+    pid_start_id: Optional[str] = _UNSET_START_ID,
 ) -> bool:
     """Tell gatewayd which agents' stubs run under *stub_session_token*.
 
@@ -413,6 +431,11 @@ async def send_agent_binding(
     time budget as a claim: a missing or wedged daemon returns False, and the
     stubs are then served with no declaring agent until the next claim of the
     session sends it again.
+
+    *pid_start_id* is the runtime's process-start token. Left at the sentinel,
+    it is read fresh here and cached with the binding; a replay passes the
+    cached value back so a recycled pid is never re-authorized as the original
+    runtime.
     """
     if (
         not socket_path
@@ -423,13 +446,22 @@ async def send_agent_binding(
         or not agents
     ):
         return False
+    if pid_start_id is _UNSET_START_ID:
+        # Read the runtime's start token once, off the loop (a /proc read can
+        # wedge on a D-state target), and cache it so a replay reuses it.
+        try:
+            pid_start_id = await asyncio.get_running_loop().run_in_executor(
+                subprocess_executor(), platform_compat.get_process_start_id, pid
+            )
+        except Exception:  # graceful: an unknown token never denies a resolution
+            pid_start_id = None
     _BOUND_AGENTS.pop(stub_session_token, None)
-    _BOUND_AGENTS[stub_session_token] = (pid, agents)
-    while len(_BOUND_AGENTS) > _MAX_BOUND_AGENTS:
+    _BOUND_AGENTS[stub_session_token] = (pid, pid_start_id, agents)
+    while len(_BOUND_AGENTS) > MAX_SESSION_BINDINGS:
         _BOUND_AGENTS.popitem(last=False)
     try:
         return await asyncio.wait_for(
-            _send_agent_binding_inner(socket_path, pid, stub_session_token, agents),
+            _send_agent_binding_inner(socket_path, pid, stub_session_token, agents, pid_start_id),
             timeout=_CLAIM_TIMEOUT_SECS,
         )
     except (OSError, asyncio.TimeoutError, ValueError) as exc:
@@ -451,7 +483,7 @@ async def replay_agent_bindings(socket_path: Optional[str]) -> int:
     if not socket_path:
         return 0
     sent = 0
-    for token, (pid, agents) in list(_BOUND_AGENTS.items()):
-        if await send_agent_binding(socket_path, pid, token, agents):
+    for token, (pid, start_id, agents) in list(_BOUND_AGENTS.items()):
+        if await send_agent_binding(socket_path, pid, token, agents, pid_start_id=start_id):
             sent += 1
     return sent

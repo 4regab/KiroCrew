@@ -155,11 +155,14 @@ async def _await_declaring_agent(
     The owner gateway's binding can land just after the stub registered -- a
     warm-pool race, or a reconnect to a restarted daemon before the gateway
     replays its bindings. So for a private backend whose tokened Register named
-    an agent that is not bound yet, wait up to the acquire's own *deadline* for
-    the binding, the way a pooled control-plane backend waits for the owner port
-    (``launch._await_owner_port``), then re-resolve. ``None`` waits unbounded, as
-    that path does. Returns ``""`` when none binds in time -- the same
-    fail-closed value, which the next forward replaces once the binding arrives.
+    an agent that is not bound yet, wait a short, bounded time for the binding,
+    the way a pooled control-plane backend waits for the owner port
+    (``launch._await_owner_port``), then re-resolve. The wait is bounded by one
+    keepalive interval (and the acquire's own deadline when shorter) so it never
+    reaches the stub's spawn-queue silence window; it is skipped on an unowned
+    daemon, which can receive no binding. Returns ``""`` when none binds in time
+    -- the same fail-closed value, which the next forward replaces once the
+    binding does arrive.
     """
     if stub_agent or not exclusive_stub_uuid or not frame_agent or not conn.stub_session_token:
         return stub_agent
@@ -168,7 +171,17 @@ async def _await_declaring_agent(
     # Only an as-yet-unbound token is still waiting for its binding to arrive.
     if conn.bound_agents:
         return ""
-    bound = deadline if deadline is not None else time.monotonic() + _LEGACY_SPAWN_WAIT_SECS
+    # No owner gateway can send a binding to an unowned daemon
+    # (``_owner_sender_refusal`` refuses every one), so there is nothing to wait for.
+    if facade._OWNER_PID <= 0:
+        return ""
+    # Stay silent for at most one keepalive interval, well under the stub's own
+    # spawn-queue silence window (``stub._SPAWN_QUEUE_SILENCE_SECS``, 25s): a
+    # longer silent wait makes the stub give up and fall back to per-session
+    # exec. The acquire's own deadline caps it further when it is shorter.
+    bound = time.monotonic() + QUEUED_KEEPALIVE_SECS
+    if deadline is not None:
+        bound = min(bound, deadline)
     event = facade._agent_binding_event()
     while True:
         resolved = await _declaring_agent(frame_agent, conn, writer)
