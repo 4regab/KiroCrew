@@ -6,7 +6,6 @@ An owner of the :mod:`kiro_crew.config.loader` facade; it never imports the faca
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
 import logging
 import os
@@ -1460,23 +1459,6 @@ class KiroCrewConfig:
         # written, so a ``secret://`` reference reaches os.environ as the
         # reference and the vault secret stays in this process.
         return resolve_env_credentials(creds, home=ep.parent)
-
-    def without_stub_servers(self) -> "KiroCrewConfig":
-        """A copy whose ``mcp_gateway.stub_servers`` is empty (*self* when it already is).
-
-        For a process that is not the gateway, such as ``kirocrew chat`` run
-        locally. The stub daemon takes a stub's declaring agent only from the
-        gateway that owns it, so this process's stubs would be served with no
-        declared env. The provider factory hands out the daemon socket only when
-        a server is stubbed, so a factory built from this copy starts every MCP
-        server in the session itself, with its declared env, as with none stubbed.
-        """
-        if not self.mcp_gateway.stub_servers:
-            return self
-        local = copy.copy(self)
-        local.mcp_gateway = copy.copy(self.mcp_gateway)
-        local.mcp_gateway.stub_servers = []
-        return local
 
     def create_provider_factory(self) -> Callable:
         """Return a factory that creates LLMProvider instances from config.

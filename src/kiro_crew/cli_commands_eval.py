@@ -286,7 +286,7 @@ async def _run_eval(args: argparse.Namespace) -> None:
 
     await asyncio.to_thread(ensure_kiro_cli_kas_verdict)
     config = KiroCrewConfig.load()
-    provider_factory = build_provider_factory(config.without_stub_servers())
+    provider_factory = build_provider_factory(config)
 
     provider_kwargs = await _eval_provider_kwargs(args, config)
     # Imported here, not at the top: ``kiro_crew.cli_commands`` serves this module's

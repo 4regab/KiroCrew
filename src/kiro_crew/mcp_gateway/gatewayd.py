@@ -165,6 +165,7 @@ from kiro_crew.mcp_gateway.daemon.connection import (  # noqa: F401
     _declaring_agent,
     _handle_connection,
     _teardown_connection,
+    _warn_no_declared_env,
 )
 from kiro_crew.mcp_gateway.daemon.control import (  # noqa: F401
     _RECYCLE_SERVER_NAME_MAX,

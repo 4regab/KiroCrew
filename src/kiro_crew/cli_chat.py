@@ -384,8 +384,7 @@ async def _chat(
         except UnknownMemoryStore as exc:
             print(f"\n❌ {safe_terminal_line(str(exc))}", file=sys.stderr)
             sys.exit(1)
-    # Not the gateway: MCP servers start in this process (``without_stub_servers``).
-    provider: LLMProvider = build_provider_factory(cfg.without_stub_servers())(
+    provider: LLMProvider = build_provider_factory(cfg)(
         _CLI_SESSION_KEY,
         agent=kiro_agent,
         crew_agent=crew_agent,

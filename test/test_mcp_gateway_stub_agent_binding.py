@@ -373,20 +373,37 @@ async def test_a_holder_registered_by_the_gateway_keeps_the_resolved_agent(
     assert daemon.acquired[-1]["declaring_agent"] == OWN_AGENT
 
 
-def test_stub_entry_agents_reads_every_stub_entry() -> None:
+def test_stub_entry_agents_reads_every_stub_entry(tmp_path) -> None:
+    """A marked kiro-agent-JSON entry and an ACP entry that runs the stub module
+    both bind their ``--agent``; an unrelated server's own flags do not."""
+    from kiro_crew.mcp_gateway.rewriter_spec import _refusing_stub_entry
+
+    stub_x = _refusing_stub_entry(server_name="a", agent_name="x", work_dir=tmp_path)
+    stub_y = _refusing_stub_entry(server_name="b", agent_name="y", work_dir=tmp_path)
     params = {
         "mcpServers": [
-            {"name": "a", "command": "py", "args": ["-m", "stub", "--server", "a", "--agent", "x"]},
-            {"name": "plain", "command": "node", "args": ["--agent", "not-a-stub"]},
+            # ACP array element: the marker is dropped, the stub module stays.
+            {"name": "a", "command": stub_x["command"], "args": stub_x["args"]},
+            # A non-stub server carrying --server / --agent flags of its own.
+            {"name": "plain", "command": "node", "args": ["--server", "x", "--agent", "victim"]},
         ],
-        "_meta": {
-            "kiro": {
-                "customAgents": [{"mcpServers": {"b": {"args": ["--server", "b", "--agent", "y"]}}}]
-            }
-        },
+        # kiro-agent-JSON entry, keyed by name, carrying the wrapper marker.
+        "_meta": {"kiro": {"customAgents": [{"mcpServers": {"b": stub_y}}]}},
     }
     assert claim_mod.stub_entry_agents(params) == frozenset({"x", "y"})
     assert claim_mod.stub_entry_agents({"mcpServers": []}) == frozenset()
+
+
+def test_stub_entry_agents_ignores_a_non_stub_servers_argv() -> None:
+    """A plain agent-spec server carrying ``--server x --agent victim`` is not a
+    gateway stub (no wrapper marker, does not run the stub module), so it binds
+    no agent -- the gateway never takes a declaring agent from arbitrary argv."""
+    params = {
+        "mcpServers": [
+            {"name": "plain", "command": "node", "args": ["--server", "x", "--agent", "victim"]},
+        ]
+    }
+    assert claim_mod.stub_entry_agents(params) == frozenset()
 
 
 @pytest.mark.asyncio
@@ -428,11 +445,12 @@ def test_stub_entry_agents_reads_a_rewritten_stub_entry(tmp_path) -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method", ["session/new", "session/load", "session/resume"])
 async def test_the_binding_is_sent_before_the_request_that_starts_the_stubs(
-    monkeypatch, method
+    monkeypatch, method, tmp_path
 ) -> None:
     from types import SimpleNamespace
 
     from kiro_crew.acp import client_transport
+    from kiro_crew.mcp_gateway.rewriter_spec import _refusing_stub_entry
 
     order: list[str] = []
 
@@ -455,7 +473,8 @@ async def test_the_binding_is_sent_before_the_request_that_starts_the_stubs(
         _mcp_gateway_socket="/s",
         _next_req_id=_next_req_id,
     )
-    params = {"mcpServers": [{"name": "a", "args": ["--server", "a", "--agent", OWN_AGENT]}]}
+    stub = _refusing_stub_entry(server_name="a", agent_name=OWN_AGENT, work_dir=tmp_path)
+    params = {"mcpServers": [{"name": "a", "command": stub["command"], "args": stub["args"]}]}
     with pytest.raises(_Written):
         await client_transport._send_request(client, method, params)
     assert order == [f"bind {RUNTIME_PID} {[OWN_AGENT]}", "write"]
@@ -489,33 +508,40 @@ async def test_a_binding_after_register_reaches_the_live_connection(daemon, monk
     await _settle(writer)
 
 
-def test_a_cli_local_factory_starts_its_servers_itself(monkeypatch) -> None:
-    """``kirocrew chat`` run locally builds its sessions with no stub daemon socket.
+@pytest.mark.asyncio
+async def test_a_non_owner_binding_leaves_the_stub_with_no_declared_env(
+    monkeypatch, caplog
+) -> None:
+    """A CLI-local process is not the daemon's owner, so its stub binding is refused.
 
-    Its stubs would be served with no declared env (it is not the gateway that
-    owns the daemon), so its sessions start the stubbed servers themselves, as
-    with no server stubbed: the agent spec's own entries, with their declared env.
+    ``kirocrew chat`` / ``run`` / ``eval`` / knowledge consolidate route through
+    the daemon like the dashboard, but only the owning gateway may bind a stub's
+    agent. With no owner, a private stub that named an agent resolves to an empty
+    declaring agent -- so its backend reads no declared-env sidecar -- and one
+    WARNING names the server. Fail-closed by design.
     """
-    from kiro_crew.agent_sdk.drivers import acp as acp_driver
-    from kiro_crew.config import KiroCrewConfig
-
-    built: list[dict[str, Any]] = []
-    monkeypatch.setattr(acp_driver, "build_acp_provider", lambda *a, **kw: built.append(kw))
-    cfg = KiroCrewConfig()
-    cfg.mcp_gateway.stub_servers = [SERVER]
-
-    cfg.create_provider_factory()("cli:a", agent="kiro_default")
-    cfg.without_stub_servers().create_provider_factory()("cli:b", agent="kiro_default")
-
-    gateway, local = built
-    assert gateway["mcp_gateway_socket"], "premise: a stubbed server gets the daemon socket"
-    assert local["mcp_gateway_socket"] is None
-    assert local["mcp_gateway_overlay"] is None
-    assert cfg.mcp_gateway.stub_servers == [SERVER], "the caller's config is unchanged"
+    monkeypatch.setattr(gw, "_OWNER_PID", 0)
+    conn = connection_mod._StubConn(
+        stub_uuid="s-cli-local",
+        ancestor_pids=[os.getpid()],
+        pool_label="",
+        caller=None,
+        stub_session_token="tok-cli-local",
+    )
+    assert not conn.bound_agents
+    with caplog.at_level("WARNING", logger=connection_mod.logger.name):
+        resolved = await connection_mod._await_declaring_agent(
+            OWN_AGENT, "", conn, "s-cli-local", None, MagicMock(), server_name=SERVER
+        )
+    assert resolved == ""
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert repr(SERVER) in warnings[0]
+    assert "dashboard" in warnings[0]
 
 
 @pytest.mark.asyncio
-async def test_launch_mounted_stubs_are_bound_from_the_launch_roster(monkeypatch) -> None:
+async def test_launch_mounted_stubs_are_bound_from_the_launch_roster(monkeypatch, tmp_path) -> None:
     """A launch harness mounts its stubs off the wire array, so the roster binds them.
 
     Strands, pi and claude send an empty ``session/new`` ``mcpServers`` and put
@@ -524,6 +550,7 @@ async def test_launch_mounted_stubs_are_bound_from_the_launch_roster(monkeypatch
     from types import SimpleNamespace
 
     from kiro_crew.acp import client_transport
+    from kiro_crew.mcp_gateway.rewriter_spec import _refusing_stub_entry
 
     sent: list[frozenset[str]] = []
 
@@ -532,7 +559,8 @@ async def test_launch_mounted_stubs_are_bound_from_the_launch_roster(monkeypatch
         return True
 
     monkeypatch.setattr(client_transport, "send_agent_binding", _bind)
-    stub = {"name": SERVER, "args": ["--server", SERVER, "--agent", OWN_AGENT]}
+    entry = _refusing_stub_entry(server_name=SERVER, agent_name=OWN_AGENT, work_dir=tmp_path)
+    stub = {"name": SERVER, "command": entry["command"], "args": entry["args"]}
     client = SimpleNamespace(
         _process=SimpleNamespace(pid=RUNTIME_PID),
         _stub_session_token=TOKEN,

@@ -112,6 +112,24 @@ REGISTERED_CAPABILITIES: tuple[str, ...] = (
 )
 
 
+def _warn_no_declared_env(server_name: str) -> None:
+    """Warn that a routed server's private stub starts with no declared env.
+
+    A process that is not the owning gateway (``kirocrew chat`` / ``run`` /
+    ``eval`` / knowledge consolidate) cannot bind its stubs' agents: the daemon
+    takes a declaring agent only from the owner it is bound to, so a non-owner
+    binding is refused and the private backend reads no declared-env sidecar.
+    Fail-closed by design -- the credentials a routed server needs are resolved
+    only in the dashboard's gateway.
+    """
+    logger.warning(
+        "MCP server %r started with no declared env: only the owning gateway can "
+        "bind a stub's agent, so credentials for routed servers are available only "
+        "from the dashboard",
+        server_name or "?",
+    )
+
+
 async def _declaring_agent(frame_agent: str, conn: _StubConn, writer: asyncio.StreamWriter) -> str:
     """The agent whose declaration *conn*'s backend is served with, or ``""``.
 
@@ -148,6 +166,7 @@ async def _await_declaring_agent(
     exclusive_stub_uuid: str,
     deadline: Optional[float],
     writer: asyncio.StreamWriter,
+    server_name: str = "",
 ) -> str:
     """Resolve the declaring agent for a private backend, waiting for a late binding.
 
@@ -174,6 +193,7 @@ async def _await_declaring_agent(
     # No owner gateway can send a binding to an unowned daemon
     # (``_owner_sender_refusal`` refuses every one), so there is nothing to wait for.
     if facade._OWNER_PID <= 0:
+        _warn_no_declared_env(server_name)
         return ""
     # Stay silent for at most one keepalive interval, well under the stub's own
     # spawn-queue silence window (``stub._SPAWN_QUEUE_SILENCE_SECS``, 25s): a
@@ -199,6 +219,7 @@ async def _await_declaring_agent(
             return ""
         remaining = bound - time.monotonic()
         if remaining <= 0:
+            _warn_no_declared_env(server_name)
             return ""
         tick = min(QUEUED_KEEPALIVE_SECS, remaining)
         with contextlib.suppress(asyncio.TimeoutError):
@@ -597,7 +618,13 @@ async def _handle_connection(
                     # A private backend reads its agent's sidecar at spawn; wait
                     # for a late binding before acquiring (see _await_declaring_agent).
                     stub_agent = await _await_declaring_agent(
-                        frame_agent, stub_agent, conn, exclusive_stub_uuid, deadline, writer
+                        frame_agent,
+                        stub_agent,
+                        conn,
+                        exclusive_stub_uuid,
+                        deadline,
+                        writer,
+                        server_name=pool_key.server_name,
                     )
                     _acquire_t0 = time.monotonic()
                     try:
@@ -660,7 +687,13 @@ async def _handle_connection(
                     None if admission is None else time.monotonic() + _LEGACY_SPAWN_WAIT_SECS
                 )
                 stub_agent = await _await_declaring_agent(
-                    frame_agent, stub_agent, conn, exclusive_stub_uuid, _lazy_deadline, writer
+                    frame_agent,
+                    stub_agent,
+                    conn,
+                    exclusive_stub_uuid,
+                    _lazy_deadline,
+                    writer,
+                    server_name=pool_key.server_name,
                 )
                 _lazy_t0 = time.monotonic()
                 try:

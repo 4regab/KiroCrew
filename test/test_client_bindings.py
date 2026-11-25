@@ -88,7 +88,6 @@ _MEMBERS: dict[str, tuple[str, object, str, str]] = {
     "_claims_native_compaction": ("function", False, "c19e582b2edc", "client_class"),
     "_classify_failed_start": ("function", True, "05bb8f207290", "client_lifecycle"),
     "_cleanup_failed_live_spawn": ("function", True, "b60c5fea256e", "client_lifecycle"),
-    "_cli_local_secret_withholds": ("function", False, "7eb96c2fda05", "client_mcp_array"),
     "_client_class_by_backend": ("data", False, "", ""),
     "_close_steer_turn": ("function", False, "f604c3478f16", "client_turn_control"),
     "_codex_compaction_event": ("function", False, "e64128661dfa", "client_usage"),

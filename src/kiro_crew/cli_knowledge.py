@@ -232,9 +232,7 @@ def _consolidate_cmd(args) -> None:
 
     ensure_kiro_cli_kas_verdict()
     cfg = KiroCrewConfig.load()
-    sessions = SessionManager(
-        cfg, provider_factory=build_provider_factory(cfg.without_stub_servers())
-    )
+    sessions = SessionManager(cfg, provider_factory=build_provider_factory(cfg))
 
     # Without a vector store a pass drops the lessons and structured facts it
     # extracts, so hand it the default one, and the migrated flag, as the gateway

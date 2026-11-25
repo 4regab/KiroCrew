@@ -375,15 +375,21 @@ _STUB_SCAN_DEPTH = 8
 def stub_entry_agents(params: Any) -> frozenset[str]:
     """The ``--agent`` of every gateway stub entry anywhere in *params*.
 
-    A stub entry is one whose ``args`` carry both ``--server`` and ``--agent``
-    (``mcp_gateway.stub``'s own flags), read after the ``--stub-flags-b64``
-    envelope the rewriter packs them into is expanded. Read from the ``session/new`` /
-    ``session/load`` params the gateway itself built, so the answer is the
-    agents whose stubs this session is about to start.
+    A gateway stub is identified the way the rewriter marks one: a kiro-agent-JSON
+    entry carries the wrapper marker, and an ACP array entry (whose marker the
+    shaping drops) runs the stub module. Only such an entry's ``--agent`` is read,
+    from the ``--server`` / ``--agent`` flags the rewriter packs into the
+    ``--stub-flags-b64`` envelope. An unrelated agent-spec server that happens to
+    pass ``--server`` / ``--agent`` CLI flags of its own is not a stub and binds no
+    agent. Read from the ``session/new`` / ``session/load`` params the gateway
+    itself built, so the answer is the agents whose stubs this session is about to
+    start.
     """
     # Local: every Kiro Crew MCP server imports this module, and only the gateway
     # process calls this function.
+    from kiro_crew.mcp_gateway import STUB_MODULE
     from kiro_crew.mcp_gateway.hashing import expand_stub_flags
+    from kiro_crew.mcp_gateway.rewriter_launch import _WRAPPER_MARKER, _WRAPPER_MARKER_LEGACY
 
     found: set[str] = set()
 
@@ -391,17 +397,26 @@ def stub_entry_agents(params: Any) -> frozenset[str]:
         if depth > _STUB_SCAN_DEPTH:
             return
         if isinstance(node, dict):
-            args = node.get("args")
-            if isinstance(args, list):
+            raw_args = node.get("args")
+            # The rewriter's own test for a stub: the wrapper marker (kiro-agent
+            # JSON), or args that run the stub module (an ACP array element, whose
+            # marker the shaping dropped). Without this, any server passing
+            # ``--server``/``--agent`` of its own would be read as a stub binding.
+            marked = node.get(_WRAPPER_MARKER) is True or node.get(_WRAPPER_MARKER_LEGACY) is True
+            runs_stub = isinstance(raw_args, list) and any(
+                isinstance(a, str) and STUB_MODULE in a for a in raw_args
+            )
+            if marked or runs_stub:
+                args = raw_args if isinstance(raw_args, list) else []
                 try:
                     # A rewritten stub carries its flags in one envelope token.
                     args = expand_stub_flags(args)
                 except ValueError:
                     args = []
-            if isinstance(args, list) and "--server" in args:
-                for flag, value in zip(args, args[1:]):
-                    if flag == "--agent" and isinstance(value, str) and value:
-                        found.add(value)
+                if "--server" in args:
+                    for flag, value in zip(args, args[1:]):
+                        if flag == "--agent" and isinstance(value, str) and value:
+                            found.add(value)
             for value in node.values():
                 _walk(value, depth + 1)
         elif isinstance(node, list):
