@@ -177,6 +177,29 @@ async def test_a_site_grant_never_narrows_trust_all_tools(
 @pytest.mark.parametrize(
     "state",
     [
+        pytest.param(lambda: _state(_trust=True), id="trust-all-tools"),
+        pytest.param(lambda: _state(yolo=True), id="yolo"),
+    ],
+)
+async def test_session_trust_runs_js_whose_host_note_names_the_page_it_left(
+    monkeypatch: pytest.MonkeyPatch, state: Any
+) -> None:
+    # The permission path's site-grant rung noted app.example for this call before
+    # session-wide trust could approve it; the tab has moved on since.
+    built = _with_grant(state(), "app.example", "act")
+    key = bht.trust_key("app.example", "act")
+    assert bht.note_host_approval(_SESSION, key, {"op": "js", "args": _JS})
+    answer, sup = await _call(monkeypatch, built, tab_url="https://other.example/")
+    assert built.opened == [] and answer.get("code") != bht.SCOPE_CHANGED_CODE
+    assert _ran(sup, "js")
+    # The note is spent, so a later identical call never inherits it.
+    assert bht.take_host_approval(bht.browser_session_key(_SESSION), "js", _JS) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "state",
+    [
         pytest.param(lambda: _state(yolo=True, _trust=True), id="trust-and-yolo"),
         pytest.param(lambda: _with_grant(_state(), "app.example", "act"), id="act-site-grant"),
     ],
