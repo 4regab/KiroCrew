@@ -114,11 +114,15 @@ FORBIDDEN_BEFORE_THE_LIST = (
 #: ``kiro_crew.enqueue_only_pool.EnqueueOnlyThreadPoolExecutor``, which the module imports
 #: at its top (it was imported inside ``configure_default_executor()`` alone); that
 #: stdlib-only module is the one file added, and nothing else loads.
+#: Raised by 1 for each server: the line-cap split of ``security.deny_gate`` moved its
+#: substitution-nesting cap into ``security.deny_gate_nesting``, which the deny gate imports
+#: when the security package loads; the module count rose by that one file and nothing new
+#: loads.
 PACKAGE_MODULE_CEILING = {
-    "mcp-core": 502,
-    "mcp-cron": 369,
-    "mcp-guide": 363,
-    "mcp-mate": 365,
+    "mcp-core": 503,
+    "mcp-cron": 370,
+    "mcp-guide": 364,
+    "mcp-mate": 366,
 }
 
 #: The modules that read the two live values in the spawn tools' descriptions. They are
