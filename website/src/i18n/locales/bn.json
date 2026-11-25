@@ -6023,6 +6023,11 @@
     "viewPr": "পুল রিকোয়েস্ট"
   },
   "components": {
+    "startupModules": {
+      "failed": "{{name}} চালু করা যায়নি।",
+      "dismiss": "আবার লোড করা পর্যন্ত {{name}} চালু হওয়ার বিজ্ঞপ্তি লুকিয়ে রাখো",
+      "open_app": "{{name}} খোলো"
+    },
     "crewPrFacts": {
       "read": "{{time}}-এ পড়া"
     },
@@ -10125,7 +10130,27 @@
       "updating": "আপডেট হচ্ছে…",
       "updating_and_restarting": "আপডেট ও পুনরায় চালু হচ্ছে…",
       "version_is_available": "{{productName}} <0>{{version}}</0> উপলব্ধ।",
+      "work_holder_age": "{{kind}} ({{age}})",
+      "work_holder_named": "{{name}} ({{kind}})",
+      "work_holder_named_age": "{{name}} ({{kind}}, {{age}})",
+      "work_holder_times": "{{kind}} ×{{n}}",
+      "work_holders_more_one": "আরও {{n}}টি",
+      "work_holders_more_other": "আরও {{n}}টি",
+      "work_kind_approval": "অনুমোদনের অপেক্ষায়",
+      "work_kind_callback": "আগত বার্তা",
+      "work_kind_channel_handler": "চ্যানেল বার্তা",
+      "work_kind_other": "অন্য কাজ",
+      "work_kind_queued": "সারিতে থাকা বার্তা",
+      "work_kind_refusal_write": "পাঠানো হচ্ছে এমন উত্তর",
+      "work_kind_script": "নির্ধারিত জব",
+      "work_kind_subagent": "সাব-এজেন্ট",
+      "work_kind_task_runner": "টাস্ক রানার",
+      "work_kind_turn": "চ্যাট টার্ন",
+      "work_kind_unreadable": "যে কাজ যাচাই করা যায়নি",
+      "work_kind_update_build": "আপডেট বিল্ড",
+      "work_kind_workflow": "ওয়ার্কফ্লো",
       "work_running_busy": "এখন রিস্টার্ট করলে চলমান কাজ বাধাগ্রস্ত হবে। সক্রিয় আইটেম: {{active}}।",
+      "work_running_now": "এখন চলছে: {{holders}}।",
       "work_running_quiet": "সম্প্রতি একটি চ্যাটে কার্যকলাপ ছিল, এবং এখন রিস্টার্ট করলে তুমি যে বার্তা লিখছ তা কেটে যেতে পারে। {{minutes}} মিনিট কার্যকলাপ না থাকলে এটি নিরাপদ।",
       "work_running_title": "কাজ এখনও চলছে",
       "you_can_update_anytime_from_settings_about": "যেকোনো সময় সেটিংস → সম্পর্কে থেকে আপডেট করুন।"
@@ -10638,7 +10663,12 @@
       "automatic_https": "এই tailnet-এর জন্য HTTPS চালু হলে Tailscale ব্যক্তিগত সার্টিফিকেট স্বয়ংক্রিয়ভাবে তৈরি ও নবায়ন করে।",
       "setting_up": "ফোন অ্যাক্সেস সেট আপ করা হচ্ছে…",
       "setup_action": "সেট আপ করে QR দেখান",
-      "setup_timeout": "ফোন অ্যাক্সেস প্রস্তুত হয়নি। সেটআপ পরীক্ষা করে আবার চেষ্টা করুন।"
+      "setup_timeout": "ফোন অ্যাক্সেস প্রস্তুত হয়নি। সেটআপ পরীক্ষা করে আবার চেষ্টা করুন।",
+      "fix_overrides": "এটা ঠিক করো",
+      "fix_overrides_title": "এই ওভাররাইডগুলো সরাবে?",
+      "fix_overrides_values": "config.local.json-এ <local/> সেট আছে; config.json থেকে <applies/> প্রযোজ্য হবে",
+      "fix_overrides_body": "এরপর প্রতিটি কী config.json-এর মান নেবে এবং সেটআপ আবার চলবে। config.local.json-এর অন্য কোনো কী বদলাবে না।",
+      "fix_overrides_confirm": "সরাও এবং আবার চেষ্টা করো"
     },
     "sessionTabStrip": {
       "close_tab_hint": "এই ট্যাবটি বন্ধ করুন। সেশনটি সাইডবারে থেকে যায়।",
@@ -13421,7 +13451,8 @@
         "turn_cache_likely": "ক্যাশ সম্ভবত নতুন করে তৈরি হয়েছে",
         "turn_cache_likely_hint": "মডেল এই কথোপকথন যতক্ষণ ক্যাশে রাখে তার চেয়ে বেশি বিরতির পরে এই উত্তর এসেছে, তাই সম্ভবত পুরো কথোপকথন আবার সংরক্ষণ করতে হয়েছে এবং খরচ স্বাভাবিকের চেয়ে বেশি হয়েছে। এটি একটি অনুমান।",
         "turn_cache_rewritten": "ক্যাশ নতুন করে তৈরি হয়েছে",
-        "turn_cache_rewritten_hint": "এই উত্তরের জন্য পুরো কথোপকথন আবার সংরক্ষণ করতে হয়েছে, তাই এর খরচ স্বাভাবিকের চেয়ে বেশি হয়েছে।"
+        "turn_cache_rewritten_hint": "এই উত্তরের জন্য পুরো কথোপকথন আবার সংরক্ষণ করতে হয়েছে, তাই এর খরচ স্বাভাবিকের চেয়ে বেশি হয়েছে।",
+        "speaker_heading": "{{productName}}"
       },
       "browserLiveCard": {
         "allow_explainer_asked_once": "তোমার ব্রাউজার জিজ্ঞেস করছে “রিমোট ডিবাগিং অনুমতি দেবে?”। Allow ক্লিক করো, তাহলে {{productName}} ট্যাবে কাজ করতে পারবে। একবারই জিজ্ঞেস করা হয়; {{productName}} শুধু নিজে খোলা ট্যাবই স্পর্শ করে।",
@@ -14077,7 +14108,7 @@
       },
       "toolDetails": {
         "auto": "স্বয়ংক্রিয়",
-        "details_unavailable_for_historical_tool_calls": "পুরোনো টুল কলের বিস্তারিত পাওয়া যায় না।",
+        "details_unavailable_for_historical_tool_calls": "এই আগের কলের বিস্তারিত সংরক্ষিত হয়নি। চ্যাটে জিজ্ঞেস করো এটি কী করেছে।",
         "formatted": "ফরম্যাট করা",
         "no_input_or_output_captured_for_this_tool_call": "এই টুল কলের কোনো ইনপুট বা আউটপুট রাখা হয়নি।",
         "null": "null",
@@ -14267,7 +14298,8 @@
         "edit_replaces_below": "পাঠালে নিচের উত্তরগুলো বদলে যাবে",
         "seed_from_conductor": "মূল চ্যাট থেকে",
         "seed_from_worker": "একজন দলের সদস্যের কাছ থেকে",
-        "seed_from_session": "অন্য চ্যাট থেকে"
+        "seed_from_session": "অন্য চ্যাট থেকে",
+        "speaker_heading": "তুমি"
       },
       "workflowCompletionCard": {
         "hide_result": "ফলাফল লুকাও",
@@ -14962,6 +14994,10 @@
         "no_prompt_yet": "এই সেশনে এখনও কোনো প্রম্পট পাঠানো হয়নি।",
         "retry": "আবার চেষ্টা করো",
         "starting": "নতুন খসড়া সেশন খোলা হচ্ছে…"
+      },
+      "transcriptAnnouncement": {
+        "spoken": "{{speaker}}: {{text}}",
+        "approval": "{{speaker}} তোমার অনুমোদনের অপেক্ষায়: {{operation}}"
       }
     },
     "chatPage": {
@@ -15180,6 +15216,7 @@
       "jump_to_new_one": "{{count}}টি নতুন · সর্বশেষে যান",
       "jump_to_new_other": "{{count}}টি নতুন · সর্বশেষে যান",
       "could_not_repair_images": "ছবিগুলো মেরামত করা যায়নি",
+      "could_not_edit_and_resend": "সম্পাদনা করে আবার পাঠানো যায়নি",
       "session_closed_elsewhere": "এই চ্যাটটি এই উইন্ডোর বাইরে বন্ধ করা হয়েছে।"
     },
     "chatSidebar": {
@@ -15430,6 +15467,8 @@
       "open_source_link_in_side_panel": "সাইড প্যানেলে {{url}} খুলুন (ব্রাউজারে খুলতে {{modifier}})",
       "open_named_source_link_in_side_panel": "{{provider}} {{ref}}: সাইড প্যানেলে {{url}} খোলো (ব্রাউজারে খুলতে {{modifier}})",
       "bulk_switch_keeps_conversation": "প্রতিটি সেশনের জন্য একটি মডেল বাছো। কথোপকথন থেকে যায় এবং নতুন মডেলে চলতে থাকে।",
+      "bulk_effort_keep": "বর্তমান প্রচেষ্টা রাখো",
+      "bulk_effort_needs_effort_model": "প্রচেষ্টাও সেট করতে এমন একটি মডেল বাছো যা প্রচেষ্টার স্তর ব্যবহার করে।",
       "bulk_switch_stops_running_reply": "চলমান সেশনগুলোও পাল্টে যাবে, আর সেগুলোর চলতি উত্তর থেমে যাবে।",
       "pinned": "পিন করা",
       "pinned_sessions_are_kept": "পিন করা সেশন রেখে দেওয়া হয়।",
@@ -15514,8 +15553,18 @@
       "switch_all_sessions": "সব সেশন পাল্টান",
       "switch_all_to_model": "সব সেশনের মডেল পাল্টান…",
       "switch_failed": "সুইচ করা যায়নি",
-      "already_on_model_one": "{{count}}টি সেশন ইতিমধ্যে এই মডেল ব্যবহার করছে",
-      "already_on_model_other": "{{count}}টি সেশন ইতিমধ্যে এই মডেল ব্যবহার করছে",
+      "already_on_model_one": "{{count}}টি সেশন ইতিমধ্যে এই মডেল ব্যবহার করছে: {{names}}",
+      "already_on_model_other": "{{count}}টি সেশন ইতিমধ্যে এই মডেল ব্যবহার করছে: {{names}}",
+      "already_on_model_and_effort_one": "{{count}}টি সেশন ইতিমধ্যে এই মডেল ও প্রচেষ্টা ব্যবহার করছে: {{names}}",
+      "already_on_model_and_effort_other": "{{count}}টি সেশন ইতিমধ্যে এই মডেল ও প্রচেষ্টা ব্যবহার করছে: {{names}}",
+      "bulk_switch_effort_deferred_one": "{{count}}টি সেশন পরের বার রিস্টার্ট হলে নতুন প্রচেষ্টায় যাবে: {{names}}",
+      "bulk_switch_effort_deferred_other": "{{count}}টি সেশন পরের বার রিস্টার্ট হলে নতুন প্রচেষ্টায় যাবে: {{names}}",
+      "bulk_switch_switched_one": "{{count}}টি সেশন পাল্টানো হয়েছে: {{names}}",
+      "bulk_switch_switched_other": "{{count}}টি সেশন পাল্টানো হয়েছে: {{names}}",
+      "bulk_switch_skipped_busy_one": "{{count}}টি সেশন ব্যস্ত ছিল, তাই পাল্টানো হয়নি: {{names}}",
+      "bulk_switch_skipped_busy_other": "{{count}}টি সেশন ব্যস্ত ছিল, তাই পাল্টানো হয়নি: {{names}}",
+      "bulk_switch_busy_now_idle_one": "এর মধ্যে {{count}}টি সেশন এখন নিষ্ক্রিয়, তাই পাল্টান চাপলে কোনো উত্তর না থামিয়ে এটি পাল্টে যাবে: {{names}}",
+      "bulk_switch_busy_now_idle_other": "এর মধ্যে {{count}}টি সেশন এখন নিষ্ক্রিয়, তাই পাল্টান চাপলে কোনো উত্তর না থামিয়ে সেগুলো পাল্টে যাবে: {{names}}",
       "switch_session_one": "{{count}}টি সেশন পাল্টান",
       "switch_session_other": "{{count}}টি সেশন পাল্টান",
       "retry_failed_session_one": "ব্যর্থ {{count}}টি সেশনের জন্য আবার চেষ্টা করো",
@@ -17649,6 +17698,7 @@
       "review_approved": "শেয়ার করা হয়েছে",
       "review_skipped": "শেয়ার করা হয়নি",
       "review_skip": "শেয়ার কোরো না",
+      "review_sharing": "শেয়ার হচ্ছে…",
       "diff_added": "যোগ হয়েছে: {{tokens}}",
       "diff_removed": "সরানো হয়েছে: {{tokens}}",
       "diff_env_added": "এনভ যোগ হয়েছে: {{names}}",
@@ -17921,6 +17971,7 @@
         "always_allow_undo": "প্রতিটি কলের আগে আবার জিজ্ঞেস করতে বন্ধ করো।",
         "always_allow_hint": "এই টুলের প্রতিটি কলের আগে আর জিজ্ঞেস করবে না। {{productName}}-এর নিজের নিরাপত্তা নিয়ম চালু থাকে।",
         "always_allow_failed": "সবসময় অনুমতি দাও বদলানো যায়নি। আবার চেষ্টা করো।",
+        "always_allow_on_count": "সবসময় অনুমতি: {{total}}টির মধ্যে {{on}}টি",
         "always_allow_refused_asks_every_time": "তোমার সেটিংস এই সার্ভারের টুলের প্রতিটি কলের আগে জিজ্ঞেস করে, তাই এগুলোকে সবসময় অনুমতি দেওয়া যায় না।",
         "always_allow_refused_set_elsewhere": "সবসময় অনুমতি দাও এই কম্পিউটারের একটি লোকাল সেটিংস ফাইল থেকে নিয়ন্ত্রিত, তাই এখানে বদলানো যায় না।",
         "always_allow_refused_crew_owned": "{{productName}}-এর নিজের টুল সবসময় জিজ্ঞেস করে।",
@@ -23529,6 +23580,7 @@
       "linked_to": "{{label}}-এর সাথে যুক্ত",
       "linked_to_paused": "{{label}}-এর সাথে যুক্ত · উত্তর বিরতিতে",
       "connect_channel": "একটি চ্যানেলে সংযোগ করো",
+      "open_messaging_channels": "চ্যাট প্ল্যাটফর্ম খোলো",
       "dashboard_kept_last_good": "এই ড্যাশবোর্ডের নতুন সংস্করণ লোড হয়নি, তাই এটি সর্বশেষ লোড হওয়া সংস্করণ।",
       "dashboard_none_yet": "এই Bot-এর জন্য এখনও কোনো ড্যাশবোর্ড সেট করা হয়নি।",
       "dashboard_empty_region": "{{name}}-এর ড্যাশবোর্ড: এখনও কোনো পেজ বেছে নেওয়া হয়নি",

@@ -14,7 +14,7 @@ superseded-by: []
 
 # RFC: Crew API
 
-- Status: partial. A maintainer accepted the design on 2026-11-14, with open question Q7 decided. The first Owner-tier route is built: [#34104](https://github.com/kirodotdev/KiroCrew/pull/34104) serves `GET /v1/crew/owner/bots` (`src/kiro_crew/dashboard/routes/crew_api.py`), the twin of `GET /api/members`. [#39564](https://github.com/kirodotdev/KiroCrew/pull/39564), merged 2026-11-20, adds phase 1's local authorization: the four routes `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token` and `/oauth/revoke` (`src/kiro_crew/dashboard/routes/local_authorization.py`), and one `/v1` route serves the token: a valid one sent from this machine reaches `GET /v1/models` and is answered 403 on every other Crew API path, by the route's row in the scope table (`crew_api_auth.judge_app_credential`). [#39574](https://github.com/kirodotdev/KiroCrew/pull/39574) makes a `/v1/` path other than `POST /v1/chat/completions` take its credential from `Authorization: Bearer` and refuse `?token=` (`src/kiro_crew/dashboard/crew_api_auth.py`), and serves `GET /v1/models` for the owner and for a local app credential. An app credential gets `200` with `{"object": "list", "data": []}` until a route lets an app run a Bot in its grant or an agent; its list comes only from the grant, without reading the owner's catalog. `POST /v1/responses` is served for the machine owner (`src/kiro_crew/dashboard/crew_api_responses.py`): one turn in a new conversation, answered as JSON or, with `stream: true`, as the stream events of the subset. A stopped turn ends its stream with `response.incomplete`, and the `Response` inside it carries `status: cancelled`, the status the JSON answer gives. Every other field of [the Responses subset](#33-the-responses-subset) that needs more than that (`background`, `conversation`, `previous_response_id`, tools, the phase 2 fields) answers 422 `capability_unavailable`, the `Idempotency-Key` header is not read, and a turn that fair admission refuses is answered 200 with `status: failed`. The rest is not built. This document changes no code.
+- Status: partial. A maintainer accepted the design on 2026-11-14, with open question Q7 decided. The first Owner-tier route is built: [#34104](https://github.com/kirodotdev/KiroCrew/pull/34104) serves `GET /v1/crew/owner/bots` (`src/kiro_crew/dashboard/routes/crew_api.py`), the twin of `GET /api/members`. [#39564](https://github.com/kirodotdev/KiroCrew/pull/39564), merged 2026-11-20, adds phase 1's local authorization: the four routes `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token` and `/oauth/revoke` (`src/kiro_crew/dashboard/routes/local_authorization.py`), and one `/v1` route serves the token: a valid one sent from this machine reaches `GET /v1/models` and is answered 403 on every other Crew API path, by the route's row in the scope table (`crew_api_auth.judge_app_credential`). [#39574](https://github.com/kirodotdev/KiroCrew/pull/39574) makes a `/v1/` path other than `POST /v1/chat/completions` take its credential from `Authorization: Bearer` and refuse `?token=` (`src/kiro_crew/dashboard/crew_api_auth.py`), and serves `GET /v1/models` for the owner and for a local app credential. An app credential gets `200` with `{"object": "list", "data": []}` until a route lets an app run a Bot in its grant or an agent; its list comes only from the grant, without reading the owner's catalog. `GET /v1/crew/info` and `GET /v1/crew/capabilities` are served for the owner (`src/kiro_crew/dashboard/crew_api_instance.py`): `info` answers the instance id, `form` `local` and the API version, and `capabilities` reports every feature `false`, text input for each agent and the input size limit. `POST /v1/responses` is served for the machine owner (`src/kiro_crew/dashboard/crew_api_responses.py`): one turn in a new conversation, answered as JSON or, with `stream: true`, as the stream events of the subset. A stopped turn ends its stream with `response.incomplete`, and the `Response` inside it carries `status: cancelled`, the status the JSON answer gives. Every other field of [the Responses subset](#33-the-responses-subset) that needs more than that (`background`, `conversation`, `previous_response_id`, tools, the phase 2 fields) answers 422 `capability_unavailable`, the `Idempotency-Key` header is not read, and a turn that fair admission refuses is answered 200 with `status: failed`. The rest is not built. This document changes no code.
 - Machine-readable contract: the OpenAPI 3.1 drafts in [`assets/crew-api/`](assets/crew-api/crew-public.yaml):
   `crew-public.yaml` (the Public tier), `crew-owner.yaml` (the Owner tier) and `components.yaml`
   (shared schemas). Both `openapi-spec-validator` and `@redocly/cli lint` pass on them with the
@@ -680,6 +680,50 @@ accepted by a maintainer):
    `client_id`, `app.name` (as the app reported it), `scopes`, `bots` (the owner's recorded
    selection), `status`, `created_at` and `expires_at`, and no token. Usage and quota are
    not kept for such a grant and are left out.
+
+**Entry port: the Crew API for a reverse proxy on the same machine** (amendment, 2026-11-24;
+accepted by maintainer buluoray on 2026-11-24, on
+[#42027](https://github.com/kirodotdev/KiroCrew/pull/42027)).
+
+What it is. A headless gateway listens on loopback only, so a caller on another machine
+reaches it through a reverse proxy that the deployer runs on the gateway's machine.
+`dashboard.entry_port` names a second port for that proxy. It is `0`, off, by default. When set, the regular or
+headless gateway binds it on `127.0.0.1`, and on `[::1]` when the machine has an IPv6
+loopback; no setting changes the address. The API-only server does not open it. It is for
+Linux and macOS for now. On Windows the gateway's main port and its second loopback address
+have a listener guard (`dashboard/listener_guard.py`), and the entry port has none yet, so a
+non-zero value stops the start there;
+[#41874](https://github.com/kirodotdev/KiroCrew/issues/41874) tracks it.
+The gateway does not start, configure or ship the proxy.
+
+Who can reach what through it:
+
+1. Registered Crew API routes only. Any other path is 404; a wrong method on a registered
+   route is 405.
+2. `Authorization: Bearer` only, verified by the same code as on the gateway's own port. A
+   cookie or a query token is not a credential there, and a request with no bearer is 401.
+3. No Owner route (`/v1/crew/owner/*`): 403. Approvals and grants are answered on the machine.
+4. An app token from local authorization is 401 on any other route, because that token is
+   honoured only on a request made directly from this machine.
+5. The proxy must send a `Host` that names loopback, else 400. A request that carries a header
+   which authenticates a process on this machine is 400.
+
+Arriving on the entry port gives a caller no identity or scope beyond its bearer. Two checks
+from the gateway's own port do not apply there. The tailnet login allowlist is not read,
+because no header from the proxy names a caller. The address pin does not tell `127.0.0.1`
+and `[::1]` apart, because both are the same proxy.
+
+Why the socket decides, and not a header. A proxy on the same machine connects from loopback,
+which is what a program on this machine looks like. A header that marks a request as forwarded
+is missing when the proxy is set up wrong, and the request then reads as local. So a request
+came through the entry because of the port it arrived on, which the gateway reads from its own
+socket. Such a request is never treated as a direct local request, whatever headers it carries
+or lacks, and no header from the proxy names the caller: the bearer does.
+
+The setting is changed in the config file or with `kirocrew config set`. The settings route,
+`PATCH /api/config/kirocrew`, does not change it.
+
+The Kiro relay is a separate path with its own rules and is outside this amendment.
 
 ### 9. Versioning and compatibility
 

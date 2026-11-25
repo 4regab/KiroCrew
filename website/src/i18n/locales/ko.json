@@ -5851,6 +5851,11 @@
     "viewPr": "풀 리퀘스트"
   },
   "components": {
+    "startupModules": {
+      "failed": "{{name}} 시작에 실패했습니다.",
+      "dismiss": "새로고침할 때까지 {{name}} 시작 알림 닫기",
+      "open_app": "{{name}} 열기"
+    },
     "crewPrFacts": {
       "read": "{{time}}에 확인"
     },
@@ -9885,7 +9890,26 @@
       "updating": "업데이트 중…",
       "updating_and_restarting": "업데이트 및 다시 시작 중…",
       "version_is_available": "{{productName}} <0>{{version}}</0> 버전을 사용할 수 있습니다.",
+      "work_holder_age": "{{kind}} ({{age}})",
+      "work_holder_named": "{{name}} ({{kind}})",
+      "work_holder_named_age": "{{name}} ({{kind}}, {{age}})",
+      "work_holder_times": "{{kind}} ×{{n}}",
+      "work_holders_more_other": "{{n}}개 더",
+      "work_kind_approval": "승인 대기 중",
+      "work_kind_callback": "수신 메시지",
+      "work_kind_channel_handler": "채널 메시지",
+      "work_kind_other": "기타 작업",
+      "work_kind_queued": "대기 중인 메시지",
+      "work_kind_refusal_write": "전송 중인 답장",
+      "work_kind_script": "예약된 작업",
+      "work_kind_subagent": "서브에이전트",
+      "work_kind_task_runner": "작업 실행기",
+      "work_kind_turn": "채팅 턴",
+      "work_kind_unreadable": "확인할 수 없는 작업",
+      "work_kind_update_build": "업데이트 빌드",
+      "work_kind_workflow": "워크플로",
       "work_running_busy": "지금 재시작하면 실행 중인 작업이 중단됩니다. 활성 항목: {{active}}.",
+      "work_running_now": "실행 중: {{holders}}.",
       "work_running_quiet": "최근 채팅 활동이 있었고, 지금 재시작하면 작성 중인 메시지가 끊길 수 있습니다. {{minutes}}분 동안 활동이 없으면 안전합니다.",
       "work_running_title": "작업이 아직 실행 중입니다",
       "you_can_update_anytime_from_settings_about": "설정 → 정보에서 언제든지 업데이트할 수 있습니다."
@@ -10393,7 +10417,12 @@
       "automatic_https": "이 tailnet에 HTTPS가 활성화되면 Tailscale이 비공개 인증서를 자동으로 만들고 갱신합니다.",
       "setting_up": "휴대폰 액세스를 설정하는 중…",
       "setup_action": "설정하고 QR 표시",
-      "setup_timeout": "휴대폰 액세스가 준비되지 않았습니다. 설정을 확인한 후 다시 시도하세요."
+      "setup_timeout": "휴대폰 액세스가 준비되지 않았습니다. 설정을 확인한 후 다시 시도하세요.",
+      "fix_overrides": "수정하기",
+      "fix_overrides_title": "이 재정의를 제거하시겠습니까?",
+      "fix_overrides_values": "config.local.json 설정: <local/>, 적용될 config.json 값: <applies/>",
+      "fix_overrides_body": "제거하면 각 키에 config.json 값이 적용되고 설정이 다시 실행됩니다. config.local.json의 다른 키는 바뀌지 않습니다.",
+      "fix_overrides_confirm": "제거 후 다시 시도"
     },
     "sessionTabStrip": {
       "close_tab_hint": "이 탭을 닫습니다. 세션은 사이드바에 남습니다.",
@@ -13118,7 +13147,8 @@
         "turn_cache_likely": "캐시를 다시 만들었을 가능성이 높음",
         "turn_cache_likely_hint": "이 답변은 모델이 대화를 캐시에 유지하는 시간보다 오래 쉰 뒤에 도착했으므로, 대화 전체를 다시 저장해 평소보다 비용이 더 들었을 가능성이 높습니다. 추정치입니다.",
         "turn_cache_rewritten": "캐시 다시 만듦",
-        "turn_cache_rewritten_hint": "이 답변에서는 대화 전체를 다시 저장해야 해서 평소보다 비용이 더 들었습니다."
+        "turn_cache_rewritten_hint": "이 답변에서는 대화 전체를 다시 저장해야 해서 평소보다 비용이 더 들었습니다.",
+        "speaker_heading": "{{productName}}"
       },
       "browserLiveCard": {
         "allow_explainer_asked_once": "브라우저에 “원격 디버깅을 허용할까요?”가 표시됩니다. 허용을 누르면 {{productName}}이(가) 탭에서 작업할 수 있습니다. 한 번만 묻습니다. {{productName}}은(는) 직접 연 탭만 다룹니다.",
@@ -13733,7 +13763,7 @@
       },
       "toolDetails": {
         "auto": "자동",
-        "details_unavailable_for_historical_tool_calls": "과거 도구 호출의 세부 정보는 표시할 수 없습니다.",
+        "details_unavailable_for_historical_tool_calls": "이전 호출의 세부 정보는 저장되지 않았습니다. 무엇을 했는지 채팅에서 물어보세요.",
         "formatted": "서식",
         "no_input_or_output_captured_for_this_tool_call": "이 도구 호출의 입력 또는 출력이 기록되지 않았습니다.",
         "null": "null",
@@ -13917,7 +13947,8 @@
         "edit_replaces_below": "보내면 아래 답변이 바뀝니다",
         "seed_from_conductor": "메인 채팅에서",
         "seed_from_worker": "크루원에게서",
-        "seed_from_session": "다른 채팅이 보냄"
+        "seed_from_session": "다른 채팅이 보냄",
+        "speaker_heading": "나"
       },
       "workflowCompletionCard": {
         "hide_result": "결과 숨기기",
@@ -14602,6 +14633,10 @@
         "no_prompt_yet": "이 세션에서는 아직 보낸 프롬프트가 없습니다.",
         "retry": "다시 시도",
         "starting": "새 초안 세션을 여는 중…"
+      },
+      "transcriptAnnouncement": {
+        "spoken": "{{speaker}}: {{text}}",
+        "approval": "{{speaker}}이(가) 승인을 기다리고 있습니다: {{operation}}"
       }
     },
     "chatPage": {
@@ -14812,6 +14847,7 @@
       "your_crewmate": "Bot",
       "jump_to_new_other": "새 메시지 {{count}}개 · 최신으로",
       "could_not_repair_images": "이미지를 복구하지 못했습니다",
+      "could_not_edit_and_resend": "편집 후 다시 보낼 수 없습니다",
       "session_closed_elsewhere": "이 채팅은 이 창 밖에서 닫혔습니다."
     },
     "chatSidebar": {
@@ -15049,6 +15085,8 @@
       "open_source_link_in_side_panel": "{{url}}을(를) 사이드 패널에서 열기 ({{modifier}}(으)로 누르면 브라우저에서 열기)",
       "open_named_source_link_in_side_panel": "{{provider}} {{ref}}: {{url}}을(를) 사이드 패널에서 열기 ({{modifier}}(으)로 누르면 브라우저에서 열기)",
       "bulk_switch_keeps_conversation": "모든 세션의 모델을 선택합니다. 대화는 유지되며 새 모델로 이어집니다.",
+      "bulk_effort_keep": "현재 강도 유지",
+      "bulk_effort_needs_effort_model": "강도도 설정하려면 강도 수준을 지원하는 모델을 선택합니다.",
       "bulk_switch_stops_running_reply": "실행 중인 세션도 전환되며 현재 응답은 중단됩니다.",
       "pinned": "고정됨",
       "pinned_sessions_are_kept": "고정된 세션은 유지됩니다.",
@@ -15125,7 +15163,12 @@
       "switch_all_sessions": "모든 세션 전환",
       "switch_all_to_model": "모두 다른 모델로 전환…",
       "switch_failed": "전환 실패",
-      "already_on_model_other": "세션 {{count}}개는 이미 이 모델을 사용 중",
+      "already_on_model_other": "세션 {{count}}개는 이미 이 모델을 사용 중: {{names}}",
+      "already_on_model_and_effort_other": "세션 {{count}}개는 이미 이 모델과 강도를 사용 중: {{names}}",
+      "bulk_switch_effort_deferred_other": "세션 {{count}}개는 다음 재시작 시 새 강도로 전환됩니다: {{names}}",
+      "bulk_switch_switched_other": "세션 {{count}}개를 전환했습니다: {{names}}",
+      "bulk_switch_skipped_busy_other": "세션 {{count}}개는 사용 중이라 전환하지 않았습니다: {{names}}",
+      "bulk_switch_busy_now_idle_other": "그중 세션 {{count}}개는 이제 대기 중이라, 전환하면 응답을 중단하지 않고 함께 전환됩니다: {{names}}",
       "switch_session_other": "세션 {{count}}개 전환",
       "retry_failed_session_other": "실패한 세션 {{count}}개 다시 시도",
       "switch_to_board_view": "보드 보기로 전환",
@@ -17180,6 +17223,7 @@
       "review_approved": "공유됨",
       "review_skipped": "공유 안 됨",
       "review_skip": "공유 안 함",
+      "review_sharing": "공유 중…",
       "diff_added": "추가: {{tokens}}",
       "diff_removed": "제거: {{tokens}}",
       "diff_env_added": "추가된 환경 변수: {{names}}",
@@ -17452,6 +17496,7 @@
         "always_allow_undo": "끄면 호출할 때마다 다시 묻습니다.",
         "always_allow_hint": "이 도구를 호출하기 전에 더 이상 묻지 않습니다. {{productName}} 자체 안전 규칙은 계속 적용됩니다.",
         "always_allow_failed": "항상 허용을 변경하지 못했습니다. 다시 시도하세요.",
+        "always_allow_on_count": "항상 허용: {{total}}개 중 {{on}}개",
         "always_allow_refused_asks_every_time": "설정에서 이 서버의 도구를 호출할 때마다 묻도록 되어 있어 항상 허용할 수 없습니다.",
         "always_allow_refused_set_elsewhere": "항상 허용은 이 컴퓨터의 로컬 설정 파일에서 관리되므로 여기서 변경할 수 없습니다.",
         "always_allow_refused_crew_owned": "{{productName}} 자체 도구는 항상 묻습니다.",
@@ -22935,6 +22980,7 @@
       "linked_to": "{{label}}에 연결됨",
       "linked_to_paused": "{{label}}에 연결됨 · 답장 일시 중지됨",
       "connect_channel": "채널에 연결",
+      "open_messaging_channels": "채팅 플랫폼 열기",
       "dashboard_kept_last_good": "이 대시보드의 최신 버전을 불러오지 못해, 마지막으로 불러온 버전을 표시합니다.",
       "dashboard_none_yet": "이 Bot의 대시보드가 아직 설정되지 않았습니다.",
       "dashboard_empty_region": "{{name}}의 대시보드: 아직 선택된 페이지가 없습니다",

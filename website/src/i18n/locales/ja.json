@@ -5851,6 +5851,11 @@
     "viewPr": "プルリクエスト"
   },
   "components": {
+    "startupModules": {
+      "failed": "{{name}} を起動できませんでした。",
+      "dismiss": "再読み込みまで {{name}} の起動通知を非表示にする",
+      "open_app": "{{name}} を開く"
+    },
     "crewPrFacts": {
       "read": "{{time}} に取得"
     },
@@ -9885,7 +9890,26 @@
       "updating": "アップデート中…",
       "updating_and_restarting": "アップデートして再起動しています…",
       "version_is_available": "{{productName}} <0>{{version}}</0> が利用可能です。",
+      "work_holder_age": "{{kind}}（{{age}}）",
+      "work_holder_named": "{{name}}（{{kind}}）",
+      "work_holder_named_age": "{{name}}（{{kind}}、{{age}}）",
+      "work_holder_times": "{{kind}} ×{{n}}",
+      "work_holders_more_other": "ほか {{n}} 件",
+      "work_kind_approval": "承認待ち",
+      "work_kind_callback": "受信メッセージ",
+      "work_kind_channel_handler": "チャネルのメッセージ",
+      "work_kind_other": "その他の作業",
+      "work_kind_queued": "キュー内のメッセージ",
+      "work_kind_refusal_write": "送信中の返信",
+      "work_kind_script": "スケジュールされたジョブ",
+      "work_kind_subagent": "サブエージェント",
+      "work_kind_task_runner": "タスクランナー",
+      "work_kind_turn": "チャットのターン",
+      "work_kind_unreadable": "確認できなかった作業",
+      "work_kind_update_build": "アップデートのビルド",
+      "work_kind_workflow": "ワークフロー",
       "work_running_busy": "今再起動すると実行中の作業が中断されます。アクティブな項目：{{active}}。",
+      "work_running_now": "実行中：{{holders}}。",
       "work_running_quiet": "最近チャットでの操作があり、今再起動すると入力中のメッセージが途切れる可能性があります。{{minutes}} 分間操作がなければ安全です。",
       "work_running_title": "作業がまだ実行中です",
       "you_can_update_anytime_from_settings_about": "「設定 → 概要」からいつでもアップデートできます。"
@@ -10393,7 +10417,12 @@
       "automatic_https": "この tailnet で HTTPS を有効にすると、Tailscale がプライベート証明書を自動で作成・更新します。",
       "setting_up": "スマートフォンからのアクセスを設定中…",
       "setup_action": "設定して QR を表示",
-      "setup_timeout": "スマートフォンアクセスの準備が完了しませんでした。設定を確認して、もう一度お試しください。"
+      "setup_timeout": "スマートフォンアクセスの準備が完了しませんでした。設定を確認して、もう一度お試しください。",
+      "fix_overrides": "修正する",
+      "fix_overrides_title": "これらの上書きを削除しますか？",
+      "fix_overrides_values": "config.local.json では <local/>、削除後は config.json の <applies/> が適用されます",
+      "fix_overrides_body": "削除すると、各キーには config.json の値が使われ、セットアップが再実行されます。config.local.json のほかのキーは変更されません。",
+      "fix_overrides_confirm": "削除して再試行"
     },
     "sessionTabStrip": {
       "close_tab_hint": "このタブを閉じます。セッションはサイドバーに残ります。",
@@ -13118,7 +13147,8 @@
         "turn_cache_likely": "キャッシュを再構築した可能性が高い",
         "turn_cache_likely_hint": "この返信は、モデルが会話をキャッシュに保持する時間より長い間隔の後に届いたため、会話全体がもう一度保存され、いつもより費用がかかった可能性が高いです。これは推定です。",
         "turn_cache_rewritten": "キャッシュを再構築",
-        "turn_cache_rewritten_hint": "この返信では会話全体をもう一度保存する必要があったため、いつもより費用がかかりました。"
+        "turn_cache_rewritten_hint": "この返信では会話全体をもう一度保存する必要があったため、いつもより費用がかかりました。",
+        "speaker_heading": "{{productName}}"
       },
       "browserLiveCard": {
         "allow_explainer_asked_once": "ブラウザーに「リモートデバッグを許可しますか？」と表示されます。「許可」を押すと {{productName}} がタブで作業できます。確認は一度だけ。{{productName}} は自分で開いたタブだけを扱います。",
@@ -13733,7 +13763,7 @@
       },
       "toolDetails": {
         "auto": "自動",
-        "details_unavailable_for_historical_tool_calls": "過去のツール呼び出しの詳細は表示できません。",
+        "details_unavailable_for_historical_tool_calls": "この以前の呼び出しの詳細は保存されていません。何をしたかはチャットで聞いてください。",
         "formatted": "整形",
         "no_input_or_output_captured_for_this_tool_call": "このツール呼び出しの入力または出力は記録されていません。",
         "null": "null",
@@ -13917,7 +13947,8 @@
         "edit_replaces_below": "送信すると下の返信が置き換わります",
         "seed_from_conductor": "メインチャットから",
         "seed_from_worker": "クルーメンバーから",
-        "seed_from_session": "別のチャットから"
+        "seed_from_session": "別のチャットから",
+        "speaker_heading": "あなた"
       },
       "workflowCompletionCard": {
         "hide_result": "結果を非表示",
@@ -14602,6 +14633,10 @@
         "no_prompt_yet": "このセッションではまだプロンプトが送信されていません。",
         "retry": "再試行",
         "starting": "新しい下書きセッションを開いています…"
+      },
+      "transcriptAnnouncement": {
+        "spoken": "{{speaker}}：{{text}}",
+        "approval": "{{speaker}}が承認を待っています：{{operation}}"
       }
     },
     "chatPage": {
@@ -14812,6 +14847,7 @@
       "your_crewmate": "あなたの Bot",
       "jump_to_new_other": "新着 {{count}} 件 · 最新へ",
       "could_not_repair_images": "画像を修復できませんでした",
+      "could_not_edit_and_resend": "編集して再送信できませんでした",
       "session_closed_elsewhere": "このチャットはこのウィンドウの外で閉じられました。"
     },
     "chatSidebar": {
@@ -15048,6 +15084,8 @@
       "older_sessions_2": "以前のセッション",
       "older_sessions_tip": "タブとして開いていない保存済みのセッションをすべて表示します。たった今閉じたものも、Slack や Discord のチャットも含まれます。セッションを開くと、タブとして戻ります。",
       "bulk_switch_keeps_conversation": "すべてのセッションのモデルを選択します。会話は保持され、新しいモデルで続きます。",
+      "bulk_effort_keep": "現在のエフォートを維持",
+      "bulk_effort_needs_effort_model": "エフォートも設定するには、エフォートレベルに対応したモデルを選択します。",
       "bulk_switch_stops_running_reply": "実行中のセッションも切り替わり、現在の応答は中断されます。",
       "pinned": "固定済み",
       "pinned_sessions_are_kept": "固定したセッションは保持されます。",
@@ -15123,7 +15161,12 @@
       "switch_all_sessions": "すべてのセッションを切り替え",
       "switch_all_to_model": "すべてのモデルを切り替え…",
       "switch_failed": "切り替えに失敗しました",
-      "already_on_model_other": "{{count}} 件のセッションはすでにこのモデルを使用中",
+      "already_on_model_other": "{{count}} 件のセッションはすでにこのモデルを使用中：{{names}}",
+      "already_on_model_and_effort_other": "{{count}} 件のセッションはすでにこのモデルとエフォートを使用中：{{names}}",
+      "bulk_switch_effort_deferred_other": "{{count}} 件のセッションは次回の再起動時に新しいエフォートに切り替わります：{{names}}",
+      "bulk_switch_switched_other": "{{count}} 件のセッションを切り替えました：{{names}}",
+      "bulk_switch_skipped_busy_other": "{{count}} 件のセッションは処理中のため切り替えていません：{{names}}",
+      "bulk_switch_busy_now_idle_other": "そのうち {{count}} 件は待機中になったため、切り替えると応答を中断せずに切り替わります：{{names}}",
       "switch_session_other": "{{count}} セッションを切り替え",
       "retry_failed_session_other": "失敗した {{count}} セッションを再試行",
       "switch_to_board_view": "ボード表示に切り替え",
@@ -17180,6 +17223,7 @@
       "review_approved": "共有済み",
       "review_skipped": "未共有",
       "review_skip": "共有しない",
+      "review_sharing": "共有中…",
       "diff_added": "追加: {{tokens}}",
       "diff_removed": "削除: {{tokens}}",
       "diff_env_added": "追加された環境変数: {{names}}",
@@ -17452,6 +17496,7 @@
         "always_allow_undo": "オフにすると、呼び出す前に毎回確認します。",
         "always_allow_hint": "このツールを呼び出す前に確認しなくなります。{{productName}} 自体の安全ルールは引き続き適用されます。",
         "always_allow_failed": "「常に許可」を変更できませんでした。もう一度お試しください。",
+        "always_allow_on_count": "常に許可: {{total}} 件中 {{on}} 件",
         "always_allow_refused_asks_every_time": "設定により、このサーバーのツールは呼び出しのたびに確認されるため、常に許可にはできません。",
         "always_allow_refused_set_elsewhere": "「常に許可」はこのコンピューターのローカル設定ファイルで管理されているため、ここでは変更できません。",
         "always_allow_refused_crew_owned": "{{productName}} 自体のツールは常に確認されます。",
@@ -22935,6 +22980,7 @@
       "linked_to": "{{label}} とリンク中",
       "linked_to_paused": "{{label}} とリンク中 · 返信は一時停止中",
       "connect_channel": "チャネルに接続",
+      "open_messaging_channels": "チャットプラットフォームを開く",
       "dashboard_kept_last_good": "このダッシュボードの新しいバージョンは読み込めなかったため、最後に読み込めたものを表示しています。",
       "dashboard_none_yet": "この Bot のダッシュボードはまだ設定されていません。",
       "dashboard_empty_region": "{{name}} のダッシュボード: まだページが選ばれていません",

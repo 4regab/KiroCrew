@@ -6195,6 +6195,11 @@
     "viewPr": "Solicitud"
   },
   "components": {
+    "startupModules": {
+      "failed": "No se pudo iniciar {{name}}.",
+      "dismiss": "Ocultar el aviso de inicio de {{name}} hasta recargar",
+      "open_app": "Abrir {{name}}"
+    },
     "crewPrFacts": {
       "read": "leído {{time}}"
     },
@@ -10365,7 +10370,28 @@
       "updating": "Actualizando…",
       "updating_and_restarting": "Actualizando y reiniciando…",
       "version_is_available": "{{productName}} <0>{{version}}</0> está disponible.",
+      "work_holder_age": "{{kind}} ({{age}})",
+      "work_holder_named": "{{name}} ({{kind}})",
+      "work_holder_named_age": "{{name}} ({{kind}}, {{age}})",
+      "work_holder_times": "{{kind}} ×{{n}}",
+      "work_holders_more_many": "{{n}} más",
+      "work_holders_more_one": "{{n}} más",
+      "work_holders_more_other": "{{n}} más",
+      "work_kind_approval": "esperando aprobación",
+      "work_kind_callback": "mensaje entrante",
+      "work_kind_channel_handler": "mensaje del canal",
+      "work_kind_other": "otro trabajo",
+      "work_kind_queued": "mensajes en cola",
+      "work_kind_refusal_write": "respuesta en envío",
+      "work_kind_script": "tarea programada",
+      "work_kind_subagent": "subagente",
+      "work_kind_task_runner": "ejecutor de tareas",
+      "work_kind_turn": "turno del chat",
+      "work_kind_unreadable": "trabajo que no se pudo comprobar",
+      "work_kind_update_build": "compilación de la actualización",
+      "work_kind_workflow": "flujo de trabajo",
       "work_running_busy": "Reiniciar ahora interrumpiría el trabajo en curso. Elementos activos: {{active}}.",
+      "work_running_now": "En curso: {{holders}}.",
       "work_running_quiet": "Hubo actividad reciente en un chat y reiniciar ahora podría cortar un mensaje que estás escribiendo. Es seguro tras {{minutes}} min sin actividad.",
       "work_running_title": "Todavía hay trabajo en curso",
       "you_can_update_anytime_from_settings_about": "Actualiza en cualquier momento desde Ajustes → Acerca de."
@@ -10883,7 +10909,12 @@
       "automatic_https": "Después de activar HTTPS para esta tailnet, Tailscale crea y renueva automáticamente el certificado privado.",
       "setting_up": "Configurando el acceso desde el teléfono…",
       "setup_action": "Configurar y mostrar QR",
-      "setup_timeout": "El acceso desde el teléfono no quedó listo. Comprueba la configuración e inténtalo de nuevo."
+      "setup_timeout": "El acceso desde el teléfono no quedó listo. Comprueba la configuración e inténtalo de nuevo.",
+      "fix_overrides": "Corregir",
+      "fix_overrides_title": "¿Quitar estas anulaciones?",
+      "fix_overrides_values": "config.local.json define <local/>; config.json aplicaría <applies/>",
+      "fix_overrides_body": "Cada clave tomará entonces su valor de config.json y la configuración se ejecutará de nuevo. Ninguna otra clave de config.local.json cambia.",
+      "fix_overrides_confirm": "Quitar y reintentar"
     },
     "sessionTabStrip": {
       "close_tab_hint": "Cierra esta pestaña. La sesión permanece en la barra lateral.",
@@ -13724,7 +13755,8 @@
         "turn_cache_likely": "Caché probablemente reconstruida",
         "turn_cache_likely_hint": "Esta respuesta llegó tras una pausa más larga que el tiempo que el modelo conserva la conversación en caché, así que probablemente se guardó de nuevo toda la conversación y costó más de lo habitual. Es una estimación.",
         "turn_cache_rewritten": "Caché reconstruida",
-        "turn_cache_rewritten_hint": "Esta respuesta tuvo que volver a guardar toda la conversación, por eso costó más de lo habitual."
+        "turn_cache_rewritten_hint": "Esta respuesta tuvo que volver a guardar toda la conversación, por eso costó más de lo habitual.",
+        "speaker_heading": "{{productName}}"
       },
       "browserLiveCard": {
         "allow_explainer_asked_once": "Tu navegador pregunta «¿Permitir la depuración remota?». Pulsa Permitir y {{productName}} podrá trabajar en la pestaña. Solo se pregunta una vez; {{productName}} solo toca las pestañas que abre él mismo.",
@@ -14421,7 +14453,7 @@
       },
       "toolDetails": {
         "auto": "Automático",
-        "details_unavailable_for_historical_tool_calls": "No hay detalles disponibles para las llamadas de herramientas del historial.",
+        "details_unavailable_for_historical_tool_calls": "Los detalles de esta llamada anterior no se guardaron. Pregunta en el chat qué hizo.",
         "formatted": "Con formato",
         "no_input_or_output_captured_for_this_tool_call": "No se capturó ninguna entrada ni salida de esta llamada de herramienta.",
         "null": "null",
@@ -14617,7 +14649,8 @@
         "edit_replaces_below": "Al enviar se reemplazan las respuestas de abajo",
         "seed_from_conductor": "Del chat principal",
         "seed_from_worker": "De un miembro del equipo",
-        "seed_from_session": "De otro chat"
+        "seed_from_session": "De otro chat",
+        "speaker_heading": "Tú"
       },
       "workflowCompletionCard": {
         "hide_result": "Ocultar el resultado",
@@ -15322,6 +15355,10 @@
         "no_prompt_yet": "Todavía no se ha enviado ningún prompt en esta sesión.",
         "retry": "Reintentar",
         "starting": "Abriendo una nueva sesión de borrador…"
+      },
+      "transcriptAnnouncement": {
+        "spoken": "{{speaker}}: {{text}}",
+        "approval": "{{speaker}} espera tu aprobación: {{operation}}"
       }
     },
     "chatPage": {
@@ -15548,6 +15585,7 @@
       "jump_to_new_other": "{{count}} nuevos · Ir al final",
       "jump_to_new_many": "{{count}} nuevos · Ir al final",
       "could_not_repair_images": "No se pudieron reparar las imágenes",
+      "could_not_edit_and_resend": "No se pudo editar y reenviar",
       "session_closed_elsewhere": "Este chat se cerró fuera de esta ventana."
     },
     "chatSidebar": {
@@ -15811,6 +15849,8 @@
       "open_source_link_in_side_panel": "Abrir {{url}} en el panel lateral ({{modifier}} para abrirlo en el navegador)",
       "open_named_source_link_in_side_panel": "{{provider}} {{ref}}: abrir {{url}} en el panel lateral ({{modifier}} para abrirlo en el navegador)",
       "bulk_switch_keeps_conversation": "Elige un modelo para todas las sesiones. La conversación se conserva y continúa con el nuevo modelo.",
+      "bulk_effort_keep": "Mantener el esfuerzo actual",
+      "bulk_effort_needs_effort_model": "Elige un modelo que use niveles de esfuerzo para ajustar también el esfuerzo.",
       "bulk_switch_stops_running_reply": "Las sesiones en ejecución también cambian, y se detiene la respuesta que están generando.",
       "pinned": "Fijadas",
       "pinned_sessions_are_kept": "Las sesiones fijadas se conservan.",
@@ -15903,9 +15943,24 @@
       "switch_all_sessions": "Cambiar todas las sesiones",
       "switch_all_to_model": "Cambiar todas al modelo…",
       "switch_failed": "Error al cambiar",
-      "already_on_model_many": "{{count}} sesiones ya usan este modelo",
-      "already_on_model_one": "{{count}} sesión ya usa este modelo",
-      "already_on_model_other": "{{count}} sesiones ya usan este modelo",
+      "already_on_model_many": "{{count}} sesiones ya usan este modelo: {{names}}",
+      "already_on_model_one": "{{count}} sesión ya usa este modelo: {{names}}",
+      "already_on_model_other": "{{count}} sesiones ya usan este modelo: {{names}}",
+      "already_on_model_and_effort_many": "{{count}} sesiones ya usan este modelo y este esfuerzo: {{names}}",
+      "already_on_model_and_effort_one": "{{count}} sesión ya usa este modelo y este esfuerzo: {{names}}",
+      "already_on_model_and_effort_other": "{{count}} sesiones ya usan este modelo y este esfuerzo: {{names}}",
+      "bulk_switch_effort_deferred_many": "{{count}} sesiones cambiarán al nuevo esfuerzo en su próximo reinicio: {{names}}",
+      "bulk_switch_effort_deferred_one": "{{count}} sesión cambiará al nuevo esfuerzo en su próximo reinicio: {{names}}",
+      "bulk_switch_effort_deferred_other": "{{count}} sesiones cambiarán al nuevo esfuerzo en su próximo reinicio: {{names}}",
+      "bulk_switch_switched_many": "Se cambiaron {{count}} sesiones: {{names}}",
+      "bulk_switch_switched_one": "Se cambió {{count}} sesión: {{names}}",
+      "bulk_switch_switched_other": "Se cambiaron {{count}} sesiones: {{names}}",
+      "bulk_switch_skipped_busy_many": "{{count}} sesiones estaban ocupadas y no se cambiaron: {{names}}",
+      "bulk_switch_skipped_busy_one": "{{count}} sesión estaba ocupada y no se cambió: {{names}}",
+      "bulk_switch_skipped_busy_other": "{{count}} sesiones estaban ocupadas y no se cambiaron: {{names}}",
+      "bulk_switch_busy_now_idle_many": "{{count}} de ellas están inactivas ahora, así que Cambiar las incluye sin detener ninguna respuesta: {{names}}",
+      "bulk_switch_busy_now_idle_one": "{{count}} de ellas está inactiva ahora, así que Cambiar la incluye sin detener ninguna respuesta: {{names}}",
+      "bulk_switch_busy_now_idle_other": "{{count}} de ellas están inactivas ahora, así que Cambiar las incluye sin detener ninguna respuesta: {{names}}",
       "switch_session_many": "Cambiar {{count}} sesiones",
       "switch_session_one": "Cambiar {{count}} sesión",
       "switch_session_other": "Cambiar {{count}} sesiones",
@@ -18118,6 +18173,7 @@
       "review_approved": "Compartido",
       "review_skipped": "No compartido",
       "review_skip": "No compartir",
+      "review_sharing": "Compartiendo…",
       "diff_added": "Añadido: {{tokens}}",
       "diff_removed": "Quitado: {{tokens}}",
       "diff_env_added": "Env añadida: {{names}}",
@@ -18390,6 +18446,7 @@
         "always_allow_undo": "Desactiva para volver a confirmar cada llamada.",
         "always_allow_hint": "Dejar de preguntar antes de cada llamada a esta herramienta. Las reglas de seguridad propias de {{productName}} se siguen aplicando.",
         "always_allow_failed": "No se pudo cambiar Permitir siempre. Inténtalo de nuevo.",
+        "always_allow_on_count": "Permitidas siempre: {{on}} de {{total}}",
         "always_allow_refused_asks_every_time": "Tu configuración pregunta antes de cada llamada a las herramientas de este servidor, así que no se pueden permitir siempre.",
         "always_allow_refused_set_elsewhere": "Permitir siempre lo gestiona un archivo de configuración local en este equipo, así que no se puede cambiar aquí.",
         "always_allow_refused_crew_owned": "Las herramientas propias de {{productName}} siempre preguntan.",
@@ -24123,6 +24180,7 @@
       "linked_to": "Vinculado a {{label}}",
       "linked_to_paused": "Vinculado a {{label}} · respuestas en pausa",
       "connect_channel": "Conectar a un canal",
+      "open_messaging_channels": "Abre Plataformas de chat",
       "dashboard_kept_last_good": "No se cargó una versión más reciente de este panel, así que esta es la última que sí se cargó.",
       "dashboard_none_yet": "Aún no hay un panel configurado para este Bot.",
       "dashboard_empty_region": "Panel de {{name}}: aún no se ha elegido ninguna página",

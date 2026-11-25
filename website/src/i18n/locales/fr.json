@@ -6195,6 +6195,11 @@
     "viewPr": "Pull request"
   },
   "components": {
+    "startupModules": {
+      "failed": "{{name}} n’a pas pu démarrer.",
+      "dismiss": "Masquer l’avis de démarrage de {{name}} jusqu’au rechargement",
+      "open_app": "Ouvrir {{name}}"
+    },
     "crewPrFacts": {
       "read": "lu à {{time}}"
     },
@@ -10365,7 +10370,28 @@
       "updating": "Mise à jour…",
       "updating_and_restarting": "Mise à jour et redémarrage…",
       "version_is_available": "{{productName}} <0>{{version}}</0> est disponible.",
+      "work_holder_age": "{{kind}} ({{age}})",
+      "work_holder_named": "{{name}} ({{kind}})",
+      "work_holder_named_age": "{{name}} ({{kind}}, {{age}})",
+      "work_holder_times": "{{kind}} ×{{n}}",
+      "work_holders_more_many": "{{n}} autres",
+      "work_holders_more_one": "{{n}} autre",
+      "work_holders_more_other": "{{n}} autres",
+      "work_kind_approval": "en attente d’approbation",
+      "work_kind_callback": "message entrant",
+      "work_kind_channel_handler": "message du canal",
+      "work_kind_other": "autre travail",
+      "work_kind_queued": "messages en attente",
+      "work_kind_refusal_write": "réponse en cours d’envoi",
+      "work_kind_script": "tâche planifiée",
+      "work_kind_subagent": "sous-agent",
+      "work_kind_task_runner": "exécuteur de tâches",
+      "work_kind_turn": "tour de chat",
+      "work_kind_unreadable": "travail impossible à vérifier",
+      "work_kind_update_build": "build de mise à jour",
+      "work_kind_workflow": "flux de travail",
       "work_running_busy": "Redémarrer maintenant interromprait le travail en cours. Éléments actifs : {{active}}.",
+      "work_running_now": "En cours : {{holders}}.",
       "work_running_quiet": "Un chat a été actif récemment, et redémarrer maintenant pourrait couper un message que tu écris. Le redémarrage est sûr après {{minutes}} min sans activité.",
       "work_running_title": "Du travail est encore en cours",
       "you_can_update_anytime_from_settings_about": "Mets à jour à tout moment depuis Réglages → À propos."
@@ -10883,7 +10909,12 @@
       "automatic_https": "Une fois HTTPS activé pour ce tailnet, Tailscale crée et renouvelle automatiquement le certificat privé.",
       "setting_up": "Configuration de l’accès mobile…",
       "setup_action": "Configurer et afficher le QR",
-      "setup_timeout": "L’accès mobile n’est pas prêt. Vérifiez la configuration, puis réessayez."
+      "setup_timeout": "L’accès mobile n’est pas prêt. Vérifiez la configuration, puis réessayez.",
+      "fix_overrides": "Corriger",
+      "fix_overrides_title": "Supprimer ces remplacements ?",
+      "fix_overrides_values": "config.local.json définit <local/> ; config.json appliquerait <applies/>",
+      "fix_overrides_body": "Chaque clé reprend alors sa valeur de config.json et la configuration est relancée. Aucune autre clé de config.local.json ne change.",
+      "fix_overrides_confirm": "Supprimer et réessayer"
     },
     "sessionTabStrip": {
       "close_tab_hint": "Ferme cet onglet. La session reste dans la barre latérale.",
@@ -13724,7 +13755,8 @@
         "turn_cache_likely": "Cache probablement reconstruit",
         "turn_cache_likely_hint": "Cette réponse est arrivée après une pause plus longue que la durée pendant laquelle le modèle garde la conversation en cache, donc toute la conversation a probablement été enregistrée à nouveau et a coûté plus que d’habitude. C’est une estimation.",
         "turn_cache_rewritten": "Cache reconstruit",
-        "turn_cache_rewritten_hint": "Cette réponse a dû enregistrer à nouveau toute la conversation, elle a donc coûté plus que d’habitude."
+        "turn_cache_rewritten_hint": "Cette réponse a dû enregistrer à nouveau toute la conversation, elle a donc coûté plus que d’habitude.",
+        "speaker_heading": "{{productName}}"
       },
       "browserLiveCard": {
         "allow_explainer_asked_once": "Ton navigateur demande « Autoriser le débogage à distance ? ». Clique sur Autoriser et {{productName}} pourra travailler dans l’onglet. Demandé une seule fois ; {{productName}} ne touche qu’aux onglets qu’il ouvre lui-même.",
@@ -14421,7 +14453,7 @@
       },
       "toolDetails": {
         "auto": "Auto",
-        "details_unavailable_for_historical_tool_calls": "Détails indisponibles pour les appels d’outils antérieurs.",
+        "details_unavailable_for_historical_tool_calls": "Les détails de cet appel antérieur n’ont pas été enregistrés. Demande dans le chat ce qu’il a fait.",
         "formatted": "Formaté",
         "no_input_or_output_captured_for_this_tool_call": "Aucune entrée ni sortie enregistrée pour cet appel d’outil.",
         "null": "null",
@@ -14617,7 +14649,8 @@
         "edit_replaces_below": "L'envoi remplace les réponses ci-dessous",
         "seed_from_conductor": "Du chat principal",
         "seed_from_worker": "D’un membre de l’équipe",
-        "seed_from_session": "D’un autre chat"
+        "seed_from_session": "D’un autre chat",
+        "speaker_heading": "Toi"
       },
       "workflowCompletionCard": {
         "hide_result": "Masquer le résultat",
@@ -15322,6 +15355,10 @@
         "no_prompt_yet": "Aucun prompt n’a encore été envoyé dans cette session.",
         "retry": "Réessayer",
         "starting": "Ouverture d’une nouvelle session brouillon…"
+      },
+      "transcriptAnnouncement": {
+        "spoken": "{{speaker}} : {{text}}",
+        "approval": "{{speaker}} attend ton approbation : {{operation}}"
       }
     },
     "chatPage": {
@@ -15548,6 +15585,7 @@
       "jump_to_new_other": "{{count}} nouveaux · Aller en bas",
       "jump_to_new_many": "{{count}} nouveaux · Aller en bas",
       "could_not_repair_images": "Impossible de réparer les images",
+      "could_not_edit_and_resend": "Impossible de modifier et renvoyer",
       "session_closed_elsewhere": "Cette conversation a été fermée en dehors de cette fenêtre."
     },
     "chatSidebar": {
@@ -15811,6 +15849,8 @@
       "open_source_link_in_side_panel": "Ouvrir {{url}} dans le panneau latéral ({{modifier}} pour l'ouvrir dans le navigateur)",
       "open_named_source_link_in_side_panel": "{{provider}} {{ref}} : ouvrir {{url}} dans le panneau latéral ({{modifier}} pour l'ouvrir dans le navigateur)",
       "bulk_switch_keeps_conversation": "Choisis un modèle pour toutes les sessions. La conversation est conservée et se poursuit avec le nouveau modèle.",
+      "bulk_effort_keep": "Garder l’effort actuel",
+      "bulk_effort_needs_effort_model": "Choisis un modèle qui utilise des niveaux d’effort pour régler aussi l’effort.",
       "bulk_switch_stops_running_reply": "Les sessions en cours changent aussi de modèle, et leur réponse actuelle est interrompue.",
       "pinned": "Épinglées",
       "pinned_sessions_are_kept": "Les sessions épinglées sont conservées.",
@@ -15903,9 +15943,24 @@
       "switch_all_sessions": "Basculer toutes les sessions",
       "switch_all_to_model": "Basculer toutes vers le modèle…",
       "switch_failed": "Échec du changement",
-      "already_on_model_many": "{{count}} sessions utilisent déjà ce modèle",
-      "already_on_model_one": "{{count}} session utilise déjà ce modèle",
-      "already_on_model_other": "{{count}} sessions utilisent déjà ce modèle",
+      "already_on_model_many": "{{count}} sessions utilisent déjà ce modèle : {{names}}",
+      "already_on_model_one": "{{count}} session utilise déjà ce modèle : {{names}}",
+      "already_on_model_other": "{{count}} sessions utilisent déjà ce modèle : {{names}}",
+      "already_on_model_and_effort_many": "{{count}} sessions utilisent déjà ce modèle et cet effort : {{names}}",
+      "already_on_model_and_effort_one": "{{count}} session utilise déjà ce modèle et cet effort : {{names}}",
+      "already_on_model_and_effort_other": "{{count}} sessions utilisent déjà ce modèle et cet effort : {{names}}",
+      "bulk_switch_effort_deferred_many": "{{count}} sessions passeront au nouvel effort à leur prochain redémarrage : {{names}}",
+      "bulk_switch_effort_deferred_one": "{{count}} session passera au nouvel effort à son prochain redémarrage : {{names}}",
+      "bulk_switch_effort_deferred_other": "{{count}} sessions passeront au nouvel effort à leur prochain redémarrage : {{names}}",
+      "bulk_switch_switched_many": "{{count}} sessions basculées : {{names}}",
+      "bulk_switch_switched_one": "{{count}} session basculée : {{names}}",
+      "bulk_switch_switched_other": "{{count}} sessions basculées : {{names}}",
+      "bulk_switch_skipped_busy_many": "{{count}} sessions étaient occupées et n’ont pas été basculées : {{names}}",
+      "bulk_switch_skipped_busy_one": "{{count}} session était occupée et n’a pas été basculée : {{names}}",
+      "bulk_switch_skipped_busy_other": "{{count}} sessions étaient occupées et n’ont pas été basculées : {{names}}",
+      "bulk_switch_busy_now_idle_many": "{{count}} d’entre elles sont désormais inactives, donc Basculer les inclut sans interrompre de réponse : {{names}}",
+      "bulk_switch_busy_now_idle_one": "{{count}} d’entre elles est désormais inactive, donc Basculer l’inclut sans interrompre de réponse : {{names}}",
+      "bulk_switch_busy_now_idle_other": "{{count}} d’entre elles sont désormais inactives, donc Basculer les inclut sans interrompre de réponse : {{names}}",
       "switch_session_many": "Basculer {{count}} sessions",
       "switch_session_one": "Basculer {{count}} session",
       "switch_session_other": "Basculer {{count}} sessions",
@@ -18118,6 +18173,7 @@
       "review_approved": "Partagé",
       "review_skipped": "Non partagé",
       "review_skip": "Ne pas partager",
+      "review_sharing": "Partage en cours…",
       "diff_added": "Ajouté : {{tokens}}",
       "diff_removed": "Retiré : {{tokens}}",
       "diff_env_added": "Env ajoutée : {{names}}",
@@ -18390,6 +18446,7 @@
         "always_allow_undo": "Désactive pour confirmer à nouveau chaque appel.",
         "always_allow_hint": "Ne plus demander avant chaque appel de cet outil. Les règles de sécurité de {{productName}} s’appliquent toujours.",
         "always_allow_failed": "Impossible de modifier « Toujours autoriser ». Réessaie.",
+        "always_allow_on_count": "Toujours autorisés : {{on}} sur {{total}}",
         "always_allow_refused_asks_every_time": "Tes réglages demandent avant chaque appel des outils de ce serveur, ils ne peuvent donc pas être toujours autorisés.",
         "always_allow_refused_set_elsewhere": "« Toujours autoriser » est géré par un fichier de réglages local sur cet ordinateur et ne peut pas être modifié ici.",
         "always_allow_refused_crew_owned": "Les outils de {{productName}} demandent toujours.",
@@ -24123,6 +24180,7 @@
       "linked_to": "Lié à {{label}}",
       "linked_to_paused": "Lié à {{label}} · réponses en pause",
       "connect_channel": "Connecter à un canal",
+      "open_messaging_channels": "Ouvre Plateformes de chat",
       "dashboard_kept_last_good": "Une version plus récente de ce tableau de bord ne s'est pas chargée ; voici la dernière qui s'est chargée.",
       "dashboard_none_yet": "Aucun tableau de bord n'est encore configuré pour ce Bot.",
       "dashboard_empty_region": "Tableau de bord de {{name}} : aucune page choisie pour l'instant",
