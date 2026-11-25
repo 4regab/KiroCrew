@@ -92,7 +92,8 @@ def _match_path(item: str, pattern: str, *, any_case: bool = False) -> bool:
     prefer narrower patterns.
 
     Only the ITEM is normalized (``_norm_item``: expand → absolutize → lexically
-    collapse ``.``/``..``); the PATTERN is only ``~``/``$VAR``-expanded and is
+    collapse ``.``/``..``); the PATTERN is only ``~``/``$VAR``-expanded, has a
+    Windows loopback admin-share prefix folded to its drive, and is otherwise
     matched verbatim.  Normalizing the item — never the pattern — does two jobs
     and avoids one trap:
 
@@ -141,7 +142,23 @@ def _match_path(item: str, pattern: str, *, any_case: bool = False) -> bool:
     if isinstance(item, GuestPath):
         norm = guest_norm(item)
         return norm is not None and fnmatch.fnmatchcase(norm, _expand(pattern))
-    return _match_local_path(_norm_item(item), _expand(pattern), any_case=any_case)
+    from kiro_crew.security.paths_resolver import (
+        _fold_loopback_admin_share,
+        _fold_windows_namespace,
+    )
+
+    # The item's loopback-share prefix is folded (``_norm_item``), so the pattern's is
+    # too: a rule written ``\\localhost\C$\x\**`` keeps meeting what it names, deny
+    # and allow alike. Only the prefix changes, so the authored globs stay verbatim.
+    pattern = _expand(pattern)
+    if _match_local_path(_norm_item(item), _fold_loopback_admin_share(pattern), any_case=any_case):
+        return True
+    if _fold_loopback_admin_share(_expand(item)) == _expand(item):
+        return False
+    # A pattern the fold cannot rewrite (``\\*\C$\x\**``) meets the item without the
+    # loopback fold, as it did before that fold existed: the fold only adds matches.
+    as_written = _norm_item_folded(item, _fold_windows_namespace)
+    return _match_local_path(as_written, pattern, any_case=any_case)
 
 
 def _match_denied_path(item: str, pattern: str) -> bool:
@@ -152,16 +169,8 @@ def _match_denied_path(item: str, pattern: str) -> bool:
     ``private`` and ``Private`` are two directories. Folding case in an allow would
     admit the one the operator did not name; folding it in a deny refuses at most
     a directory the operator did not name, which fails closed.
-
-    A deny also meets the item before ``_fold_windows_alias``: a deny written in a
-    spelling the fold rewrites (``\\\\localhost\\C$\\x``) keeps refusing that
-    spelling, so the fold only ever adds paths a deny refuses.
     """
-    if _match_path(item, pattern, any_case=True):
-        return True
-    if isinstance(item, GuestPath):
-        return False
-    return _match_local_path(os.path.abspath(_expand(item)), _expand(pattern), any_case=True)
+    return _match_path(item, pattern, any_case=True)
 
 
 def _match_host(item: str, pattern: str) -> bool:
@@ -356,7 +365,12 @@ def _norm_item(path_str: str) -> str:
     """
     from kiro_crew.security.paths_resolver import _fold_windows_alias
 
-    p = os.path.abspath(_fold_windows_alias(_expand(path_str)))
+    return _norm_item_folded(path_str, _fold_windows_alias)
+
+
+def _norm_item_folded(path_str: str, fold: Callable[[str], str]) -> str:
+    """``_norm_item`` with *fold* as its Windows alias step."""
+    p = os.path.abspath(fold(_expand(path_str)))
     if p.startswith("//") and not p.startswith("///"):
         p = p[1:]
     return p

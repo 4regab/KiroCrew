@@ -109,8 +109,46 @@ class TestOnWindows:
             _policy_body(filesystem={"read": {"mode": "deny", "deny": [share + r"\**"]}})
         )
         assert not resolve(ceiling, None, "filesystem.read", share + r"\report.txt").permitted
-        assert not matching._match_path(share + r"\report.txt", share + r"\**")
+        assert matching._match_path(share + r"\report.txt", share + r"\**")
         assert resolve(ceiling, None, "filesystem.read", r"C:\data\public\k").permitted
+
+    def test_a_deny_written_as_a_loopback_share_refuses_the_drive_spelling(self, monkeypatch):
+        # A ``/``-written rule meets a ``\`` item through the Windows separator glob.
+        monkeypatch.setattr(governance, "_WINDOWS_PATHS", True)
+        ceiling = parse_policy(
+            _policy_body(
+                filesystem={"read": {"mode": "deny", "deny": [r"//localhost/c$/data/private/**"]}}
+            )
+        )
+        assert not resolve(ceiling, None, "filesystem.read", r"C:\data\private\k").permitted
+        assert resolve(ceiling, None, "filesystem.read", r"C:\data\public\k").permitted
+
+    @pytest.mark.parametrize("item", [r"\\localhost\C$\ws\a.txt", r"C:\ws\a.txt"])
+    def test_an_allow_written_as_a_loopback_share_still_admits(self, item):
+        ceiling = parse_policy(
+            _policy_body(
+                filesystem={"write": {"mode": "allow", "allow": [r"\\localhost\C$\ws\**"]}}
+            )
+        )
+        assert resolve(ceiling, None, "filesystem.write", item).permitted
+        assert not resolve(ceiling, None, "filesystem.write", r"C:\elsewhere\a.txt").permitted
+
+    @pytest.mark.parametrize("deny", [r"\\*\C$\private\**", r"\\localhost\[CD]$\private\**"])
+    def test_a_share_deny_the_fold_cannot_rewrite_still_refuses(self, deny):
+        ceiling = parse_policy(_policy_body(filesystem={"read": {"mode": "deny", "deny": [deny]}}))
+        item = r"\\localhost\C$\private\report.txt"
+        assert not resolve(ceiling, None, "filesystem.read", item).permitted
+        assert resolve(ceiling, None, "filesystem.read", r"\\localhost\C$\public\k").permitted
+
+    def test_a_share_allow_the_fold_cannot_rewrite_still_admits(self):
+        allow = r"\\*\C$\ws\**"
+        assert matching._match_path(r"\\localhost\C$\ws\a.txt", allow)
+        assert not matching._match_path(r"\\localhost\C$\ws\..\secret.txt", allow)
+
+    def test_a_traversal_behind_a_loopback_share_cannot_satisfy_its_allow(self):
+        allow = r"\\localhost\C$\ws\**"
+        assert not matching._match_path(r"\\localhost\C$\ws\..\secret.txt", allow)
+        assert not matching._match_path(r"\\fileserver\C$\ws\a.txt", allow)
 
 
 def test_off_windows_a_prefix_is_part_of_the_file_name(monkeypatch):

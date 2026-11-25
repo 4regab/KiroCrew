@@ -138,9 +138,16 @@ can reorder strictness or redefine matching):
   folds a namespace or default-stream alias of a local path to its plain
   spelling with the keystone's own `_fold_windows_alias`: `\\?\C:\x`,
   `\\.\C:\x`, `//?/C:/x`, `\??\C:\x` and `C:\x::$DATA` all open `C:\x`, so none
-  of them dodges a deny naming `C:\x`. UNC, volume GUID and named-stream
-  spellings stay as written, as they do in the keystone; off Windows nothing is
-  folded.
+  of them dodges a deny naming `C:\x`. A loopback admin share
+  (`\\localhost\C$\x`) folds to `C:\x` too, and because an operator may write a
+  rule in that spelling, the PATTERN's loopback-share prefix is folded the same
+  way (`_fold_loopback_admin_share`, prefix only, globs untouched): a deny or an
+  allow written `\\localhost\C$\x\**` keeps meeting what it names. A pattern
+  the fold cannot rewrite (`\\*\C$\x\**`, `\\localhost\[CD]$\x\**`) is also
+  matched, as written, against the item folded without the loopback step
+  (`_fold_windows_namespace`), so the fold only adds matches. Other UNC,
+  volume GUID and named-stream spellings stay as written, as they do in the
+  keystone; off Windows nothing is folded.
 
   **Path matcher — remote-workspace targets.** A remote workspace's file tools
   act on a Linux guest, so their targets are matched as the guest's POSIX paths

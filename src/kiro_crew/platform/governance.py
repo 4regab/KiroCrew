@@ -1475,6 +1475,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _match_origin,
         _match_path,
         _norm_item,
+        _norm_item_folded,
         _origin_form,
         _UnmatchableCommand,
         _upper_drive,
