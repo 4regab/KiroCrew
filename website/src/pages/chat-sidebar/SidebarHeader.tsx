@@ -23,7 +23,7 @@ import { SidebarIdentityRow } from './SidebarIdentityRow'
 
 /** The header row. */
 export function renderSidebarHeader(shell: SidebarScope): React.ReactNode {
-  const { boardLaneActive, cleanupOpen, collapseAllFolders, collapsible, connected, createChatInFolder, createChatMutation, createEphemeralChatMutation,
+  const { boardColumnsLoading, boardLaneActive, cleanupOpen, columnsReady, collapseAllFolders, collapsible, connected, createChatInFolder, createChatMutation, createEphemeralChatMutation,
     createRemoteChatMutation, creatingSlot, folderCleanupOpen, folderModeCompare, folderRowsDrawn, folders, isMobile,
     missingLanes, navigate, newChatMenuOpen, onMenuCloseAutoFocus, onOpenSlotInNewTab,
     paintedSidebarWidth, rawColumns, refuseCreateOffline, remoteCrewChatPreview, remoteCrewError, remoteCrewErrorId,
@@ -37,6 +37,11 @@ export function renderSidebarHeader(shell: SidebarScope): React.ReactNode {
   // button to icon-only; below ~200px also drop the "Sessions" label.
   const compactHeader = paintedSidebarWidth < 256
   const tinyHeader = paintedSidebarWidth < 200
+  // A board user is still in board view while the columns load, so the toggle
+  // offers the way out. Turning the board ON reads the columns to decide whether
+  // to seed lanes, so it waits until they have loaded.
+  const boardOn = tagColumnsEnabled && (rawColumns.length > 0 || boardColumnsLoading)
+  const boardToggleBlocked = seedStateLanesMutation.isPending || (!boardOn && !columnsReady)
 
   return (
     <>
@@ -54,10 +59,9 @@ export function renderSidebarHeader(shell: SidebarScope): React.ReactNode {
                 <Monitor size={14} className="text-muted" />
                 {i18nT('commandCenter.all_title')}
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={seedStateLanesMutation.isPending} onClick={() => {
-                if (seedStateLanesMutation.isPending) return
-                const isActive = tagColumnsEnabled && rawColumns.length > 0
-                const next = !isActive
+              <DropdownMenuItem disabled={boardToggleBlocked} onClick={() => {
+                if (boardToggleBlocked) return
+                const next = !boardOn
                 const cfg = loadChatConfig()
                 // The toggle persists `tagColumnsEnabled` through saveChatConfig,
                 // which returns false and rolls back when the write (or its dirty
@@ -86,8 +90,8 @@ export function renderSidebarHeader(shell: SidebarScope): React.ReactNode {
                   seedStateLanesMutation.mutate()
                 }
               }} {...uiLocation('sessions.list-menu.view')}>
-                <Columns3 size={14} className={tagColumnsEnabled && rawColumns.length > 0 ? 'text-accent' : 'text-muted'} />
-                {tagColumnsEnabled && rawColumns.length > 0 ? i18nT('pages.chatSidebar.switch_to_list_view') : i18nT('pages.chatSidebar.switch_to_board_view')}
+                <Columns3 size={14} className={boardOn ? 'text-accent' : 'text-muted'} />
+                {boardOn ? i18nT('pages.chatSidebar.switch_to_list_view') : i18nT('pages.chatSidebar.switch_to_board_view')}
               </DropdownMenuItem>
               {tagColumnsEnabled && rawColumns.length > 0 && missingLanes.length > 0 && (
                 <DropdownMenuItem
