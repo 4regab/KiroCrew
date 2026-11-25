@@ -5,7 +5,7 @@ import { Lock, Sparkles } from 'lucide-react'
 import { usePickerSource } from './dashboardPickerSource'
 import ErrorNotice from './ErrorNotice'
 import { pickerQueryKey } from '../chat-core/composer/pickerSource'
-import { unwrapSkills } from '../lib/skillsPayload'
+import { isListOnlySkill, unwrapSkills } from '../lib/skillsPayload'
 import type { SkillsPayload } from '../lib/skillsPayload'
 import { useListKeyboardNav } from '../hooks/useListKeyboardNav'
 import { useAnchorTracking } from '../hooks/useAnchorTracking'
@@ -224,6 +224,7 @@ export default function SkillPickerMenu({
     const exact: SkillItem[] = []
     const fuzzy: { item: SkillItem; leaf: string; score: number }[] = []
     for (const s of items) {
+      if (isListOnlySkill(s)) continue
       const rawLeaf = leafOf(s.key || s.name)
       const leaf = rawLeaf.toLowerCase()
       if (seen.has(leaf)) continue
