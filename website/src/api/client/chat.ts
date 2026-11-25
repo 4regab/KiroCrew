@@ -15,6 +15,7 @@ import { lookPreviewSlotDetail, lookPreviewSlots } from '../../utils/lookPreview
 import { resolveDefaultMemoryMode } from '../queryClient'
 import { TAB_ID } from '../tabId'
 import { takeSessionFolderNotice } from '../../lib/sessionFolderNotice'
+import { takeDefaultModeRefused } from '../../lib/defaultModeNotice'
 import { clearCrewSteerNotice, noteCrewSteerReceipt } from '../../lib/crewSteerNotice'
 import { activeLocale } from '../../i18n/format'
 import { ApiError } from '../apiError'
@@ -385,7 +386,7 @@ export function createChatEndpoints({ post, put, del, patch, j, jAccepted, jfetc
         // approval mode (`dashboard.default_approval_mode`). Never sent for an
         // app page's or a hand-off's create, which keep how they start.
         ...(start_mode_default ? { start_mode_default: true } : {}),
-      }).then(j).then(takeSessionFolderNotice) as Promise<ChatSlot>
+      }).then(j).then(takeDefaultModeRefused).then(takeSessionFolderNotice) as Promise<ChatSlot>
     },
     /** Create, or reopen, the person's chat a built-in app's page launches inside
      *  its manifest's `permissions.chatLaunch` (the gateway refuses anything else).
