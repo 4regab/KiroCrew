@@ -204,6 +204,17 @@ from kiro_crew.apps.manifest_sections import (  # noqa: F401
     lifecycle_timeout_seconds,
     logger,
 )
+from kiro_crew.apps.manifest_widgets import (  # noqa: F401
+    _WIDGET_KEYS,
+    MAX_WIDGET_DESCRIPTION,
+    MAX_WIDGET_ENTRY,
+    MAX_WIDGET_TITLE,
+    MAX_WIDGETS_PER_APP,
+    WIDGET_ID_RE,
+    WidgetConfig,
+    WidgetsConfig,
+    _utf16_len,
+)
 from kiro_crew.apps.store_links import sanitize_links
 from kiro_crew.atomic_write import read_bytes_with_retry
 from kiro_crew.constants import WINDOWS_DEVICE_STEMS  # noqa: F401
@@ -703,6 +714,11 @@ class AppManifest:
                 report_path(
                     refusal, f"contributes.selectionActions entry {refusal}: {selection.entry!r}"
                 )
+        # A widget entry is imported by the same frame bootstrap.
+        for widget in self.contributes.widgets.widgets:
+            refusal = path_refusal(widget.entry)
+            if refusal:
+                report_path(refusal, f"contributes.widgets entry {refusal}: {widget.entry!r}")
 
         # UI page validation
         for page in self.ui.pages:
@@ -966,6 +982,8 @@ class AppManifest:
             or self.contributes.linkOpen
             or self.contributes.composerActions
             or self.contributes.selectionActions
+            # A widget `entry` is an ESM module the frame imports, like a composer action's.
+            or self.contributes.widgets.widgets
         ):
             # A contributed command's `prompt` is sent to an agent with tools as if
             # the reader typed it, and `autoSend` fires it without a further

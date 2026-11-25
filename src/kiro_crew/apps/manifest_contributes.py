@@ -21,6 +21,7 @@ from typing import Any
 from kiro_crew.apps.app_hosts import HOST_RE as _HOST_RE
 from kiro_crew.apps.app_hosts import host_list_errors, normalize_host
 from kiro_crew.apps.manifest_memory_providers import MemoryProvidersConfig
+from kiro_crew.apps.manifest_widgets import WidgetsConfig
 
 #: Hard cap on session controls per app. A control here renders inside the
 #: composer, on the path of every turn — an app must not be able to crowd the
@@ -1585,6 +1586,8 @@ class Contributes:
     botChatServers: list[dict[str, str]] = field(default_factory=list)  # noqa: N815
     #: ``botChatServers`` present but not a list of ``{agent, server}`` strings. Not serialized.
     bad_bot_chat_servers: bool = False
+    #: Views an agent draws inline in any chat (``manifest_widgets``).
+    widgets: WidgetsConfig = field(default_factory=WidgetsConfig)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {}
@@ -1624,6 +1627,9 @@ class Contributes:
             d["memoryProviders"] = self.memoryProviders.to_list()
         if self.botChatServers:
             d["botChatServers"] = [dict(s) for s in self.botChatServers]
+        if self.widgets.widgets:
+            # Serialized, so signed: an entry is an ESM module the frame imports.
+            d["widgets"] = self.widgets.to_list()
         return d
 
     @classmethod
@@ -1717,6 +1723,7 @@ class Contributes:
             bad_file_menu_items="fileMenuItems" in data and not isinstance(items_raw, list),
             dropped_file_menu_items=sum(1 for i in item_entries if not isinstance(i, dict)),
             memoryProviders=MemoryProvidersConfig.from_value(data.get("memoryProviders")),
+            widgets=WidgetsConfig.from_value(data.get("widgets"), present="widgets" in data),
         )
 
     def validate(self) -> list[str]:
@@ -1911,6 +1918,7 @@ class Contributes:
         for link_open in self.linkOpen:
             errors.extend(link_open.validate())
         errors.extend(self._validate_selection_actions())
+        errors.extend(self.widgets.validate())
         if self.bad_bot_chat_servers:
             errors.append(
                 "contributes.botChatServers must be an array of {agent, server} "

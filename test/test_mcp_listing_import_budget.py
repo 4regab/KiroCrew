@@ -114,11 +114,15 @@ FORBIDDEN_BEFORE_THE_LIST = (
 #: ``kiro_crew.enqueue_only_pool.EnqueueOnlyThreadPoolExecutor``, which the module imports
 #: at its top (it was imported inside ``configure_default_executor()`` alone); that
 #: stdlib-only module is the one file added, and nothing else loads.
+#: Raised by 1 for each server: the ``contributes.widgets`` block lives in its own
+#: stdlib-only ``kiro_crew.apps.manifest_widgets``, which ``manifest_contributes`` imports
+#: because the ``Contributes`` dataclass needs ``WidgetsConfig`` at import, as with
+#: ``manifest_memory_providers`` above; that one file is the whole rise.
 PACKAGE_MODULE_CEILING = {
-    "mcp-core": 502,
-    "mcp-cron": 369,
-    "mcp-guide": 363,
-    "mcp-mate": 365,
+    "mcp-core": 503,
+    "mcp-cron": 370,
+    "mcp-guide": 364,
+    "mcp-mate": 366,
 }
 
 #: The modules that read the two live values in the spawn tools' descriptions. They are
