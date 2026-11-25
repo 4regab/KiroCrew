@@ -40,8 +40,15 @@ def test_cli_local_withholds_only_the_secret_server(monkeypatch) -> None:
     # Exactly one refusing override, for the secret:// server; the plain one is
     # left to start directly (no override).
     assert len(out) == 1
-    assert out[0]["name"] == "gh"
-    flags = expand_stub_flags(out[0]["args"])
+    element = out[0]
+    assert element["name"] == "gh"
+    # ACP-shaped: env is an array of {name,value} pairs (never a mapping) and the
+    # internal wrapper marker is dropped, so kiro-cli/KAS accept session/new
+    # instead of rejecting the raw overlay dict with -32602.
+    assert isinstance(element.get("env"), list)
+    assert all(isinstance(e, dict) and "name" in e and "value" in e for e in element["env"])
+    assert "_kirocrew_mcp_gateway_wrapped" not in element
+    flags = expand_stub_flags(element["args"])
     assert "--refuse" in flags
     assert "gh" in flags and "plain" not in flags
 

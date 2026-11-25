@@ -81,6 +81,7 @@ from kiro_crew.mcp_gateway.mate_overlays import MATE_WORKER_AGENT
 from kiro_crew.mcp_gateway.rewriter_spec import _refusing_stub_entry
 from kiro_crew.mcp_gateway.secret_uri import secret_reference_keys
 from kiro_crew.mcp_gateway.session_servers import (
+    _acp_server_entry,
     attach_stub_session_token,
     injection_server_names,
     pooled_session_servers,
@@ -387,9 +388,12 @@ def _cli_local_secret_withholds(self: AcpClient) -> list[dict[str, Any]]:
             agent_name=self._agent or "",
             work_dir=Path(self._work_dir or "."),
         )
-        # The session/new array is a LIST; each element carries its ``name`` so
-        # it overrides the same-named ``--agent`` spec server.
-        out.append({"name": str(name), **refusing})
+        # Shape it into an ACP array element (env as a list of {name,value}, the
+        # internal wrapper marker dropped); a raw overlay dict would make
+        # kiro-cli/KAS reject session/new with -32602.
+        element = _acp_server_entry(str(name), refusing)
+        if element is not None:
+            out.append(element)
     return out
 
 
