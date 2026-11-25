@@ -27,6 +27,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -516,24 +517,32 @@ async def test_a_non_owner_binding_leaves_the_stub_with_no_declared_env(
 
     ``kirocrew chat`` / ``run`` / ``eval`` / knowledge consolidate route through
     the daemon like the dashboard, but only the owning gateway may bind a stub's
-    agent. With no owner, a private stub that named an agent resolves to an empty
-    declaring agent -- so its backend reads no declared-env sidecar -- and one
-    WARNING names the server. Fail-closed by design.
+    agent, and only for a connection that owner descends. On an owned daemon (the
+    dashboard owns it), a non-owner session's stub -- the owner pid is not in its
+    attested host chain -- can never receive a binding, so it resolves to an empty
+    declaring agent AT ONCE, without waiting out the keepalive, and one WARNING
+    names the server. Fail-closed by design.
     """
-    monkeypatch.setattr(gw, "_OWNER_PID", 0)
+    # The dashboard owns the daemon; this stub is not descended from it.
+    monkeypatch.setattr(gw, "_OWNER_PID", os.getpid())
     conn = connection_mod._StubConn(
         stub_uuid="s-cli-local",
-        ancestor_pids=[os.getpid()],
+        ancestor_pids=[RUNTIME_PID],
         pool_label="",
         caller=None,
         stub_session_token="tok-cli-local",
     )
+    conn.attested_pids = (RUNTIME_PID,)  # the owner pid (os.getpid()) is NOT here
     assert not conn.bound_agents
+    t0 = time.monotonic()
     with caplog.at_level("WARNING", logger=connection_mod.logger.name):
         resolved = await connection_mod._await_declaring_agent(
             OWN_AGENT, "", conn, "s-cli-local", None, MagicMock(), server_name=SERVER
         )
+    elapsed = time.monotonic() - t0
     assert resolved == ""
+    # It returned without waiting out the keepalive (the blocker this fixes).
+    assert elapsed < connection_mod.QUEUED_KEEPALIVE_SECS / 2
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert len(warnings) == 1
     assert repr(SERVER) in warnings[0]
@@ -585,6 +594,11 @@ async def test_a_private_backend_waits_for_a_late_binding_then_gets_its_env(
     """
     pairs = _write_sidecar(OWN_AGENT)
     _stubs_are_not_the_owner(monkeypatch)
+    # Owner-descended: the owning gateway's pid is in the stub's attested host
+    # chain ([RUNTIME_PID] here), so a late binding can still arrive and the
+    # private backend waits for it (the stub's own Register still does not vouch
+    # as the owner -- the socket peer is the test process, not RUNTIME_PID).
+    monkeypatch.setattr(gw, "_OWNER_PID", RUNTIME_PID)
     held: dict[str, Any] = {}
 
     async def _do_register() -> None:

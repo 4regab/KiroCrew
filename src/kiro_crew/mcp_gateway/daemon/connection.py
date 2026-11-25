@@ -179,7 +179,8 @@ async def _await_declaring_agent(
     (``launch._await_owner_port``), then re-resolve. The wait is bounded by one
     keepalive interval (and the acquire's own deadline when shorter) so it never
     reaches the stub's spawn-queue silence window; it is skipped on an unowned
-    daemon, which can receive no binding. Returns ``""`` when none binds in time
+    daemon or a connection the owner does not descend, which can receive no
+    binding. Returns ``""`` when none binds in time
     -- the same fail-closed value, which the next forward replaces once the
     binding does arrive.
     """
@@ -190,9 +191,14 @@ async def _await_declaring_agent(
     # Only an as-yet-unbound token is still waiting for its binding to arrive.
     if conn.bound_agents:
         return ""
-    # No owner gateway can send a binding to an unowned daemon
-    # (``_owner_sender_refusal`` refuses every one), so there is nothing to wait for.
-    if facade._OWNER_PID <= 0:
+    # A binding can arrive only from the gateway that owns this daemon, and only
+    # for a connection that owner descends -- its pid is then in the stub's
+    # kernel-attested host chain (``conn.attested_pids``). An unowned daemon can
+    # send none; a non-owner session (a local ``kirocrew chat`` / ``run`` /
+    # ``eval`` while the dashboard owns the daemon) is not owner-descended, so its
+    # binding was already refused and will never arrive. Either way, fail closed
+    # at once rather than waiting out the keepalive before every private backend.
+    if facade._OWNER_PID <= 0 or facade._OWNER_PID not in conn.attested_pids:
         _warn_no_declared_env(server_name)
         return ""
     # Stay silent for at most one keepalive interval, well under the stub's own
