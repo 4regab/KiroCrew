@@ -160,17 +160,20 @@ from kiro_crew.mcp_gateway.daemon.cli import (  # noqa: F401
 )
 from kiro_crew.mcp_gateway.daemon.connection import (  # noqa: F401
     REGISTERED_CAPABILITIES,
+    _declaring_agent,
     _handle_connection,
     _teardown_connection,
 )
 from kiro_crew.mcp_gateway.daemon.control import (  # noqa: F401
     _RECYCLE_SERVER_NAME_MAX,
     _apply_abort,
+    _apply_agent_binding,
     _apply_claim,
     _apply_owner_port,
     _apply_recycle_server,
     _apply_set_spawn_capacity,
     _apply_stand_down,
+    _owner_sender_refusal,
     _pong_payload,
     _serve_control_frame,
     _session_mounts_reply,
@@ -198,6 +201,7 @@ from kiro_crew.mcp_gateway.daemon.diagnostics import (  # noqa: F401
     _zombie_diagnostic_path,
 )
 from kiro_crew.mcp_gateway.daemon.identity import (  # noqa: F401
+    _AGENT_BINDINGS,
     _CONN_INDEX,
     _MAX_EVICTED_KEYS,
     _MAX_MOUNT_SESSIONS,
@@ -210,6 +214,7 @@ from kiro_crew.mcp_gateway.daemon.identity import (  # noqa: F401
     _SESSION_MOUNTS_OVERFLOWED,
     _TOKEN_BINDINGS,
     _apply_recaller,
+    _bind_agents,
     _bind_token,
     _caller_from_register,
     _conn_index_add,
@@ -225,6 +230,7 @@ from kiro_crew.mcp_gateway.daemon.identity import (  # noqa: F401
     _session_mounts_complete,
     _store_mount_entry,
     _StubConn,
+    _token_agents,
     _token_caller,
     _token_is_unbound,
 )
@@ -1165,7 +1171,8 @@ async def _acquire_backend(
     connection (no reuse, no pool capacity budget, released when the
     connection ends); ``was_spawned`` is then always ``True``.
 
-    ``declaring_agent`` is the agent named on this connection's Register frame.
+    ``declaring_agent`` is the agent the daemon resolved for this connection
+    (``connection._declaring_agent``), not the bare name its Register carries.
     It is NOT part of pool identity -- it never reaches ``pool_key`` -- and is
     used for exactly one thing: selecting the declared-env sidecar of a
     connection-PRIVATE backend, the one read that returns rotating secrets

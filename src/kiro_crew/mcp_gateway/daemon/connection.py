@@ -111,6 +111,35 @@ REGISTERED_CAPABILITIES: tuple[str, ...] = (
 )
 
 
+async def _declaring_agent(frame_agent: str, conn: _StubConn, writer: asyncio.StreamWriter) -> str:
+    """The agent whose declaration *conn*'s backend is served with, or ``""``.
+
+    The Register's *frame_agent* is taken only when the gateway vouches for it:
+    the owning gateway bound it to this connection's session token
+    (``conn.bound_agents``, from an ``agent-binding`` frame), or the owning
+    gateway is the registrant itself (a resource-subscription holder, whose
+    Register is the one the daemon kept with the agent it resolved). Anything
+    else answers ``""``, the value a stub that names no agent always had: no
+    sidecar is read (``launch._read_declared_env_sidecar``) and an app render's
+    callbacks have no agent to be governed by (``app_call._agent_for_call``).
+    A stub with no session token never has a binding, so it gets ``""`` too.
+    """
+    if not frame_agent:
+        return ""
+    if frame_agent in conn.bound_agents:
+        return frame_agent
+    _peer_pid, refusal = await facade._owner_sender_refusal(writer)
+    if not refusal:
+        return frame_agent
+    logger.info(
+        "stub %s names agent %r, which the gateway did not bind to its session; "
+        "serving it with no declaring agent",
+        conn.stub_uuid,
+        frame_agent,
+    )
+    return ""
+
+
 async def _handle_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -179,21 +208,13 @@ async def _handle_connection(
         return
 
     stub_uuid = str(register.get("stub_uuid", ""))
-    # The agent this stub was wrapped for. NOT a pool dimension, so it is read
-    # off the frame here rather than off ``pool_key``, which does not carry it,
-    # and it never reaches pool identity -- it can neither split nor merge a
-    # partition. Two readers, both needing "whose declaration is this" rather
-    # than "which backend is this":
-    #
-    # * the declared-env sidecar THIS stub's own private backend must read
-    #   (``daemon.launch._read_declared_env_sidecar``), and
-    # * ``Backend.agent_for_stub``, which stamps it into an intercepted app
-    #   render's spool record so the callback is governed by the agent that
-    #   produced it (``app_call._agent_for_call``).
-    #
-    # It arrives over the uid socket from the stub the rewriter wrote, which is
-    # what makes it an answer the governed agent cannot author.
-    stub_agent = str(register.get("agent_name") or "")
+    # The agent this stub's Register NAMES. NOT a pool dimension, so it is read
+    # off the frame rather than off ``pool_key``, which does not carry it. It is
+    # only a request: any process at this uid can write a Register, so the
+    # declaring agent the backend is served with (``stub_agent`` below) is the
+    # one the gateway bound to this stub's session token, see
+    # :func:`_declaring_agent`.
+    frame_agent = str(register.get("agent_name") or "")
     # Where this stub's spawn waits in the gate's queue: the priority its
     # session start has (``kiro_crew.start_priority``). Not a pool dimension. A
     # frame without the field, as an older stub sends, is background.
@@ -294,6 +315,14 @@ async def _handle_connection(
     # and any probe this block created.
     _probe: Optional[_StubProbe] = None
     try:
+        # Whose declaration this connection's backend is served with. Two
+        # readers, both needing "whose declaration is this" rather than "which
+        # backend is this": the declared-env sidecar THIS stub's own private
+        # backend reads (``daemon.launch._read_declared_env_sidecar``), and
+        # ``Backend.agent_for_stub``, which stamps it into an intercepted app
+        # render's spool record so the callback is governed by the agent that
+        # produced it (``app_call._agent_for_call``).
+        stub_agent = await _declaring_agent(frame_agent, conn, writer)
         # Register this connection for the keepalive probe. Scoped to the handler's
         # own task so a dead transport can cancel exactly the coroutine that is
         # parked on the read, letting its finally run the detach.
@@ -389,7 +418,12 @@ async def _handle_connection(
     try:
         # Inside the ``try``: whatever tracking raises, the teardown below
         # still clears the claim index and the keepalive probe table.
-        session_describe.track_live_conn(conn, register, private_backend=bool(exclusive_stub_uuid))
+        session_describe.track_live_conn(
+            conn,
+            register,
+            private_backend=bool(exclusive_stub_uuid),
+            agent_name=stub_agent,
+        )
         while True:
             try:
                 line = pending.popleft() if pending else await reader.readuntil(b"\n")

@@ -41,7 +41,8 @@ import json
 import logging
 import os
 import secrets
-from typing import Optional
+from collections import OrderedDict
+from typing import Any, Optional
 
 from kiro_crew import platform_compat
 from kiro_crew.executors import subprocess_executor
@@ -272,7 +273,7 @@ def schedule_claim(
     except RuntimeError:
         return
     task = loop.create_task(
-        send_claim(socket_path, pid, session_key, channel_id, stub_session_token)
+        _claim_and_rebind(socket_path, pid, session_key, channel_id, stub_session_token)
     )
     # Retain a reference so the task is never GC'd mid-flight; discard on done.
     _PENDING.add(task)
@@ -280,3 +281,139 @@ def schedule_claim(
 
 
 _PENDING: set["asyncio.Task[bool]"] = set()
+
+
+async def _claim_and_rebind(
+    socket_path: str,
+    pid: int,
+    session_key: str,
+    channel_id: Optional[str],
+    stub_session_token: str,
+) -> bool:
+    """Send the claim, then the token's agent binding again when one was sent before.
+
+    gatewayd keeps both in memory only, so the claim a turn re-pushes
+    (``reclaim``) is also what restores the agents after a daemon respawn.
+    """
+    claimed = await send_claim(socket_path, pid, session_key, channel_id, stub_session_token)
+    agents = _BOUND_AGENTS.get(stub_session_token) if stub_session_token else None
+    if agents:
+        await send_agent_binding(socket_path, pid, stub_session_token, agents)
+    return claimed
+
+
+#: Cap on remembered token -> agents bindings, the same bound gatewayd keeps
+#: (``daemon.identity._MAX_TOKEN_BINDINGS``). The oldest is dropped past it; a
+#: dropped one is only not re-sent after a daemon respawn.
+_MAX_BOUND_AGENTS = 512
+
+#: ``stub_session_token`` -> the agents last bound to it (most recent last), so
+#: :func:`_claim_and_rebind` can send the binding again.
+_BOUND_AGENTS: "OrderedDict[str, frozenset[str]]" = OrderedDict()
+
+#: How deep :func:`stub_entry_agents` looks: the ``session/new`` params, a
+#: ``mcpServers`` array or map, an entry, and the ``_meta.kiro.customAgents``
+#: descriptors one KAS session carries its own servers in.
+_STUB_SCAN_DEPTH = 8
+
+
+def stub_entry_agents(params: Any) -> frozenset[str]:
+    """The ``--agent`` of every gateway stub entry anywhere in *params*.
+
+    A stub entry is one whose ``args`` carry both ``--server`` and ``--agent``
+    (``mcp_gateway.stub``'s own flags). Read from the ``session/new`` /
+    ``session/load`` params the gateway itself built, so the answer is the
+    agents whose stubs this session is about to start.
+    """
+    found: set[str] = set()
+
+    def _walk(node: Any, depth: int) -> None:
+        if depth > _STUB_SCAN_DEPTH:
+            return
+        if isinstance(node, dict):
+            args = node.get("args")
+            if isinstance(args, list) and "--server" in args:
+                for flag, value in zip(args, args[1:]):
+                    if flag == "--agent" and isinstance(value, str) and value:
+                        found.add(value)
+            for value in node.values():
+                _walk(value, depth + 1)
+        elif isinstance(node, list):
+            for value in node:
+                _walk(value, depth + 1)
+
+    _walk(params, 0)
+    return frozenset(found)
+
+
+def build_agent_binding_frame(pid: int, stub_session_token: str, agents: frozenset[str]) -> dict:
+    """The ``agent-binding`` frame: these *agents*' stubs run under this token in *pid*."""
+    return {
+        "type": "agent-binding",
+        "pid": pid,
+        "pid_start_id": platform_compat.get_process_start_id(pid),
+        "stub_session_token": stub_session_token,
+        "agents": sorted(agents),
+    }
+
+
+async def _send_agent_binding_inner(
+    socket_path: str, pid: int, stub_session_token: str, agents: frozenset[str]
+) -> bool:
+    frame = await asyncio.get_running_loop().run_in_executor(
+        subprocess_executor(), build_agent_binding_frame, pid, stub_session_token, agents
+    )
+    reader, writer = await transport.connect(socket_path)
+    try:
+        writer.write(json.dumps(frame).encode("utf-8") + b"\n")
+        await writer.drain()
+        raw = await reader.readline()
+        resp = json.loads(raw.decode("utf-8")) if raw else {}
+        if isinstance(resp, dict) and resp.get("type") == "agent-bound":
+            return True
+        logger.warning("agent binding not acknowledged: pid=%d resp=%r", pid, resp)
+        return False
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except OSError:
+            pass
+
+
+async def send_agent_binding(
+    socket_path: Optional[str],
+    pid: Optional[int],
+    stub_session_token: str,
+    agents: frozenset[str],
+) -> bool:
+    """Tell gatewayd which agents' stubs run under *stub_session_token*.
+
+    Sent before the ``session/new`` that starts those stubs, and awaited, so a
+    stub registering under the token is served its agent's declared env.
+    gatewayd takes it only from its owner gateway. Best-effort under the same
+    time budget as a claim: a missing or wedged daemon returns False, and the
+    stubs are then served with no declaring agent until the next claim of the
+    session sends it again.
+    """
+    if (
+        not socket_path
+        or not isinstance(pid, int)
+        or isinstance(pid, bool)
+        or pid <= 1
+        or not stub_session_token
+        or not agents
+    ):
+        return False
+    _BOUND_AGENTS.pop(stub_session_token, None)
+    _BOUND_AGENTS[stub_session_token] = agents
+    while len(_BOUND_AGENTS) > _MAX_BOUND_AGENTS:
+        _BOUND_AGENTS.popitem(last=False)
+    try:
+        return await asyncio.wait_for(
+            _send_agent_binding_inner(socket_path, pid, stub_session_token, agents),
+            timeout=_CLAIM_TIMEOUT_SECS,
+        )
+    except (OSError, asyncio.TimeoutError, ValueError) as exc:
+        logger.warning("agent binding failed: pid=%d: %s", pid, exc)
+        return False

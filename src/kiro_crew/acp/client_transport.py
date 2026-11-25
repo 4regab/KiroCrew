@@ -85,6 +85,7 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKENDS_HARNESS_OWNED_SLASH_COMMANDS,
 )
 from kiro_crew.json_line import parse_json_object_line
+from kiro_crew.mcp_gateway.claim import send_agent_binding, stub_entry_agents
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 
 if TYPE_CHECKING:
@@ -226,6 +227,27 @@ def _next_req_id(self: AcpClient) -> int:
 # ── JSON-RPC Transport ──
 
 
+async def _bind_stub_agents(client: AcpClient, params: dict) -> None:
+    """Tell gatewayd which agents' stubs this ``session/new`` / ``session/load`` starts.
+
+    Awaited before the request is written, because the harness starts the stubs
+    while it serves that request and gatewayd serves each one with the declared
+    env of an agent bound to this client's stub session token only. The token
+    reaches every stub through the child's environment (``client_spawn_env``),
+    so every stub entry in *params* counts, including the ones nested in a
+    KAS session's custom agents. No-op without a token, a gateway socket, a
+    live process or a stub entry.
+    """
+    token = getattr(client, "_stub_session_token", "")
+    socket_path = getattr(client, "_mcp_gateway_socket", None)
+    process = getattr(client, "_process", None)
+    if not token or not socket_path or process is None:
+        return
+    agents = stub_entry_agents(params)
+    if agents:
+        await send_agent_binding(socket_path, process.pid, token, agents)
+
+
 async def _send_request(
     self: AcpClient,
     method: str,
@@ -248,6 +270,8 @@ async def _send_request(
     projection = getattr(self, "_native_skill_projection", None)
     if projection is not None:
         params = projection.request(method, params)
+    if method in (METHOD_SESSION_NEW, METHOD_SESSION_LOAD):
+        await _bind_stub_agents(self, params)
     req_id = self._next_req_id()
     if on_id is not None:
         on_id(req_id)
