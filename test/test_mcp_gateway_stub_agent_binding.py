@@ -652,3 +652,63 @@ async def test_replay_carries_the_original_process_generation(monkeypatch) -> No
     start_ids.clear()
     assert await claim_mod.replay_agent_bindings("/s") == 1
     assert start_ids == ["gen-1"], "replay must carry the cached generation, not re-read it"
+
+
+def _agent_binding_audits(sink: MagicMock) -> list[dict[str, Any]]:
+    """The kwargs of each ``mcp-gateway.agent_binding`` audit row, in order."""
+    return [
+        e.kwargs
+        for e in sink.log_api_access.call_args_list
+        if e.kwargs.get("operation") == "mcp-gateway.agent_binding"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_accepted_binding_writes_one_audit_row_without_the_token(monkeypatch) -> None:
+    sink = MagicMock()
+    monkeypatch.setattr(gw, "SecurityEventLog", lambda: sink)
+    monkeypatch.setattr(gw.socketsec, "get_peer_pid", lambda _w: os.getpid())
+    monkeypatch.setattr(gw, "_OWNER_PID", os.getpid())
+
+    reply = await gw._apply_agent_binding(_binding([OWN_AGENT]), MagicMock())
+    assert reply["type"] == "agent-bound"
+
+    rows = _agent_binding_audits(sink)
+    assert len(rows) == 1
+    assert rows[0]["outcome"] == "allowed"
+    assert OWN_AGENT in rows[0]["resources"]
+    assert TOKEN not in str(rows[0])
+
+
+@pytest.mark.asyncio
+async def test_a_refused_binding_writes_one_audit_row_without_the_token(monkeypatch) -> None:
+    sink = MagicMock()
+    monkeypatch.setattr(gw, "SecurityEventLog", lambda: sink)
+    monkeypatch.setattr(gw.socketsec, "get_peer_pid", lambda _w: os.getpid() + 100000)
+    monkeypatch.setattr(gw, "_OWNER_PID", os.getpid())
+    monkeypatch.setattr(control.platform_compat, "is_exec_supervisor_of", lambda *_a: False)
+
+    reply = await gw._apply_agent_binding(_binding([OWN_AGENT]), MagicMock())
+    assert reply["type"] == "agent-binding-rejected"
+
+    rows = _agent_binding_audits(sink)
+    assert len(rows) == 1
+    assert rows[0]["outcome"] == "denied"
+    assert TOKEN not in str(rows[0])
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_binding_writes_one_audit_row_without_the_token(monkeypatch) -> None:
+    sink = MagicMock()
+    monkeypatch.setattr(gw, "SecurityEventLog", lambda: sink)
+    monkeypatch.setattr(gw.socketsec, "get_peer_pid", lambda _w: os.getpid())
+
+    frame = _binding([OWN_AGENT])
+    frame["agents"] = "not-a-list"  # malformed
+    reply = await gw._apply_agent_binding(frame, MagicMock())
+    assert reply["type"] == "agent-binding-rejected"
+
+    rows = _agent_binding_audits(sink)
+    assert len(rows) == 1
+    assert rows[0]["outcome"] == "denied"
+    assert TOKEN not in str(rows[0])

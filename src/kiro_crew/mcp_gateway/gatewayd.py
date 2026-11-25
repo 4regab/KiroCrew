@@ -133,6 +133,7 @@ from kiro_crew.mcp_gateway.daemon.admission_protocol import (  # noqa: F401
 )
 from kiro_crew.mcp_gateway.daemon.audit import (  # noqa: F401
     _audit_abort_applied,
+    _audit_agent_binding,
     _audit_agent_socket_decision,
     _audit_caller_claimed,
     _audit_caller_rekey,

@@ -446,3 +446,28 @@ def _audit_agent_socket_decision(server_name: str, outcome: str, reason: str = "
         )
     except Exception:  # pragma: no cover — audit must never break a launch
         logger.debug("SEL audit for the agent-socket decision failed", exc_info=True)
+
+
+def _audit_agent_binding(
+    peer_pid: int | None, outcome: str, agents: object, reason: str = ""
+) -> None:
+    """Emit a SEL audit event for an ``agent-binding`` frame.
+
+    The binding decides whose declared env a stub's private backend is started
+    with, so an accepted or refused one is a permission decision and belongs in
+    the HMAC-chained SEL beside owner-port and claim. The agent NAMES are
+    recorded; the bearer ``stub_session_token`` is NEVER logged. Wrapped
+    defensively -- an audit-log failure must never break connection handling.
+    """
+    try:
+        facade.SecurityEventLog().log_api_access(
+            caller=f"pid:{peer_pid}" if peer_pid is not None else "unknown",
+            operation="mcp-gateway.agent_binding",
+            outcome=outcome,
+            source="gateway",
+            # Agent names only; bounded, and the token is deliberately absent.
+            resources=f"agents={repr(agents)[:128]}",
+            error=reason,
+        )
+    except Exception:  # pragma: no cover — audit must never break the handler
+        logger.debug("SEL audit emit for agent-binding failed", exc_info=True)

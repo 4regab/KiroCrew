@@ -23,6 +23,7 @@ from kiro_crew.mcp_gateway.admission import Admission
 from kiro_crew.mcp_gateway.daemon import identity as _identity
 from kiro_crew.mcp_gateway.daemon import logger
 from kiro_crew.mcp_gateway.daemon.audit import (
+    _audit_agent_binding,
     _audit_caller_claimed,
     _audit_owner_port,
     _audit_stand_down,
@@ -566,11 +567,12 @@ async def _apply_agent_binding(
     ):
         reason = "malformed agent binding: needs a stub_session_token, a pid and an agent list"
         logger.warning("gatewayd: agent binding refused: %s", reason)
+        _audit_agent_binding(socketsec.get_peer_pid(writer), "denied", raw_agents, reason)
         return {"type": "agent-binding-rejected", "reason": reason}
     _peer_pid, reason = await _owner_sender_refusal(writer)
     if reason:
         logger.warning("gatewayd: agent binding refused: %s", reason)
-        facade._audit_peer_denied(f"agent binding refused: {reason}")
+        _audit_agent_binding(_peer_pid, "denied", sorted(set(raw_agents)), reason)
         return {"type": "agent-binding-rejected", "reason": reason}
     raw_start = frame.get("pid_start_id")
     _bind_agents(
@@ -578,6 +580,7 @@ async def _apply_agent_binding(
     )
     refreshed = _refresh_bound_agents(token, pid)
     facade._wake_agent_binding_waiters()
+    _audit_agent_binding(_peer_pid, "allowed", sorted(set(raw_agents)))
     return {"type": "agent-bound", "agents": len(set(raw_agents)), "connections": refreshed}
 
 
