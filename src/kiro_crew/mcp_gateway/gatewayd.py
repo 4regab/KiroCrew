@@ -160,6 +160,7 @@ from kiro_crew.mcp_gateway.daemon.cli import (  # noqa: F401
 )
 from kiro_crew.mcp_gateway.daemon.connection import (  # noqa: F401
     REGISTERED_CAPABILITIES,
+    _await_declaring_agent,
     _declaring_agent,
     _handle_connection,
     _teardown_connection,
@@ -505,6 +506,40 @@ def _owner_port_event() -> asyncio.Event:
 _OWN_START_TIME: str = ""
 
 
+#: ``(loop, event)`` woken whenever an agent binding is recorded, so a stub that
+#: registered a private backend before its binding arrived (a warm-pool race, or
+#: a reconnect to a restarted daemon) can re-check and pick its declaring agent
+#: up. The mirror of :data:`_OWNER_PORT_EVENT`; made for the running loop on
+#: first use.
+_AGENT_BINDING_EVENT: Optional[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = None
+
+
+def _wake_agent_binding_waiters() -> None:
+    """Pulse the agent-binding event, so every private-backend wait re-checks."""
+    global _AGENT_BINDING_EVENT
+    if _AGENT_BINDING_EVENT is None:
+        return
+    try:
+        current = asyncio.get_running_loop()
+    except RuntimeError:
+        current = None
+    if _AGENT_BINDING_EVENT[0] is current:
+        event = _AGENT_BINDING_EVENT[1]
+        event.set()
+        event.clear()
+    else:
+        _AGENT_BINDING_EVENT = None
+
+
+def _agent_binding_event() -> asyncio.Event:
+    """The event pulsed on each recorded agent binding. Made for the running loop."""
+    global _AGENT_BINDING_EVENT
+    loop = asyncio.get_running_loop()
+    if _AGENT_BINDING_EVENT is None or _AGENT_BINDING_EVENT[0] is not loop:
+        _AGENT_BINDING_EVENT = (loop, asyncio.Event())
+    return _AGENT_BINDING_EVENT[1]
+
+
 #: Number of stub writers currently inside their write+drain critical section
 #: (see :func:`_drain_inbox_to_stub`). A frame there has been dequeued but not
 #: yet flushed, so it is invisible to BOTH the inbox depth and the pending map.
@@ -641,9 +676,10 @@ async def run_gatewayd(
     path) propagate so the caller can surface a clear error.
     """
     # Published for the ping reply before anything can connect.
-    global _OWNER_PID, _OWNER_PORT_EVENT
+    global _OWNER_PID, _OWNER_PORT_EVENT, _AGENT_BINDING_EVENT
     _OWNER_PID = int(owner_pid) if owner_pid > 0 else 0
     _OWNER_PORT_EVENT = None
+    _AGENT_BINDING_EVENT = None
     # Before anything can connect too: a stub that registers first must find the
     # port a respawn after the bind was given, not wait for an announce.
     _set_owner_port(owner_port if _OWNER_PID > 0 and _is_port_number(owner_port) else 0)

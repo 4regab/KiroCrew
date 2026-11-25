@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from kiro_crew.code_fingerprint import code_fingerprint
 from kiro_crew.json_line import parse_json_object_line, recover_line_id
 from kiro_crew.mcp_gateway import hazards
-from kiro_crew.mcp_gateway.admission import Admission
+from kiro_crew.mcp_gateway.admission import QUEUED_KEEPALIVE_SECS, Admission
 from kiro_crew.mcp_gateway.backend import (
     INTERNAL_STUB_PREFIXES,
     Backend,
@@ -139,6 +139,50 @@ async def _declaring_agent(frame_agent: str, conn: _StubConn, writer: asyncio.St
         frame_agent,
     )
     return ""
+
+
+async def _await_declaring_agent(
+    frame_agent: str,
+    stub_agent: str,
+    conn: _StubConn,
+    exclusive_stub_uuid: str,
+    deadline: Optional[float],
+    writer: asyncio.StreamWriter,
+) -> str:
+    """Resolve the declaring agent for a private backend, waiting for a late binding.
+
+    A connection-private backend reads its agent's declared-env sidecar at spawn.
+    The owner gateway's binding can land just after the stub registered -- a
+    warm-pool race, or a reconnect to a restarted daemon before the gateway
+    replays its bindings. So for a private backend whose tokened Register named
+    an agent that is not bound yet, wait up to the acquire's own *deadline* for
+    the binding, the way a pooled control-plane backend waits for the owner port
+    (``launch._await_owner_port``), then re-resolve. ``None`` waits unbounded, as
+    that path does. Returns ``""`` when none binds in time -- the same
+    fail-closed value, which the next forward replaces once the binding arrives.
+    """
+    if stub_agent or not exclusive_stub_uuid or not frame_agent or not conn.stub_session_token:
+        return stub_agent
+    # A token already bound to an agent set that excludes the framed agent is the
+    # forged case (a Register naming an agent its session does not run): fail fast.
+    # Only an as-yet-unbound token is still waiting for its binding to arrive.
+    if conn.bound_agents:
+        return ""
+    bound = deadline if deadline is not None else time.monotonic() + _LEGACY_SPAWN_WAIT_SECS
+    event = facade._agent_binding_event()
+    while True:
+        resolved = await _declaring_agent(frame_agent, conn, writer)
+        if resolved:
+            return resolved
+        if conn.bound_agents:
+            # A binding arrived but does not name this agent: forged, stop waiting.
+            return ""
+        remaining = bound - time.monotonic()
+        if remaining <= 0:
+            return ""
+        tick = min(QUEUED_KEEPALIVE_SECS, remaining)
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(event.wait(), timeout=tick)
 
 
 async def _handle_connection(
@@ -530,6 +574,11 @@ async def _handle_connection(
                     async def _on_queued(position: Any) -> None:
                         await _write_json_line(writer, position.frame())
 
+                    # A private backend reads its agent's sidecar at spawn; wait
+                    # for a late binding before acquiring (see _await_declaring_agent).
+                    stub_agent = await _await_declaring_agent(
+                        frame_agent, stub_agent, conn, exclusive_stub_uuid, deadline, writer
+                    )
                     _acquire_t0 = time.monotonic()
                     try:
                         backend, _was_spawned = await _await_answering_pings(
@@ -587,6 +636,12 @@ async def _handle_connection(
             # dedups concurrent first-attaches so even if two stubs race
             # into this block at the same tick they share one backend.
             if backend is None:
+                _lazy_deadline = (
+                    None if admission is None else time.monotonic() + _LEGACY_SPAWN_WAIT_SECS
+                )
+                stub_agent = await _await_declaring_agent(
+                    frame_agent, stub_agent, conn, exclusive_stub_uuid, _lazy_deadline, writer
+                )
                 _lazy_t0 = time.monotonic()
                 try:
                     backend, _lazy_was_spawned = await _await_answering_pings(

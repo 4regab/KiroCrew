@@ -225,7 +225,9 @@ class GatewaySpec:
 
     socket_path: Path
     idle_timeout_secs: int = 300
-    max_backends: int = 64  # keep in sync w/ McpGatewayConfig.max_backends (cover N agents x S servers)
+    max_backends: int = (
+        64  # keep in sync w/ McpGatewayConfig.max_backends (cover N agents x S servers)
+    )
     mcp_target_env: dict[str, str] = None  # type: ignore[assignment]
     prewarm_count: int = 0  # keep in sync w/ McpGatewayConfig.prewarm_count; 0 = disabled
     # McpGatewayConfig.keep_alive_servers; empty = every backend idles out.
@@ -362,9 +364,28 @@ class GatewayManager:
         if port is None:
             return False
         reply = await self._control_roundtrip({"type": "owner-port", "port": port})
-        if reply is not None and reply.get("type") == "owner-port-set" and reply.get("port") == port:
+        if (
+            reply is not None
+            and reply.get("type") == "owner-port-set"
+            and reply.get("port") == port
+        ):
             self._owner_port_warned = False
-            logger.info("mcp-gateway: the daemon on %s has owner port %d", self._spec.socket_path, port)
+            logger.info(
+                "mcp-gateway: the daemon on %s has owner port %d", self._spec.socket_path, port
+            )
+            # The daemon that just took the port holds no agent bindings if it
+            # restarted (they live only in its memory). Re-send them now, so a
+            # stub that reconnects before its session's next turn still has its
+            # declaring agent and its private backend reads the right declared
+            # env. Best-effort, like the port announce itself.
+            from kiro_crew.mcp_gateway import claim as _claim
+
+            try:
+                await _claim.replay_agent_bindings(str(self._spec.socket_path))
+            except Exception:
+                logger.debug(
+                    "mcp-gateway: agent-binding replay after owner-port failed", exc_info=True
+                )
             return True
         # WARNING once per run of misses: the watchdog retries every liveness
         # interval, and a daemon that keeps refusing must not flood the log.
@@ -537,7 +558,8 @@ class GatewayManager:
         logger.error(
             "mcp-gateway: could not put a daemon covering the configured target "
             "stems on %s within %d election rounds; gateway unavailable",
-            self._spec.socket_path, _ELECTION_ROUNDS,
+            self._spec.socket_path,
+            _ELECTION_ROUNDS,
         )
         return False
 
@@ -555,17 +577,15 @@ class GatewayManager:
         # from now rather than immediately repeating that assessment.
         self._last_drift_check = time.monotonic()
         logger.info(
-            "mcp-gateway: a healthy daemon already owns %s — adopting "
-            "(no spawn)", self._spec.socket_path,
+            "mcp-gateway: a healthy daemon already owns %s — adopting " "(no spawn)",
+            self._spec.socket_path,
         )
         self._warn_if_unowned(pong)
         # Supervise even when adopting: the adopted daemon may be a
         # prior-gateway survivor with no other watchdog in this process.
         # The watchdog's adopted branch re-checks liveness by ping and
         # re-elects (spawns a replacement) if the adopted daemon dies.
-        self._watchdog = asyncio.create_task(
-            self._run_watchdog(), name="mcp-gateway-watchdog"
-        )
+        self._watchdog = asyncio.create_task(self._run_watchdog(), name="mcp-gateway-watchdog")
         return True
 
     def _owned_by_a_live_other(self, pong: dict) -> bool:
@@ -677,21 +697,22 @@ class GatewayManager:
                 self._spec.socket_path,
                 " and ".join(grounds),
                 self._stand_downs_issued,
-                "Another gateway instance is likely sharing this socket path "
-                "with a different stub set; these servers' stubs stay on "
-                "per-session exec."
-                if missing
-                else "Run `kirocrew restart` to replace it.",
+                (
+                    "Another gateway instance is likely sharing this socket path "
+                    "with a different stub set; these servers' stubs stay on "
+                    "per-session exec."
+                    if missing
+                    else "Run `kirocrew restart` to replace it."
+                ),
             )
             return _ADOPT
         logger.warning(
             "mcp-gateway: incumbent on %s %s — asking it to stand down so a daemon "
             "matching this gateway can bind",
-            self._spec.socket_path, " and ".join(grounds),
+            self._spec.socket_path,
+            " and ".join(grounds),
         )
-        outcome = await self._request_stand_down(
-            missing, stale_code=stale_code, orphaned=orphaned
-        )
+        outcome = await self._request_stand_down(missing, stale_code=stale_code, orphaned=orphaned)
         if outcome == _RELEASED:
             logger.info(
                 "mcp-gateway: stale incumbent stood down and released %s — "
@@ -707,7 +728,8 @@ class GatewayManager:
                 "accept would make every server unreachable instead of only the "
                 "drifted ones. Starting without a shared broker; sessions fall "
                 "back to per-session MCP and the next start finds it free.",
-                self._spec.socket_path, _SHUTDOWN_GRACE_SECS,
+                self._spec.socket_path,
+                _SHUTDOWN_GRACE_SECS,
             )
             return _ABORT
         if stale_code:
@@ -750,16 +772,16 @@ class GatewayManager:
         # watchdog, terminates the supervisor task outright.
         try:
             await self._clear_stale_socket()
-        # Owner-only containing directory: the socketsec model calls this the
-        # primary access boundary (a 0600 socket alone is insufficient on a
-        # shared host), and on Windows it is where the singleton lock file and
-        # the out-of-band reap list live since the pipe itself has no entry.
-        # Off the event loop: prepare_dir does blocking filesystem work
-        # (directory creation plus the owner-only DACL on Windows), and this runs
-        # inside the live gateway's loop (dashboard toggle -> _init_mcp_gateway
-        # -> start()), so calling it inline stalls chat turns and the liveness
-        # heartbeat. Mirrors the log-file hunk below, which offloads the same
-        # helper.
+            # Owner-only containing directory: the socketsec model calls this the
+            # primary access boundary (a 0600 socket alone is insufficient on a
+            # shared host), and on Windows it is where the singleton lock file and
+            # the out-of-band reap list live since the pipe itself has no entry.
+            # Off the event loop: prepare_dir does blocking filesystem work
+            # (directory creation plus the owner-only DACL on Windows), and this runs
+            # inside the live gateway's loop (dashboard toggle -> _init_mcp_gateway
+            # -> start()), so calling it inline stalls chat turns and the liveness
+            # heartbeat. Mirrors the log-file hunk below, which offloads the same
+            # helper.
             await asyncio.to_thread(transport.prepare_dir, self._spec.socket_path)
         except Exception:
             logger.exception(
@@ -907,14 +929,20 @@ class GatewayManager:
         # ``-P``: the daemon inherits this process's cwd -- the home directory
         # under the service unit -- and ``-m`` would put it ahead of the stdlib.
         argv = platform_compat.isolated_python_argv(
-            "-P", "-m", _GATEWAYD_MODULE,
-            "--socket", str(self._spec.socket_path),
+            "-P",
+            "-m",
+            _GATEWAYD_MODULE,
+            "--socket",
+            str(self._spec.socket_path),
             # This process is the daemon's one owner: it exits when we are
             # gone (start-time-checked, so a recycled PID does not count)
             # instead of lingering for the next gateway to adopt.
-            "--owner-pid", str(os.getpid()),
-            "--idle-timeout-secs", str(self._spec.idle_timeout_secs),
-            "--max-backends", str(self._spec.max_backends),
+            "--owner-pid",
+            str(os.getpid()),
+            "--idle-timeout-secs",
+            str(self._spec.idle_timeout_secs),
+            "--max-backends",
+            str(self._spec.max_backends),
         )
         # A spawn after the listener bound (a watchdog respawn, a broker restart)
         # starts with the port, so no stub waits for an announce. Absent before
@@ -934,15 +962,24 @@ class GatewayManager:
         # sampled HERE: the gateway process already runs the memory probe for
         # its own sub-agent cap, and the daemon must not import that machinery.
         argv += [
-            "--spawn-concurrency", str(self._spec.spawn_concurrency_initial),
-            "--spawn-concurrency-min", str(self._spec.spawn_concurrency_min),
-            "--spawn-concurrency-max", str(self._spec.spawn_concurrency_max),
-            "--spawn-queue-wait-secs", str(self._spec.spawn_queue_wait_secs),
-            "--initialize-timeout-secs", str(self._spec.initialize_timeout_secs),
-            "--host-budget-max-procs", str(self._spec.host_budget_max_procs),
-            "--host-budget-max-rss-mb", str(self._spec.host_budget_max_rss_mb),
-            "--host-budget-max-fds", str(self._spec.host_budget_max_fds),
-            "--host-available-mb", str(await asyncio.to_thread(self._host_available_mb)),
+            "--spawn-concurrency",
+            str(self._spec.spawn_concurrency_initial),
+            "--spawn-concurrency-min",
+            str(self._spec.spawn_concurrency_min),
+            "--spawn-concurrency-max",
+            str(self._spec.spawn_concurrency_max),
+            "--spawn-queue-wait-secs",
+            str(self._spec.spawn_queue_wait_secs),
+            "--initialize-timeout-secs",
+            str(self._spec.initialize_timeout_secs),
+            "--host-budget-max-procs",
+            str(self._spec.host_budget_max_procs),
+            "--host-budget-max-rss-mb",
+            str(self._spec.host_budget_max_rss_mb),
+            "--host-budget-max-fds",
+            str(self._spec.host_budget_max_fds),
+            "--host-available-mb",
+            str(await asyncio.to_thread(self._host_available_mb)),
         ]
         # Credential-rotation drain (seam-routed): the daemon is a separately
         # spawned process that never boots the platform, so the already-booted
@@ -1089,7 +1126,7 @@ class GatewayManager:
         for key in self._spec.mcp_target_env:
             for prefix in ("KIROCREW_MCP_TARGET_", "MC_MCP_TARGET_"):
                 if key.startswith(prefix):
-                    stem = key[len(prefix):].split("__", 1)[0]
+                    stem = key[len(prefix) :].split("__", 1)[0]
                     if stem:
                         stems.add(stem)
                     break
@@ -1142,7 +1179,8 @@ class GatewayManager:
                 "stub target(s) cannot be verified. If a stubbed server's tools "
                 "are missing from sessions, this daemon is the first thing to "
                 "replace.",
-                self._spec.socket_path, len(required),
+                self._spec.socket_path,
+                len(required),
             )
             return sorted(required)
         missing = sorted(required - {s for s in reported if isinstance(s, str)})
@@ -1154,7 +1192,8 @@ class GatewayManager:
             "never re-applies a new one, so these servers' stubs would degrade to "
             "per-session exec: their tools keep working, but pooling and the "
             "strict session key are LOST.",
-            self._spec.socket_path, ", ".join(missing),
+            self._spec.socket_path,
+            ", ".join(missing),
         )
         return missing
 
@@ -1236,9 +1275,7 @@ class GatewayManager:
                 timeout=_PING_TIMEOUT_SECS,
             )
         except (asyncio.TimeoutError, OSError) as exc:
-            logger.warning(
-                "mcp-gateway %s connect failed: %s", frame.get("type", "control"), exc
-            )
+            logger.warning("mcp-gateway %s connect failed: %s", frame.get("type", "control"), exc)
             return None
         try:
             writer.write(json.dumps(frame).encode("utf-8") + b"\n")
@@ -1246,9 +1283,15 @@ class GatewayManager:
             line = await asyncio.wait_for(reader.readuntil(b"\n"), timeout=_PING_TIMEOUT_SECS)
             msg = json.loads(line.decode("utf-8"))
             return msg if isinstance(msg, dict) else None
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError,
-                asyncio.LimitOverrunError, UnicodeDecodeError, json.JSONDecodeError,
-                OSError):
+        except (
+            asyncio.TimeoutError,
+            asyncio.IncompleteReadError,
+            ConnectionError,
+            asyncio.LimitOverrunError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            OSError,
+        ):
             return None
         finally:
             try:
@@ -1348,10 +1391,10 @@ class GatewayManager:
                 return None
             try:
                 line = await asyncio.wait_for(
-                    reader.readuntil(b"\n"), timeout=_left(),
+                    reader.readuntil(b"\n"),
+                    timeout=_left(),
                 )
-            except (asyncio.TimeoutError, asyncio.IncompleteReadError,
-                    asyncio.LimitOverrunError):
+            except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
                 return None
             try:
                 msg = json.loads(line.decode("utf-8"))
@@ -1401,8 +1444,14 @@ class GatewayManager:
             line = await asyncio.wait_for(reader.readuntil(b"\n"), timeout=_PING_TIMEOUT_SECS)
             msg = json.loads(line.decode("utf-8"))
             return msg if isinstance(msg, dict) and msg.get("type") == "stats" else {}
-        except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError,
-                asyncio.LimitOverrunError, UnicodeDecodeError, json.JSONDecodeError):
+        except (
+            asyncio.TimeoutError,
+            asyncio.IncompleteReadError,
+            ConnectionError,
+            asyncio.LimitOverrunError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ):
             return {}
         finally:
             try:
@@ -1581,9 +1630,7 @@ class GatewayManager:
                     await self._clear_stale_socket()
                     await self._spawn_once()
                 except Exception:
-                    logger.exception(
-                        "mcp-gateway: owner respawn failed — will retry"
-                    )
+                    logger.exception("mcp-gateway: owner respawn failed — will retry")
                     # Escalate backoff (mirroring the main proc-exit path) so a
                     # persistent spawn failure does not hot-loop at the floor.
                     await asyncio.sleep(backoff)
@@ -1615,7 +1662,8 @@ class GatewayManager:
                     # but SIGKILL always lands.
                     logger.warning(
                         "mcp-gateway: %s — killing zombie pid=%s",
-                        exit_reason, proc.pid,
+                        exit_reason,
+                        proc.pid,
                     )
                     await self._terminate_process(grace_secs=_SHUTDOWN_GRACE_SECS)
                     rc = proc.returncode
@@ -1631,9 +1679,7 @@ class GatewayManager:
                 for t in (wait_task, ping_task):
                     if not t.done():
                         t.cancel()
-                        with contextlib.suppress(
-                            asyncio.CancelledError, Exception
-                        ):
+                        with contextlib.suppress(asyncio.CancelledError, Exception):
                             await t
 
             # Clear the handle once we've consumed the exit so a failed
@@ -1644,7 +1690,9 @@ class GatewayManager:
             if self._stopping:
                 return
             logger.warning(
-                "mcp-gateway: %s — respawning in %.1fs", exit_reason, backoff,
+                "mcp-gateway: %s — respawning in %.1fs",
+                exit_reason,
+                backoff,
             )
             await asyncio.sleep(backoff)
             backoff = self._next_respawn_backoff(backoff)
@@ -1770,9 +1818,9 @@ class GatewayManager:
                 continue
             consecutive_failures += 1
             logger.warning(
-                "mcp-gateway: liveness ping failed (%d/%d consecutive): "
-                "no reply within %.0fs",
-                consecutive_failures, _LIVENESS_MAX_CONSECUTIVE_FAILURES,
+                "mcp-gateway: liveness ping failed (%d/%d consecutive): " "no reply within %.0fs",
+                consecutive_failures,
+                _LIVENESS_MAX_CONSECUTIVE_FAILURES,
                 _LIVENESS_ESCALATED_TIMEOUT_SECS,
             )
             if consecutive_failures >= _LIVENESS_MAX_CONSECUTIVE_FAILURES:

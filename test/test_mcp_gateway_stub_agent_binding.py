@@ -49,7 +49,7 @@ from kiro_crew.mcp_gateway.rewriter_overlay import (
     resolve_overlay_dir,
 )
 from kiro_crew.testing.ids import unallocatable_pids
-from kiro_crew.testing.wait import finished
+from kiro_crew.testing.wait import finished, until_parked
 
 pytestmark = [
     pytest.mark.xdist_group("mcp_gateway"),
@@ -173,6 +173,9 @@ async def daemon(monkeypatch) -> AsyncIterator[_Daemon]:
         return backend, True
 
     monkeypatch.setattr(gw, "_acquire_backend", _acquire)
+    # A private backend with no binding yet waits up to this for a late one
+    # (connection._await_declaring_agent); keep the fail-closed tests fast.
+    monkeypatch.setattr(connection_mod, "_LEGACY_SPAWN_WAIT_SECS", 0.5)
     pool = MagicMock()
     pool.get = AsyncMock(return_value=None)
     pool.release_exclusive = AsyncMock(return_value=None)
@@ -536,3 +539,78 @@ async def test_launch_mounted_stubs_are_bound_from_the_launch_roster(monkeypatch
     # The wire array is empty, as a launch harness sends it.
     await client_transport._bind_stub_agents(client, {"mcpServers": []})
     assert sent == [frozenset({OWN_AGENT})]
+
+
+@pytest.mark.asyncio
+async def test_a_private_backend_waits_for_a_late_binding_then_gets_its_env(
+    daemon, monkeypatch
+) -> None:
+    """A daemon-restart race: the stub registers before its binding is replayed.
+
+    The private backend must not spawn with an empty declared env; it waits for
+    the binding, then reads the agent's sidecar. The binding lands mid-wait the
+    way ``_apply_agent_binding`` lands it: record it, refresh the live
+    connection, wake the waiter.
+    """
+    pairs = _write_sidecar(OWN_AGENT)
+    _stubs_are_not_the_owner(monkeypatch)
+
+    async def _do_register() -> None:
+        _reader, writer = await daemon.register_and_ensure(_register(OWN_AGENT, pairs))
+        await _settle(writer)
+
+    task = asyncio.ensure_future(_do_register())
+    try:
+        # Wait until the register is parked in _await_declaring_agent, then land
+        # the binding, so the test proves the wait and not a lucky ordering.
+        await until_parked(gw._agent_binding_event(), count=1)
+        gw._bind_agents(TOKEN, frozenset({OWN_AGENT}), RUNTIME_PID, None)
+        gw._refresh_bound_agents(TOKEN, RUNTIME_PID)
+        gw._wake_agent_binding_waiters()
+        await finished(task, "the waiting register completes")
+    finally:
+        if not task.done():
+            task.cancel()
+
+    (seen,) = daemon.acquired
+    assert seen["declaring_agent"] == OWN_AGENT
+    assert (
+        gw._declared_env_for_private_backend(seen["pool_key"], declaring_agent=OWN_AGENT) == pairs
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_wait_times_out_fail_closed_when_no_binding_arrives(daemon, monkeypatch) -> None:
+    """No binding ever arrives: the backend starts fail-closed with no agent."""
+    pairs = _write_sidecar(OWN_AGENT)
+    _stubs_are_not_the_owner(monkeypatch)
+    _reader, writer = await daemon.register_and_ensure(_register(OWN_AGENT, pairs))
+    await _settle(writer)
+
+    (seen,) = daemon.acquired
+    assert seen["declaring_agent"] == ""
+    assert gw._declared_env_for_private_backend(seen["pool_key"], declaring_agent="") == {}
+
+
+@pytest.mark.asyncio
+async def test_replay_resends_every_live_binding(monkeypatch) -> None:
+    """The gateway re-sends every remembered binding to a restarted daemon."""
+    sent: list[tuple[int, str, frozenset[str]]] = []
+
+    async def _inner(socket_path, pid, token, agents):
+        sent.append((pid, token, agents))
+        return True
+
+    monkeypatch.setattr(claim_mod, "_send_agent_binding_inner", _inner)
+    claim_mod._BOUND_AGENTS.clear()
+    assert await claim_mod.send_agent_binding("/s", RUNTIME_PID, TOKEN, frozenset({OWN_AGENT}))
+    assert await claim_mod.send_agent_binding(
+        "/s", OTHER_RUNTIME_PID, "u" * 64, frozenset({OTHER_AGENT})
+    )
+    sent.clear()
+
+    count = await claim_mod.replay_agent_bindings("/s")
+    assert count == 2
+    assert (RUNTIME_PID, TOKEN, frozenset({OWN_AGENT})) in sent
+    assert (OTHER_RUNTIME_PID, "u" * 64, frozenset({OTHER_AGENT})) in sent
+    assert await claim_mod.replay_agent_bindings(None) == 0

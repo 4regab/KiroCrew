@@ -128,9 +128,7 @@ def build_claim_frame(
         "caller": {
             "session_key": session_key,
             "session_type": classify_session_type(session_key),
-            "principal_id": os.environ.get("USER")
-            or os.environ.get("USERNAME")
-            or "",
+            "principal_id": os.environ.get("USER") or os.environ.get("USERNAME") or "",
             "channel_id": channel_id or "",
         },
     }
@@ -169,7 +167,9 @@ async def _send_claim_inner(
         if kind == "claimed":
             logger.info(
                 "claim-push acknowledged: pid=%d session_key=%s updated=%s",
-                pid, session_key, resp.get("updated"),
+                pid,
+                session_key,
+                resp.get("updated"),
             )
             return True
         if kind == "claim-noop":
@@ -186,12 +186,15 @@ async def _send_claim_inner(
                 "claim-push pending: pid=%d session_key=%s matched no stub "
                 "connection yet; gatewayd keeps the session token binding for "
                 "the stubs that register next",
-                pid, session_key,
+                pid,
+                session_key,
             )
             return False
         logger.warning(
             "claim-push not acknowledged: pid=%d session_key=%s resp=%r",
-            pid, session_key, resp,
+            pid,
+            session_key,
+            resp,
         )
         return False
     finally:
@@ -232,15 +235,15 @@ async def send_claim(
     """
     try:
         return await asyncio.wait_for(
-            _send_claim_inner(
-                socket_path, pid, session_key, channel_id, stub_session_token
-            ),
+            _send_claim_inner(socket_path, pid, session_key, channel_id, stub_session_token),
             timeout=_CLAIM_TIMEOUT_SECS,
         )
     except (OSError, asyncio.TimeoutError, ValueError) as exc:
         logger.warning(
-            "claim-push failed (recaller fallback still applies): pid=%d "
-            "session_key=%s: %s", pid, session_key, exc,
+            "claim-push failed (recaller fallback still applies): pid=%d " "session_key=%s: %s",
+            pid,
+            session_key,
+            exc,
         )
         return False
 
@@ -296,8 +299,9 @@ async def _claim_and_rebind(
     (``reclaim``) is also what restores the agents after a daemon respawn.
     """
     claimed = await send_claim(socket_path, pid, session_key, channel_id, stub_session_token)
-    agents = _BOUND_AGENTS.get(stub_session_token) if stub_session_token else None
-    if agents:
+    entry = _BOUND_AGENTS.get(stub_session_token) if stub_session_token else None
+    if entry:
+        _bound_pid, agents = entry
         await send_agent_binding(socket_path, pid, stub_session_token, agents)
     return claimed
 
@@ -309,7 +313,10 @@ _MAX_BOUND_AGENTS = 512
 
 #: ``stub_session_token`` -> the agents last bound to it (most recent last), so
 #: :func:`_claim_and_rebind` can send the binding again.
-_BOUND_AGENTS: "OrderedDict[str, frozenset[str]]" = OrderedDict()
+#: ``stub_session_token`` -> (runtime pid, the agents last bound to it), most
+#: recent last, so :func:`_claim_and_rebind` and :func:`replay_agent_bindings`
+#: can send the binding again after a gatewayd restart.
+_BOUND_AGENTS: "OrderedDict[str, tuple[int, frozenset[str]]]" = OrderedDict()
 
 #: How deep :func:`stub_entry_agents` looks: the ``session/new`` params, a
 #: ``mcpServers`` array or map, an entry, and the ``_meta.kiro.customAgents``
@@ -417,7 +424,7 @@ async def send_agent_binding(
     ):
         return False
     _BOUND_AGENTS.pop(stub_session_token, None)
-    _BOUND_AGENTS[stub_session_token] = agents
+    _BOUND_AGENTS[stub_session_token] = (pid, agents)
     while len(_BOUND_AGENTS) > _MAX_BOUND_AGENTS:
         _BOUND_AGENTS.popitem(last=False)
     try:
@@ -428,3 +435,23 @@ async def send_agent_binding(
     except (OSError, asyncio.TimeoutError, ValueError) as exc:
         logger.warning("agent binding failed: pid=%d: %s", pid, exc)
         return False
+
+
+async def replay_agent_bindings(socket_path: Optional[str]) -> int:
+    """Re-send every remembered agent binding to the daemon on *socket_path*.
+
+    The gateway calls this the moment it (re)connects to a daemon it owns, right
+    after it announces the owner port: a restarted daemon holds no bindings
+    (they live only in its memory), and a stub that reconnects before the
+    session's next turn would otherwise have its private backend started with no
+    declared env. Re-sending every live binding at once closes that window
+    without waiting for the next turn's ``reclaim``. The runtime pids are the
+    stubs' own, unchanged by a gatewayd restart. Returns how many were sent.
+    """
+    if not socket_path:
+        return 0
+    sent = 0
+    for token, (pid, agents) in list(_BOUND_AGENTS.items()):
+        if await send_agent_binding(socket_path, pid, token, agents):
+            sent += 1
+    return sent

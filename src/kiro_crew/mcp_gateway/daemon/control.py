@@ -577,6 +577,7 @@ async def _apply_agent_binding(
         token, frozenset(raw_agents), pid, raw_start if isinstance(raw_start, str) else None
     )
     refreshed = _refresh_bound_agents(token, pid)
+    facade._wake_agent_binding_waiters()
     return {"type": "agent-bound", "agents": len(set(raw_agents)), "connections": refreshed}
 
 
