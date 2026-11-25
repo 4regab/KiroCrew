@@ -394,6 +394,9 @@ from conftest_resets_connected_computers import (  # noqa: E402,F401 -- bound fo
 from conftest_resets_decisions import (  # noqa: E402,F401 -- bound for pytest and importers
     _fresh_decision_provider_error_warnings,
 )
+from conftest_resets_discord import (  # noqa: E402,F401 -- bound for pytest and importers
+    _reset_discord_thread_titles,
+)
 from conftest_resets_managed_env import (  # noqa: E402,F401 -- bound for pytest and importers
     _reset_managed_env_shared_client,
 )
