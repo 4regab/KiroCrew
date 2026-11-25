@@ -557,10 +557,11 @@ async def test_a_private_backend_waits_for_a_late_binding_then_gets_its_env(
     """
     pairs = _write_sidecar(OWN_AGENT)
     _stubs_are_not_the_owner(monkeypatch)
+    held: dict[str, Any] = {}
 
     async def _do_register() -> None:
         _reader, writer = await daemon.register_and_ensure(_register(OWN_AGENT, pairs))
-        await _settle(writer)
+        held["writer"] = writer
 
     task = asyncio.ensure_future(_do_register())
     try:
@@ -571,15 +572,23 @@ async def test_a_private_backend_waits_for_a_late_binding_then_gets_its_env(
         gw._refresh_bound_agents(TOKEN, RUNTIME_PID)
         gw._wake_agent_binding_waiters()
         await finished(task, "the waiting register completes")
+
+        (seen,) = daemon.acquired
+        assert seen["declaring_agent"] == OWN_AGENT
+        assert (
+            gw._declared_env_for_private_backend(seen["pool_key"], declaring_agent=OWN_AGENT)
+            == pairs
+        )
+        # The retained Register a resource-subscription holder is built from now
+        # carries the resolved agent, so the holder's own private backend reads
+        # the declared env too (session_describe -> holder_register_frame).
+        (conn,) = [c for c in session_describe._LIVE_CONNS if c.stub_session_token == TOKEN]
+        assert conn.register is not None and conn.register["agent_name"] == OWN_AGENT
     finally:
         if not task.done():
             task.cancel()
-
-    (seen,) = daemon.acquired
-    assert seen["declaring_agent"] == OWN_AGENT
-    assert (
-        gw._declared_env_for_private_backend(seen["pool_key"], declaring_agent=OWN_AGENT) == pairs
-    )
+        if "writer" in held:
+            await _settle(held["writer"])
 
 
 @pytest.mark.asyncio

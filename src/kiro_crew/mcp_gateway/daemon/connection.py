@@ -186,6 +186,13 @@ async def _await_declaring_agent(
     while True:
         resolved = await _declaring_agent(frame_agent, conn, writer)
         if resolved:
+            # The retained Register (track_live_conn) still holds the empty agent
+            # this connection registered with; a resource-subscription holder
+            # built from it (session_describe -> holder_register_frame) would
+            # otherwise carry "" and its private backend get no declared env.
+            # Update it now, before the backend is acquired.
+            if conn.register is not None and "agent_name" in conn.register:
+                conn.register["agent_name"] = resolved
             return resolved
         if conn.bound_agents:
             # A binding arrived but does not name this agent: forged, stop waiting.
