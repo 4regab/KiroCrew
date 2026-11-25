@@ -459,6 +459,10 @@ _REENTRY_CHAIN: "ContextVar[tuple[int, frozenset[str], frozenset[str]]]" = Conte
 #: carried command, a double-quoted substitution body) inherits the pass's value.
 _GLUE_SPLIT: "ContextVar[bool]" = ContextVar("git_tar_floor_glue_split", default=False)
 
+#: True to match same-line variable names in their submitted case, False to match
+#: them lowercased as main does; judged both ways, so the exact read only ADDS.
+_EXACT_VARS: "ContextVar[bool]" = ContextVar("git_tar_floor_exact_vars", default=True)
+
 
 def _reenter_floors(command: str, *, alias: "str | None" = None, literal: bool = False) -> bool:
     """True if the argv-floor dispatcher refuses *command*, which this git/tar command runs.
@@ -1488,23 +1492,45 @@ def _is_git_tar_to_self(text_lower: str, *, raw_text: "str | None" = None) -> bo
         return _git_tar_read(text_lower)
     raw = _RAW_COMMAND.set(text_lower if raw_text is None else raw_text)
     try:
-        for glue in (False, True):
-            memo = _READ_MEMO.set({})
-            split = _GLUE_SPLIT.set(glue)
+        # Union of two readings, refuse on either: main's lowered-variable read
+        # and the exact-case read (which can only ADD a refusal). The exact read
+        # differs only where a ``$`` reference in upper case resolves to a
+        # different assignment, so skip it otherwise -- it would only double work.
+        exact_can_differ = raw_text is not None and raw_text != text_lower and "$" in text_lower
+        passes = (False, True) if exact_can_differ else (False,)
+        for exact in passes:
+            token = _EXACT_VARS.set(exact)
             try:
-                if _git_tar_read(text_lower, typed=True):
+                if _git_tar_read_passes(text_lower, raw_text):
                     return True
             finally:
-                _GLUE_SPLIT.reset(split)
-                _READ_MEMO.reset(memo)
-        if "<<" not in text_lower:
-            return False
-        cased = raw_text if raw_text is not None and raw_text.lower() == text_lower else None
-        reset_raw = _shell_normalizer._heredoc_body_quotes_literal(cased or text_lower)
-        reset = reset_raw.lower()
-        if reset == text_lower:
-            return False
-        _RAW_COMMAND.set(reset_raw)
+                _EXACT_VARS.reset(token)
+        return False
+    finally:
+        _RAW_COMMAND.reset(raw)
+
+
+def _git_tar_read_passes(text_lower: str, raw_text: "str | None") -> bool:
+    """Every command-boundary and here-document reading for the current
+    ``_EXACT_VARS`` setting; True if any refuses (each reading only ADDS one)."""
+    for glue in (False, True):
+        memo = _READ_MEMO.set({})
+        split = _GLUE_SPLIT.set(glue)
+        try:
+            if _git_tar_read(text_lower, typed=True):
+                return True
+        finally:
+            _GLUE_SPLIT.reset(split)
+            _READ_MEMO.reset(memo)
+    if "<<" not in text_lower:
+        return False
+    cased = raw_text if raw_text is not None and raw_text.lower() == text_lower else None
+    reset_raw = _shell_normalizer._heredoc_body_quotes_literal(cased or text_lower)
+    reset = reset_raw.lower()
+    if reset == text_lower:
+        return False
+    restore = _RAW_COMMAND.set(reset_raw)
+    try:
         for glue in (False, True):
             memo = _READ_MEMO.set({})
             split = _GLUE_SPLIT.set(glue)
@@ -1516,7 +1542,7 @@ def _is_git_tar_to_self(text_lower: str, *, raw_text: "str | None" = None) -> bo
                 _READ_MEMO.reset(memo)
         return False
     finally:
-        _RAW_COMMAND.reset(raw)
+        _RAW_COMMAND.reset(restore)
 
 
 def _git_tar_read(text_lower: str, *, typed: bool = False) -> bool:
@@ -1528,7 +1554,12 @@ def _git_tar_read(text_lower: str, *, typed: bool = False) -> bool:
     from .shell_commands import _double_quoted_substitution_bodies, read_commands
 
     raw = _RAW_COMMAND.get()
-    unmasked = _ssh_floor_unmasked_text(text_lower)
+    # Pass the submitted command (original case) so same-line variable names
+    # resolve case-sensitively. It aligns only for the outermost, as-typed read;
+    # a carried command's text does not match it, so that read falls to the
+    # fail-closed resolution. An all-lowercase line aligns too, so it reads as on
+    # main (exact matching of lowercase names is ordinary last-wins matching).
+    unmasked = _ssh_floor_unmasked_text(text_lower, raw if _EXACT_VARS.get() else None)
     text_lower = _mask_quoted_separators(unmasked)
     # A quick gate that is a SUPERSET of every spelling the walk below can read
     # as git/tar: a literal ``git``/``tar`` once quote and backslash splices are

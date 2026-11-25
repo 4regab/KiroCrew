@@ -757,29 +757,68 @@ def _routing_option_value_targets_self(token: str, *, value_slot: bool) -> bool:
 # or a command separator stays unresolved -- the documented run-time residual.
 # Resolution is position-aware: a reference takes the LATEST assignment whose
 # text precedes it, exactly like bash, so ``${a}sh; a=s`` does not resolve.
+# The ONE definition of a shell variable name and of the literal value this
+# resolver can read, shared by the assignment parser AND the flat-sequence grammar
+# below so the two can never drift apart. The grammar must not accept a value the
+# parser cannot read: if it did, the grammar would call a line flat while the
+# parser skipped one of its assignments, and a reference would resolve to a stale
+# value. Both are built from these constants, so that gap cannot open.
+_SHELL_NAME_CLASS = "[a-z_][a-z0-9_]*"  # a shell variable name, on lowercased text
+_SHELL_VALUE_CHARS = "a-z0-9._:@/-"  # a literal value; '-' stays LAST so it is literal in [...]
+_SHELL_VALUE_CLASS = "[" + _SHELL_VALUE_CHARS + "]"
 _LINE_ASSIGNMENT_RE = re.compile(
-    r"(?:\A|[;&|`(\s])([a-z_][a-z0-9_]*)=([\"']?)([a-z0-9._:@/-]*)\2(?=\Z|[)\s;&|])"
+    r"(?:\A|[;&|`(\s])("
+    + _SHELL_NAME_CLASS
+    + r")=([\"']?)("
+    + _SHELL_VALUE_CLASS
+    + r"*)\2(?=\Z|[)\s;&|])"
 )
 
 
-_VAR_REFERENCE_RE = re.compile(r"\$\{([a-z_][a-z0-9_]*)\}|\$([a-z_][a-z0-9_]*)")
+_VAR_REFERENCE_RE = re.compile(r"\$\{(" + _SHELL_NAME_CLASS + r")\}|\$(" + _SHELL_NAME_CLASS + r")")
 
 
-def _resolve_line_assignments(text: str) -> str:
-    """Substitute ``$var``/``${var}`` from literal same-line assignments."""
+def _resolve_line_assignments(text: str, cased: "str | None" = None) -> str:
+    """Substitute ``$var``/``${var}`` from literal same-line assignments.
+
+    *cased* is *text* in the case it was submitted, aligned character for
+    character (same length, same transforms applied). Shell variable names are
+    case-sensitive, so reading them lowercased let a command put this host in
+    ``H=localhost`` and a remote in a later ``h=...`` and have the floor resolve
+    the remote.
+
+    With aligned *cased* a name is matched case-exactly, so ``H`` and ``h`` are
+    two names; without it (no submitted copy, or a transform rewrote the line)
+    names fall back to the lowered match, exactly as on main. The caller judges
+    BOTH readings and refuses on either, so this function need only resolve one
+    reading at a time: the exact-case reading only ever ADDS a refusal to main's.
+    """
+    aligned = cased if cased is not None and len(cased) == len(text) else None
     assignments: "list[tuple[int, str, str]]" = []
     for m in _LINE_ASSIGNMENT_RE.finditer(text):
-        assignments.append((m.end(), m.group(1), m.group(3)))
+        name = aligned[m.start(1) : m.end(1)] if aligned is not None else m.group(1)
+        assignments.append((m.end(), name, m.group(3)))
     if not assignments:
         return text
 
+    # bash resolves a reference to the LAST same-line assignment of that name, so
+    # one forward pointer over the assignments gives each reference its value as
+    # ``re.sub`` calls back in increasing match order.
+    last_value: "dict[str, str]" = {}
+    swept = 0
+
     def _substitute(match: "re.Match[str]") -> str:
-        name = match.group(1) or match.group(2)
-        value: "str | None" = None
-        for end, assigned, assigned_value in assignments:
-            if end <= match.start() and assigned == name:
-                value = assigned_value
-        return match.group(0) if value is None else value
+        nonlocal swept
+        while swept < len(assignments) and assignments[swept][0] <= match.start():
+            _, a_name, a_value = assignments[swept]
+            swept += 1
+            last_value[a_name] = a_value
+        start = match.start(1) if match.group(1) is not None else match.start(2)
+        end = match.end(1) if match.group(1) is not None else match.end(2)
+        name = aligned[start:end] if aligned is not None else (match.group(1) or match.group(2))
+        if name not in last_value:
+            return match.group(0)
+        return last_value[name]
 
     return _VAR_REFERENCE_RE.sub(_substitute, text)
 
@@ -892,7 +931,7 @@ def _function_call_binds_self(text: str) -> bool:
     return False
 
 
-def _ssh_floor_source_text(text_lower: str) -> str:
+def _ssh_floor_source_text(text_lower: str, cased: "str | None" = None) -> str:
     """The ssh floor's source pre-walk: *text_lower* as the walk reads it.
 
     Empty expansions collapsed, statically decidable flat substitutions
@@ -908,11 +947,18 @@ def _ssh_floor_source_text(text_lower: str) -> str:
     # real target and let the connection through.  It is restored only at the
     # faithful operand/routing checks; recursion sites receive the masked
     # text unchanged (the mask is idempotent -- their quotes are already gone).
-    return _mask_quoted_separators(_ssh_floor_unmasked_text(text_lower))
+    return _mask_quoted_separators(_ssh_floor_unmasked_text(text_lower, cased))
 
 
-def _ssh_floor_unmasked_text(text_lower: str) -> str:
-    """:func:`_ssh_floor_source_text` before its quoted separators are masked."""
+def _ssh_floor_unmasked_text(text_lower: str, cased: "str | None" = None) -> str:
+    """:func:`_ssh_floor_source_text` before its quoted separators are masked.
+
+    *cased* is *text_lower* in its submitted case; it reaches the same-line
+    assignment resolver so a variable name is matched case-sensitively, but only
+    when the two source transforms below leave the text unchanged, so *cased*
+    still aligns with the resolver's input. Otherwise the resolver matches names
+    lowered, as on main.
+    """
     # Collapse empty expansions in the SOURCE so the gate and tokenization both
     # read the spliced-out spelling (``s$()sh localhost`` -> ``ssh localhost``).
     text_lower = _EMPTY_EXPANSION_RE.sub("", text_lower)
@@ -930,13 +976,23 @@ def _ssh_floor_unmasked_text(text_lower: str) -> str:
     # An escaped backtick span stays unspliced here; one quoting level down
     # (``eval "ssh \`printf localhost\`"``) the ``_MAIN_READING`` pass of
     # ``_reaches_self_over_ssh`` splices it, as main did.
-    text_lower = _splice_static_substitutions(text_lower)
+    spliced = _splice_static_substitutions(text_lower)
+    # The aligned submitted text survives to the resolver only when neither
+    # transform rewrote the line (the common case: no ``$()`` to collapse or
+    # splice), so its characters still line up with the resolver's input. This
+    # resolves ONE reading (exact-case when *cased* is given, lowered when not);
+    # the caller judges both and refuses on either, so no shape guard is needed.
+    aligned = (
+        cased
+        if cased is not None and len(cased) == len(spliced) and spliced == cased.lower()
+        else None
+    )
     # Substitute ``$a``/``${a}`` from literal same-line assignments
     # (``a=s; ${a}sh localhost`` -> ``ssh localhost``) so neither the verb nor
     # the operand can be spliced from statically-known text.  Values are
     # separator-free by construction, so the substitution cannot fabricate a
     # command boundary the masking below would misread.
-    return _resolve_line_assignments(text_lower)
+    return _resolve_line_assignments(spliced, aligned)
 
 
 def _rsync_rsh_assignment(stripped_tok: str) -> "tuple[str, str] | None":
@@ -1111,13 +1167,36 @@ def _is_ssh_to_self(
     )
     key = ("ssh_to_self", text_lower, own_line, raw_text, *reading)
     if memo is None:
-        return _judge_ssh_to_self(text_lower, own_line, raw_text)
+        return _ssh_to_self_union(text_lower, own_line, raw_text)
     if key not in memo:
-        memo[key] = _judge_ssh_to_self(text_lower, own_line, raw_text)
+        memo[key] = _ssh_to_self_union(text_lower, own_line, raw_text)
     return bool(memo[key])
 
 
-def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" = None) -> bool:
+def _ssh_to_self_union(text_lower: str, own_line: bool, raw_text: "str | None") -> bool:
+    """Refuse if main's lowered-variable read OR the exact-case read reaches self.
+
+    The lowered pass (``exact_vars=False``) is exactly main: same-line variable
+    names matched lowercased. The exact pass matches names in their submitted
+    case. Judging both and refusing on either means the exact-case read can only
+    ADD a refusal main's read would miss and never turn one of main's refusals
+    into an allow -- which holds whatever the line's shape, since a self operand
+    main forms (a concatenation included) is never rewritten away.
+    """
+    if _judge_ssh_to_self(text_lower, own_line, raw_text, exact_vars=False):
+        return True
+    # The exact read can only differ from main's where a ``$`` reference resolves
+    # to a different assignment, so a line with no reference, or none in upper
+    # case, needs only main's read -- and the exact read is skipped, not doubling
+    # the work on a line the submitted case cannot change.
+    if raw_text is not None and raw_text != text_lower and "$" in text_lower:
+        return _judge_ssh_to_self(text_lower, own_line, raw_text, exact_vars=True)
+    return False
+
+
+def _judge_ssh_to_self(
+    text_lower: str, own_line: bool, raw_text: "str | None" = None, exact_vars: bool = True
+) -> bool:
     """True if *text_lower* opens an ssh/scp/sftp/rsync channel to THIS host.
 
     Structural for the same reason the other floors are: the target hides
@@ -1202,7 +1281,9 @@ def _judge_ssh_to_self(text_lower: str, own_line: bool, raw_text: "str | None" =
     # The source pre-walk (empty expansions, static substitutions, same-line
     # assignments) is ``_ssh_floor_unmasked_text``, shared with the git/tar floor;
     # the double-quoted substitution bodies below are read from the text it returns.
-    text_lower = _ssh_floor_unmasked_text(text_lower)
+    # Pass the submitted line so same-line variable names resolve case-sensitively
+    # on the exact pass; the lowered pass (exact_vars False) reads names as main.
+    text_lower = _ssh_floor_unmasked_text(text_lower, raw_text if exact_vars else None)
     unmasked = text_lower
     if _cannot_name_ssh_verb(text_lower):
         return False
