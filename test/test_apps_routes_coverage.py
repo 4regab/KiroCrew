@@ -846,6 +846,26 @@ class TestInstallValidation:
             assert (await resp.json())["code"] == "source_not_directory"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "source",
+        ["a\x00b", "a\ud800b", "~no-such-user-42342/app"],
+        ids=["nul-byte", "lone-surrogate", "unknown-user-home"],
+    )
+    async def test_a_source_that_does_not_resolve_is_refused_like_a_missing_folder(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+    ) -> None:
+        # pathlib raises ValueError (resolve) or RuntimeError (expanduser) on these,
+        # which answered 500.
+        _setup_env(tmp_path, monkeypatch)
+        log = MagicMock()
+        monkeypatch.setattr(routes_mod, "sel", lambda: log)
+        async with TestClient(TestServer(_make_app(dashboard_user="owner"))) as client:
+            resp = await client.post("/api/apps/install", json={"source": source})
+            assert resp.status == 400
+            assert (await resp.json())["code"] == "source_not_directory"
+        assert [c.kwargs["outcome"] for c in log.log_api_access.call_args_list] == ["failed"]
+
+    @pytest.mark.asyncio
     async def test_live_detached_startup_hook_refuses_fresh_reinstall(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
