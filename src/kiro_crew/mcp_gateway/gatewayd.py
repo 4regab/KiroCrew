@@ -137,6 +137,7 @@ from kiro_crew.mcp_gateway.daemon.audit import (  # noqa: F401
     _audit_agent_socket_decision,
     _audit_caller_claimed,
     _audit_caller_rekey,
+    _audit_declaring_agent_denied,
     _audit_disconnect_cancel,
     _audit_owner_port,
     _audit_peer_allowed,

@@ -471,3 +471,31 @@ def _audit_agent_binding(
         )
     except Exception:  # pragma: no cover — audit must never break the handler
         logger.debug("SEL audit emit for agent-binding failed", exc_info=True)
+
+
+def _audit_declaring_agent_denied(
+    peer_pid: int | None, stub_uuid: str, frame_agent: str, reason: str
+) -> None:
+    """Emit a SEL ``denied`` event when a stub's framed declaring agent is refused.
+
+    A tokened Register naming an agent the owner did not bind to that token is
+    refused, and that refusal decides whether the stub's private backend is
+    started with that agent's rotating ``secret://`` credentials. It is the same
+    anti-forgery decision the register-time token refusal and the
+    ``agent-binding`` accept/deny are audited for, so it belongs in the
+    HMAC-chained SEL too. The stub uuid and the framed agent are recorded; the
+    bearer ``stub_session_token`` is NEVER logged. Wrapped defensively -- an
+    audit-log failure must never break connection handling.
+    """
+    try:
+        facade.SecurityEventLog().log_api_access(
+            caller=f"pid:{peer_pid}" if peer_pid is not None else "unknown",
+            operation="mcp-gateway.declaring_agent",
+            outcome="denied",
+            source="gateway",
+            # Stub uuid and the framed agent name only; the token is absent.
+            resources=f"stub={stub_uuid[:64]} agent={frame_agent[:64]!r}",
+            error=reason,
+        )
+    except Exception:  # pragma: no cover — audit must never break the handler
+        logger.debug("SEL audit emit for declaring-agent refusal failed", exc_info=True)

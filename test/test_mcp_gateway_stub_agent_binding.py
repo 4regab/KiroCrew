@@ -532,6 +532,13 @@ async def test_a_non_owner_binding_leaves_the_stub_with_no_declared_env(
     # Determinism contract): the wait loop's first step is `_agent_binding_event`,
     # so if the guard fails to return early this fires and fails the test.
     monkeypatch.setattr(gw, "_agent_binding_event", _must_not_wait)
+    monkeypatch.setattr(connection_mod.socketsec, "get_peer_pid", lambda _w: 4321)
+    audited: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        connection_mod,
+        "_audit_declaring_agent_denied",
+        lambda *a: audited.append(a),
+    )
 
     conn = connection_mod._StubConn(
         stub_uuid="s-cli-local",
@@ -551,6 +558,109 @@ async def test_a_non_owner_binding_leaves_the_stub_with_no_declared_env(
     assert len(warnings) == 1
     assert repr(SERVER) in warnings[0]
     assert "dashboard" in warnings[0]
+    # One SEL audit event for the refusal, with the stub uuid and the framed
+    # agent, and never the bearer token.
+    assert len(audited) == 1
+    peer_pid, stub_uuid, frame_agent, reason = audited[0]
+    assert (peer_pid, stub_uuid, frame_agent) == (4321, "s-cli-local", OWN_AGENT)
+    assert reason and "tok-cli-local" not in reason
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        (b'{"type":"agent-bound","agents":1}\n', True),
+        (b'{"type":"agent-binding-rejected"}\n', False),
+    ],
+)
+async def test_the_binding_send_reads_the_daemons_ack(monkeypatch, reply, expected) -> None:
+    """The real frame goes out on the socket; only an ``agent-bound`` reply is success."""
+    sent: list[bytes] = []
+    reader = asyncio.StreamReader()
+    reader.feed_data(reply)
+    reader.feed_eof()
+    writer = MagicMock()
+    writer.write = lambda data: sent.append(data)
+    writer.drain = AsyncMock()
+    writer.wait_closed = AsyncMock(side_effect=OSError("closed"))
+
+    async def _connect(_path):
+        return reader, writer
+
+    monkeypatch.setattr(claim_mod.transport, "connect", _connect)
+    ok = await claim_mod._send_agent_binding_inner(
+        "/s", RUNTIME_PID, TOKEN, frozenset({OWN_AGENT}), "start-1"
+    )
+    assert ok is expected
+    (frame,) = [json.loads(line) for line in sent]
+    assert frame["type"] == "agent-binding"
+    assert frame["agents"] == [OWN_AGENT] and frame["pid"] == RUNTIME_PID
+    writer.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_a_binding_send_that_cannot_connect_reports_failure(monkeypatch) -> None:
+    """A daemon that is down answers False, and the binding is still remembered for replay."""
+
+    async def _down(*_a, **_k):
+        raise OSError("no daemon")
+
+    monkeypatch.setattr(claim_mod, "_send_agent_binding_inner", _down)
+    claim_mod._BOUND_AGENTS.pop(TOKEN, None)
+    assert not await claim_mod.send_agent_binding(
+        "/s", RUNTIME_PID, TOKEN, frozenset({OWN_AGENT}), pid_start_id=None
+    )
+    assert TOKEN in claim_mod._BOUND_AGENTS
+
+
+@pytest.mark.asyncio
+async def test_a_late_binding_keeps_the_server_with_a_valid_initialize(daemon, monkeypatch) -> None:
+    """A late binding replaces the agent-less backend just before the replayed
+    initialize, and the session keeps the server.
+
+    After a gatewayd restart the stub's backend was acquired agent-less; the
+    owner's binding then lands, and the next frame is the replayed initialize.
+    The replacement is primed from that very initialize, so the stub is answered
+    from its cached handshake, not the generic BackendGone retry error -- which
+    ``_replay_initialize`` would treat as terminal and drop the server over.
+    """
+    pairs = _write_sidecar(OWN_AGENT)
+    with monkeypatch.context() as stub_side:
+        _stubs_are_not_the_owner(stub_side)
+        _reader, writer = await daemon.register_and_ensure(_register(OWN_AGENT, pairs))
+    assert daemon.acquired[-1]["declaring_agent"] == ""
+    (conn,) = gw._CONN_INDEX[RUNTIME_PID]
+
+    monkeypatch.setattr(connection_mod, "_relabel_stub", AsyncMock())
+    replacement = MagicMock()
+    replacement.forward_from_stub = AsyncMock()
+    dummy_writer_task = asyncio.ensure_future(asyncio.Event().wait())
+    recovered = (replacement, asyncio.Queue(), dummy_writer_task)
+    monkeypatch.setattr(gw, "_respawn_backend_for_stub", AsyncMock(return_value=recovered))
+
+    reply = await daemon.control(_binding([OWN_AGENT]))
+    assert reply == {"type": "agent-bound", "agents": 1, "connections": 1}
+
+    # The replayed initialize: the binding is picked up this frame, the backend
+    # is relabeled, restart_for_agent fires, and the replacement answers the
+    # handshake rather than a retry error.
+    writer.write(b'{"jsonrpc":"2.0","id":1,"method":"initialize"}\n')
+    await writer.drain()
+    # The connection stays open and sends NO error for the initialize: the next
+    # socket frame is the pong, not a jsonrpc error for id 1. (The handshake
+    # itself is delivered through the replacement's inbox, not this socket.)
+    writer.write(b'{"type":"ping"}\n')
+    await writer.drain()
+    frame = json.loads(await finished(_reader.readline(), "the next daemon frame"))
+    assert frame == {"type": "pong"}, frame
+    replacement.forward_from_stub.assert_awaited_once()
+    assert replacement.forward_from_stub.await_args.args[1].get("method") == "initialize"
+
+    dummy_writer_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await dummy_writer_task
+    await _settle(writer)
 
 
 @pytest.mark.asyncio

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from kiro_crew.code_fingerprint import code_fingerprint
 from kiro_crew.json_line import parse_json_object_line, recover_line_id
-from kiro_crew.mcp_gateway import hazards
+from kiro_crew.mcp_gateway import hazards, socketsec
 from kiro_crew.mcp_gateway.admission import QUEUED_KEEPALIVE_SECS, Admission
 from kiro_crew.mcp_gateway.backend import (
     INTERNAL_STUB_PREFIXES,
@@ -37,7 +37,10 @@ from kiro_crew.mcp_gateway.daemon.admission_protocol import (
     _refuse_ensure_backend,
     _refuse_lazy_spawn,
 )
-from kiro_crew.mcp_gateway.daemon.audit import _audit_disconnect_cancel
+from kiro_crew.mcp_gateway.daemon.audit import (
+    _audit_declaring_agent_denied,
+    _audit_disconnect_cancel,
+)
 from kiro_crew.mcp_gateway.daemon.control import _serve_control_frame
 from kiro_crew.mcp_gateway.daemon.control_plane import _caller_for_backend
 from kiro_crew.mcp_gateway.daemon.diagnostics import (
@@ -186,11 +189,24 @@ async def _await_declaring_agent(
     """
     if stub_agent or not exclusive_stub_uuid or not frame_agent or not conn.stub_session_token:
         return stub_agent
+
+    def _deny(reason: str, *, warn: bool = False) -> str:
+        # The refusal decides whether this private backend is started with the
+        # framed agent's rotating secrets, so record it in the SEL beside the
+        # register-time token refusal and the agent-binding accept/deny. One
+        # event per refusal; the bearer token is never logged.
+        if warn:
+            _warn_no_declared_env(server_name)
+        _audit_declaring_agent_denied(
+            socketsec.get_peer_pid(writer), conn.stub_uuid, frame_agent, reason
+        )
+        return ""
+
     # A token already bound to an agent set that excludes the framed agent is the
     # forged case (a Register naming an agent its session does not run): fail fast.
     # Only an as-yet-unbound token is still waiting for its binding to arrive.
     if conn.bound_agents:
-        return ""
+        return _deny("framed agent is not in the token's bound set")
     # A binding can arrive only from the gateway that owns this daemon, and only
     # for a connection that owner descends -- its pid is then in the stub's
     # kernel-attested host chain (``conn.attested_pids``). An unowned daemon can
@@ -199,8 +215,7 @@ async def _await_declaring_agent(
     # binding was already refused and will never arrive. Either way, fail closed
     # at once rather than waiting out the keepalive before every private backend.
     if facade._OWNER_PID <= 0 or facade._OWNER_PID not in conn.attested_pids:
-        _warn_no_declared_env(server_name)
-        return ""
+        return _deny("no owner binding: the registrant is not owner-descended", warn=True)
     # Stay silent for at most one keepalive interval, well under the stub's own
     # spawn-queue silence window (``stub._SPAWN_QUEUE_SILENCE_SECS``, 25s): a
     # longer silent wait makes the stub give up and fall back to per-session
@@ -222,11 +237,10 @@ async def _await_declaring_agent(
             return resolved
         if conn.bound_agents:
             # A binding arrived but does not name this agent: forged, stop waiting.
-            return ""
+            return _deny("framed agent is not in the token's bound set")
         remaining = bound - time.monotonic()
         if remaining <= 0:
-            _warn_no_declared_env(server_name)
-            return ""
+            return _deny("no binding arrived before the wait deadline", warn=True)
         tick = min(QUEUED_KEEPALIVE_SECS, remaining)
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(event.wait(), timeout=tick)
@@ -749,9 +763,15 @@ async def _handle_connection(
                 captured_init = dict(msg)
                 session_describe.track_initialize(conn, captured_init)
 
+            # Whether the frame forcing this iteration's replacement is the
+            # session's own ``initialize`` (a late agent binding replacing an
+            # agent-less backend). The replacement is primed from it, so its
+            # cached handshake -- not a retry error -- is what this frame returns.
+            agent_rebind_initialize = False
             try:
                 if restart_for_agent:
                     restart_for_agent = False
+                    agent_rebind_initialize = msg.get("method") == "initialize"
                     raise BackendGone("its declaring agent was bound after it started")
                 if not bound_to_owner_port(backend):
                     # The owner announced a new port after this connection
@@ -819,7 +839,20 @@ async def _handle_connection(
                     # per-session exec rather than churn against a dead server.
                     await _write_json_line(writer, _jsonrpc_error(msg, f"backend gone: {exc}"))
                     return
-                backend, inbox, writer_task = recovered
+                replacement, inbox, writer_task = recovered
+                backend = replacement
+                if agent_rebind_initialize:
+                    # This frame is the session's own ``initialize`` and the
+                    # replacement was primed from it (``prime_initialize`` left
+                    # it ``ready``), so answer it from the replacement's cached
+                    # handshake. A retry error here is read as terminal by the
+                    # stub's ``_replay_initialize`` (``stub_link.py``), which
+                    # would drop this MCP server for the whole session.
+                    forward_caller = _caller_for_backend(replacement, caller, conn)
+                    await replacement.forward_from_stub(
+                        stub_uuid, msg, caller=forward_caller, tenant_nonce=conn.tenant_nonce
+                    )
+                    continue
                 # Fail only this in-flight request; kiro-cli retries it on the
                 # now-healthy transport. A duplicate error for this id from the
                 # dying backend's broadcast is harmless — clients dedupe by id.
