@@ -732,6 +732,7 @@ async def _new_session_following_substitution(self: AcpClient) -> dict:
             *self._harness_session_mcp_servers(),
             *self._adapter_session_mcp_servers(),
             *(await asyncio.to_thread(self._pooled_mcp_servers)),
+            *(await asyncio.to_thread(self._cli_local_secret_withholds)),
         ],
     }
     if self.backend in ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP:
@@ -1018,6 +1019,7 @@ async def _initialize_session(self: AcpClient) -> None:
                         *self._harness_session_mcp_servers(),
                         *self._adapter_session_mcp_servers(),
                         *(await asyncio.to_thread(self._pooled_mcp_servers)),
+                        *(await asyncio.to_thread(self._cli_local_secret_withholds)),
                     ],
                 }
                 if self.backend in ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP:

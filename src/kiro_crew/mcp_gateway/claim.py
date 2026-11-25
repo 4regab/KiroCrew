@@ -309,9 +309,13 @@ async def _claim_and_rebind(
 
 
 #: Cap on remembered token -> binding entries, ONE named bound shared with the
-#: daemon's own table (``daemon.identity._MAX_TOKEN_BINDINGS`` imports it), so
-#: the gateway never replays a binding the daemon has already dropped. The
-#: oldest is evicted past it.
+#: daemon's own table (``daemon.identity._MAX_TOKEN_BINDINGS`` imports it). It is
+#: a BACKSTOP, not an LRU: a live session's binding is never evicted by age (that
+#: would lose its declared env after a daemon restart, with no path back but
+#: recreating the session). An entry is dropped when its session ends
+#: (:func:`forget_agent_binding`), and over the cap only entries whose runtime
+#: process is gone are pruned (:func:`_evict_dead_bindings_over_cap`); a live one
+#: is kept even past the cap.
 MAX_SESSION_BINDINGS = 512
 
 #: Sentinel for ``send_agent_binding``'s ``pid_start_id`` so ``None`` (a genuine
@@ -324,6 +328,43 @@ _UNSET_START_ID = "\x00unset"
 #: :func:`replay_agent_bindings` can send the binding again after a gatewayd
 #: restart with the ORIGINAL process generation, never a recycled pid's.
 _BOUND_AGENTS: "OrderedDict[str, tuple[int, Optional[str], frozenset[str]]]" = OrderedDict()
+
+
+def forget_agent_binding(stub_session_token: str) -> None:
+    """Drop a session's remembered agent binding when its session ends.
+
+    Called from the session teardown that retires the token, so the cache holds
+    only live sessions and a long-lived one is never pushed out by newer ones.
+    """
+    if stub_session_token:
+        _BOUND_AGENTS.pop(stub_session_token, None)
+
+
+def _evict_dead_bindings_over_cap() -> None:
+    """Keep :data:`_BOUND_AGENTS` bounded without ever evicting a live session.
+
+    Past the backstop cap, drop only entries whose runtime process is gone -- a
+    session that ended without its :func:`forget_agent_binding` hook (a crash, a
+    missed teardown). A live session's binding stays, even past the cap, because
+    losing it would strand its private backends with no declared env after a
+    daemon restart. If every entry over the cap is still live, they are kept and
+    the overflow is logged once rather than evicting one of them.
+    """
+    if len(_BOUND_AGENTS) <= MAX_SESSION_BINDINGS:
+        return
+    for token, (pid, _start, _agents) in list(_BOUND_AGENTS.items()):
+        if len(_BOUND_AGENTS) <= MAX_SESSION_BINDINGS:
+            return
+        if not platform_compat.pid_exists(pid):
+            _BOUND_AGENTS.pop(token, None)
+    if len(_BOUND_AGENTS) > MAX_SESSION_BINDINGS:
+        logger.warning(
+            "agent-binding cache holds %d live sessions, over the %d backstop; "
+            "not evicting a live session",
+            len(_BOUND_AGENTS),
+            MAX_SESSION_BINDINGS,
+        )
+
 
 #: How deep :func:`stub_entry_agents` looks: the ``session/new`` params, a
 #: ``mcpServers`` array or map, an entry, and the ``_meta.kiro.customAgents``
@@ -457,8 +498,7 @@ async def send_agent_binding(
             pid_start_id = None
     _BOUND_AGENTS.pop(stub_session_token, None)
     _BOUND_AGENTS[stub_session_token] = (pid, pid_start_id, agents)
-    while len(_BOUND_AGENTS) > MAX_SESSION_BINDINGS:
-        _BOUND_AGENTS.popitem(last=False)
+    _evict_dead_bindings_over_cap()
     try:
         return await asyncio.wait_for(
             _send_agent_binding_inner(socket_path, pid, stub_session_token, agents, pid_start_id),

@@ -712,3 +712,50 @@ async def test_a_malformed_binding_writes_one_audit_row_without_the_token(monkey
     assert len(rows) == 1
     assert rows[0]["outcome"] == "denied"
     assert TOKEN not in str(rows[0])
+
+
+@pytest.mark.asyncio
+async def test_a_live_session_binding_survives_the_backstop_and_is_replayed(monkeypatch) -> None:
+    """Past the cap, a live session's binding is kept and still replayed.
+
+    The backstop evicts only entries whose runtime process is gone, never a
+    live one, so a long-lived session does not lose its declared env after a
+    daemon restart just because many newer sessions bound since.
+    """
+    sent: list[int] = []
+
+    async def _inner(socket_path, pid, token, agents, pid_start_id):
+        sent.append(pid)
+        return True
+
+    monkeypatch.setattr(claim_mod, "_send_agent_binding_inner", _inner)
+    # The oldest session is live; the rest are gone. Liveness is the eviction
+    # signal, pinned here so the test does not depend on real pid lifetimes.
+    live_pid, dead_pid = 1000, 1001
+    monkeypatch.setattr(claim_mod.platform_compat, "pid_exists", lambda pid: pid == live_pid)
+    claim_mod._BOUND_AGENTS.clear()
+
+    assert await claim_mod.send_agent_binding(
+        "/s", live_pid, "live-token", frozenset({OWN_AGENT}), pid_start_id="gen"
+    )
+    for i in range(claim_mod.MAX_SESSION_BINDINGS + 2):
+        await claim_mod.send_agent_binding(
+            "/s", dead_pid, f"dead-{i}", frozenset({OTHER_AGENT}), pid_start_id="gen"
+        )
+
+    assert "live-token" in claim_mod._BOUND_AGENTS, "the live session must not be evicted"
+    assert len(claim_mod._BOUND_AGENTS) <= claim_mod.MAX_SESSION_BINDINGS
+
+    sent.clear()
+    await claim_mod.replay_agent_bindings("/s")
+    assert live_pid in sent, "the live session's binding is replayed after a restart"
+
+
+def test_forget_agent_binding_drops_only_that_session(monkeypatch) -> None:
+    claim_mod._BOUND_AGENTS.clear()
+    claim_mod._BOUND_AGENTS["a"] = (1, "g", frozenset({OWN_AGENT}))
+    claim_mod._BOUND_AGENTS["b"] = (2, "g", frozenset({OTHER_AGENT}))
+    claim_mod.forget_agent_binding("a")
+    assert "a" not in claim_mod._BOUND_AGENTS
+    assert "b" in claim_mod._BOUND_AGENTS
+    claim_mod.forget_agent_binding("")  # no-op, no raise

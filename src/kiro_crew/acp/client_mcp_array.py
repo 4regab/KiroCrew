@@ -78,11 +78,14 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKENDS_CREW_OAUTH_BRIDGE,
 )
 from kiro_crew.mcp_gateway.mate_overlays import MATE_WORKER_AGENT
+from kiro_crew.mcp_gateway.rewriter_spec import _refusing_stub_entry
+from kiro_crew.mcp_gateway.secret_uri import secret_reference_keys
 from kiro_crew.mcp_gateway.session_servers import (
     attach_stub_session_token,
     injection_server_names,
     pooled_session_servers,
 )
+from kiro_crew.mcp_provenance import WITHHELD_KEY
 from kiro_crew.providers.mirrors import MIRRORS, ProjectionKind, mirror_for, projection_for
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 
@@ -343,6 +346,51 @@ def _pooled_mcp_servers(self: AcpClient) -> list[dict[str, Any]]:
                 stub.get("name"),
             )
     return kept
+
+
+def _cli_local_secret_withholds(self: AcpClient) -> list[dict[str, Any]]:
+    """Refusing overrides for ``--agent`` spec servers a CLI-local process cannot resolve.
+
+    A gateway-less process (``KiroCrewConfig.without_stub_servers()`` for
+    ``kirocrew chat`` / ``run`` / ``eval`` / knowledge consolidate, so no
+    overlay) lets kiro-cli launch the agent spec's own servers. One whose env
+    holds a ``secret://`` reference that only gatewayd resolves would start with
+    the literal string as its credential, so override it with a refusing stub
+    that starts nothing, and say once where its credentials come from. A server
+    with no ``secret://`` env still starts directly. A dashboard or routed
+    session keeps its overlay (``_mcp_gateway_overlay`` set) and a mirror backend
+    reads no ``--agent`` spec, so this returns nothing for them. Blocking (reads
+    the spec); the array call site runs it off the loop.
+    """
+    if self._mcp_gateway_overlay is not None or self.backend in MIRRORS:
+        return []
+    spec = agent_spec_snapshot(self._agent, work_dir=self._work_dir)
+    servers = (spec or {}).get("mcpServers")
+    if not isinstance(servers, dict):
+        return []
+    out: list[dict[str, Any]] = []
+    for name, entry in sorted(servers.items()):
+        if not isinstance(entry, dict) or entry.get(WITHHELD_KEY):
+            continue
+        keys = secret_reference_keys(entry.get("env"))
+        if not keys:
+            continue
+        logger.warning(
+            "MCP server %r not started in this CLI session: env %s holds a "
+            "secret:// reference only the MCP gateway resolves; run it from the "
+            "dashboard to use its credentials",
+            name,
+            ", ".join(repr(k) for k in keys),
+        )
+        refusing = _refusing_stub_entry(
+            server_name=str(name),
+            agent_name=self._agent or "",
+            work_dir=Path(self._work_dir or "."),
+        )
+        # The session/new array is a LIST; each element carries its ``name`` so
+        # it overrides the same-named ``--agent`` spec server.
+        out.append({"name": str(name), **refusing})
+    return out
 
 
 def _resolve_session_mcp_servers(self: AcpClient) -> list[dict[str, Any]]:
