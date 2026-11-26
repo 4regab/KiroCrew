@@ -523,6 +523,14 @@ class PickerRegistry:
             choices=choices,
         )
 
+    def peek(self, nonce: str, index: int, owner: str, message_id: str) -> SessionChoice | None:
+        """The choice :meth:`take` would return, without consuming it."""
+        self.purge()
+        picker = self._pickers.get(nonce)
+        if picker is None or picker.owner_id != owner or picker.message_id != message_id:
+            return None
+        return picker.choices[index] if 0 <= index < len(picker.choices) else None
+
     def take(self, nonce: str, index: int, owner: str, message_id: str) -> SessionChoice | None:
         """Consume one choice, or None when the press must not resolve.
 

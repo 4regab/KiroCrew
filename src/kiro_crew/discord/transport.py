@@ -28,6 +28,8 @@ from kiro_crew.discord.client import (
     DiscordInbound,
     SendPermission,
 )
+from kiro_crew.discord.view_policy import ViewPolicy
+from kiro_crew.discord.view_sessions import refuse_text_sessions
 from kiro_crew.messaging.identity import channel_inbound_permitted
 from kiro_crew.messaging.outbound_files import ExtractLimits, OutboundFile
 from kiro_crew.messaging.tables import TABLE_POLICY_AUTO
@@ -138,8 +140,10 @@ class DiscordTransport(MessagingTransport):
         auto_thread: bool = True,
         on_thread_created: Callable[[str], None] | None = None,
         dispatch: DispatchFn | None = None,
+        view_policy: ViewPolicy | None = None,
     ) -> None:
         self._client = client
+        self.view = view_policy or ViewPolicy()
         # Deny-by-default: freeze both allow-lists as snowflake strings so they
         # cannot mutate under an in-flight authorization decision.
         self._allowed: frozenset[str] = frozenset(str(u) for u in allowed_user_ids)
@@ -200,6 +204,7 @@ class DiscordTransport(MessagingTransport):
         changes are SEL-audited by COUNT (the receive path audits its own
         outcomes on the same channel); ids are never logged.
         """
+        self.view.reconfigure(section)
         users = _coerce_snowflakes(getattr(section, "allowed_user_ids", None))
         if users is None:
             logger.warning(
@@ -493,7 +498,7 @@ class DiscordTransport(MessagingTransport):
             return SendPermission.unattributable()
         if channel_id in self._allowed_threads:
             return SendPermission.allow()
-        if channel_id in self._allowed_channels:
+        if channel_id in self._allowed_channels or self.view.channel(channel_id) is not None:
             return SendPermission.allow()
         peer = self._client.cached_dm_recipient(channel_id)
         if peer is not None:
@@ -585,10 +590,13 @@ class DiscordTransport(MessagingTransport):
         if thread_id in self._revoked_threads:
             return False
         bot_user_id = getattr(self._client, "bot_user_id", "")
-        if not bot_user_id or not self._allowed_channels:
+        if not bot_user_id or not (self._allowed_channels or self.view.active):
             return False
         origin = await self._client.thread_origin(thread_id)
-        if origin is None or origin.parent_id not in self._allowed_channels:
+        if origin is None or not (
+            origin.parent_id in self._allowed_channels
+            or self.view.channel(origin.parent_id) is not None
+        ):
             return False
         if origin.owner_id == bot_user_id and origin.channel_type in _AUTO_THREAD_TYPES:
             operation, outcome = "discord_transport.auto_thread", "thread_reauthorized"
@@ -614,7 +622,10 @@ class DiscordTransport(MessagingTransport):
         if (
             thread_id in self._revoked_threads
             or caller not in self._allowed
-            or origin.parent_id not in self._allowed_channels
+            or not (
+                origin.parent_id in self._allowed_channels
+                or self.view.channel(origin.parent_id) is not None
+            )
             or (
                 outcome == "forum_post_authorized"
                 and (origin.owner_id not in self._allowed or not self._auto_thread)
@@ -632,6 +643,16 @@ class DiscordTransport(MessagingTransport):
         if self._on_thread_created is not None:
             self._on_thread_created(thread_id)
         return True
+
+    def admit_view_thread(self, thread_id: str) -> None:
+        """Admit a thread the bot opened under a view channel (see ``view_sessions``)."""
+        self._allowed_threads.add(thread_id)
+        self._revoked_threads.discard(thread_id)
+
+    def revoke_view_thread(self, thread_id: str) -> None:
+        """Withdraw a shared thread: nothing is sent to it and nobody can drive it."""
+        self._allowed_threads.discard(thread_id)
+        self._revoked_threads.add(thread_id)
 
     # -- Inbound adapter ----------------------------------------------------
     def authorize(self, msg: InboundMessage) -> bool:
@@ -664,6 +685,20 @@ class DiscordTransport(MessagingTransport):
             return
         thread_id: str | None = None
         conversation_id = inbound.channel_id
+        if (
+            inbound.guild_id
+            and inbound.user_id in self._allowed
+            and await self.view.denies(
+                self._client,
+                inbound.channel_id,
+                inbound.user_id,
+                surface="message",
+                normal_channel=inbound.channel_id in self._allowed_channels,
+            )
+        ):
+            return
+        if inbound.guild_id and await refuse_text_sessions(self, inbound):
+            return
         if inbound.guild_id:
             # Discord's guild intents deliver every visible channel message.
             # Unrelated chatter is expected background traffic, not a security

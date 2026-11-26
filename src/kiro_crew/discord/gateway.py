@@ -23,6 +23,8 @@ from kiro_crew.discord.client import DiscordClient
 from kiro_crew.discord.commands import application_command_payload
 from kiro_crew.discord.transport import DiscordTransport
 from kiro_crew.discord.transport_dispatch import _CHANNEL, DiscordDispatcher
+from kiro_crew.discord.view_policy import ViewPolicy
+from kiro_crew.discord.view_sessions import rehydrate_view_threads
 from kiro_crew.messaging.driver import APPROVAL_AUTO, APPROVAL_INTERACTIVE
 from kiro_crew.messaging.queue_drain import unregister_drain
 from kiro_crew.messaging.spawn_approval_delivery import (
@@ -124,6 +126,21 @@ def _publish_slash_commands(client: "DiscordClient") -> None:
 #: In-flight command-registration tasks, held only to keep them from being
 #: collected before they finish.
 _PENDING_REGISTRATIONS: set[asyncio.Task[None]] = set()
+
+
+def _rehydrate_view_threads(client: "DiscordClient", transport: DiscordTransport) -> None:
+    """Re-admit the shared view threads this bot opened before the restart, in the background."""
+
+    async def _run() -> None:
+        try:
+            if await client.wait_ready(timeout=_REGISTER_READY_TIMEOUT_SECS):
+                await rehydrate_view_threads(client, transport)
+        except Exception:
+            logger.warning("Discord: re-admitting shared view threads failed", exc_info=True)
+
+    task = asyncio.create_task(_run())
+    _PENDING_REGISTRATIONS.add(task)
+    task.add_done_callback(_PENDING_REGISTRATIONS.discard)
 
 
 def _reopen_owner_dm(client: "DiscordClient", allowed_ids: set[str]) -> None:
@@ -398,6 +415,10 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
                 "discord.allowed_user_ids to enable."
             )
 
+        view = ViewPolicy()
+        discord_cfg = getattr(getattr(orch, "_cfg", None), "discord", None)
+        if discord_cfg is not None:
+            view.reconfigure(discord_cfg)
         dispatcher = DiscordDispatcher(
             sessions=orch.sessions,
             ctx_builder=orch.ctx_builder,
@@ -407,11 +428,12 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
             agent=None,
             conv_log=getattr(orch, "conv_log", None),
             approval_mode=_resolve_approval_mode(orch),
+            view_policy=view,
         )
         client = DiscordClient(
             token=bot_token,
             on_interaction=dispatcher.on_interaction,
-            enable_guild_threads=bool(allowed_threads or allowed_channels),
+            enable_guild_threads=bool(allowed_threads or allowed_channels or view.active),
         )
 
         async def _dispatch(message: InboundMessage) -> None:
@@ -425,6 +447,7 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
             auto_thread=auto_thread,
             on_thread_created=dispatcher.register_allowed_thread,
             dispatch=_dispatch,
+            view_policy=view,
         )
         # Inbound: Gateway WS -> transport.receive (authorize + normalize)
         # -> dispatcher.handle_message (drive the turn on the shared TurnDriver).
@@ -481,6 +504,8 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
                 )
         _publish_slash_commands(client)
         _reopen_owner_dm(client, allowed_ids)
+        if view.active:
+            _rehydrate_view_threads(client, transport)
         logger.info("Discord channel started (transport path, Gateway WebSocket).")
         return client
     except Exception as exc:

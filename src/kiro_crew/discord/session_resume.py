@@ -304,6 +304,10 @@ class DiscordSessionResume:
         self._bind_lock = self._binder.lock
 
     @property
+    def controller(self) -> SessionResumeController:
+        return self._controller
+
+    @property
     def dashboard_state(self) -> object | None:
         return self._controller.dashboard_state
 

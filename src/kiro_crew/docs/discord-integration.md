@@ -203,6 +203,25 @@ again; the save reconnects with the thread intents.
   forum or the opener takes effect at the next restart; to stop one post at
   once, add its ID to `allowed_thread_ids` and then remove it. Anyone who can
   see the forum can read every admitted post.
+
+- **View channels.** `discord.view_channels` lists server channels you want people
+  to read but not drive. In a view channel, and in every thread under it, only a
+  *writer* can send a message, run a command (`/` or `!`) or press a button. Everyone
+  else is ignored and each denial is audited with the channel and user id only, even
+  when their id is on `allowed_user_ids`. A writer must still be on
+  `allowed_user_ids`: the gate only narrows access.
+
+  ```json
+  "view_channels": [{"id": "<channel id>", "writers": ["<your user id>"]}]
+  ```
+
+  Leave `writers` out and the writer is the single id in `allowed_user_ids`; if that
+  list holds none or several ids, nobody writes. A `writers` value that is not a list,
+  a bare id, or a channel listed twice makes that channel read-only for everyone. A
+  reload whose `view_channels` is not a list keeps the previous setting. Everyone who
+  can see the channel can read whatever the bot posts there, so give readers View
+  Channel and Read Message History only, and no Send Messages, Create Threads or Add
+  Reactions permission, as a second lock.
 - **Slash commands answer privately.** Every `/` command reply is ephemeral, so
   only the person who ran it sees it, which is what keeps a refusal, a status
   line or the `/model` list out of a shared thread. A reply that is not ready
@@ -315,6 +334,34 @@ session also appear in Discord, so you can hand work back and forth.
 `!session` (singular) is accepted as a typo-safe alias, including with a trailing
 phrase — without it the message reaches the agent as ordinary chat text, which
 reads as "the feature isn't installed" rather than "you typed it wrong".
+
+### Sharing a session in a view channel
+
+In a [view channel](#access-control) (`discord.view_channels`), the owner can show one
+session to everyone who can read the channel. Run the `/sessions` slash command there:
+the list of your recent session titles is private to you (only you see it). Pick one and
+the bot opens a public thread under the channel, named after the session's title, links the
+session to it, and replays the last `replay_messages` (default 5) messages, yours and the
+bot's, with credentials masked. After that each finished reply is posted into the thread.
+You can type in the thread to drive the session; other people can only read.
+
+- **Readers see the whole session**, including your own messages and anything you pasted
+  into it, and its title (the thread name). Share only sessions you are happy to show.
+- Messages you type in the dashboard are not copied into the thread; only the bot's
+  finished replies are. Messages you type in the thread are visible there.
+- **Stop sharing** (the button on the thread's first message) unlinks the session and
+  archives and locks the thread. To stop everything under a channel, remove it from
+  `view_channels`.
+- `/sessions` here needs exactly one id in `allowed_user_ids`, and it must be the writer,
+  the same owner rule as `!sessions` in a DM. `!sessions` typed in a view channel lists
+  nothing: a text reply cannot be private, so the bot points you to `/sessions` or a DM.
+- After a restart, active shared threads are admitted again at startup. A thread that was
+  archived is admitted again by your next message in it.
+- Shares into one channel are limited to one every 15 seconds. Each share and each stop
+  is recorded in the audit log with the channel, thread and session title only.
+- The bot needs View Channel, Send Messages, Create Public Threads, Send Messages in
+  Threads and Manage Threads (to archive and lock) in the view channel. Readers should have
+  View Channel and Read Message History only.
 
 ### Talking to a Bot from Discord
 

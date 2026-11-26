@@ -641,6 +641,19 @@ class DiscordConfig:
             tags=["discord"],
         ),
     )
+    view_channels: list[dict] = field(
+        default_factory=list,
+        metadata=_meta(
+            "View Channels",
+            "Server channels shown to readers who must not drive the agent. Each entry is "
+            '{"id": "<channel id>", "writers": ["<user id>"], "replay_messages": 5}. In a '
+            "view channel and in every thread under it, only a writer can send messages, "
+            "run commands or press buttons; everyone else is ignored, even when listed in "
+            "allowed_user_ids. Omitted writers = the owner only (the single id in "
+            "allowed_user_ids); with none or several ids and no writers, nobody writes.",
+            tags=["discord"],
+        ),
+    )
     auto_thread: bool = field(
         default=True,
         metadata=_meta(

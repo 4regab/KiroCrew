@@ -43,6 +43,7 @@ from kiro_crew.discord.transport_dispatch_model_picker import (
     _MODEL_PICKER_TTL_SECS,
     AUTO_MODEL_ARG,
 )
+from kiro_crew.discord.view_sessions import UNSHARE_ID, handle_view_interaction, unshare
 from kiro_crew.messaging.dispatch import inbound_permitted
 from kiro_crew.messaging.identity import channel_inbound_permitted, channel_outbound_permitted
 from kiro_crew.messaging.transport import InboundMessage
@@ -95,6 +96,12 @@ async def on_interaction(self: DiscordDispatcher, itx: "DiscordInteraction") -> 
         return
     # Auth first (deny-by-default short-circuit).
     if not authorized:
+        return
+    if itx.guild_id and await self.view.denies(
+        self.client, itx.channel_id, itx.user_id, surface="interaction"
+    ):
+        return
+    if itx.guild_id and await handle_view_interaction(self, itx):
         return
     thread_id = itx.channel_id if itx.guild_id else ""
     # The same actionable-interaction decision is re-used by the spawn
@@ -245,6 +252,10 @@ async def on_interaction(self: DiscordDispatcher, itx: "DiscordInteraction") -> 
                 {"content": _STOP_FINISHED_NOTICE, "flags": _EPHEMERAL_FLAG},
                 destination=itx.channel_id,
             )
+        return
+
+    if data == UNSHARE_ID:
+        await unshare(self, itx)
         return
 
     # Session picker: "s:<nonce>:<index>". The controller binds the nonce
