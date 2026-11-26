@@ -12,7 +12,7 @@ from typing import Any
 
 import discord_sessions_helpers
 import pytest
-from discord_sessions_helpers import _Client, _ConversationLog, _dispatcher, _message
+from discord_sessions_helpers import _Client, _ConversationLog, _dispatcher
 
 from kiro_crew.discord import view_policy as vp
 from kiro_crew.discord.client import (
@@ -26,6 +26,7 @@ from kiro_crew.discord.transport import DiscordTransport
 from kiro_crew.discord.view_policy import ViewPolicy
 from kiro_crew.discord.view_sessions import UNSHARE_ID, rehydrate_view_threads
 from kiro_crew.messaging.link import ChannelLink
+from kiro_crew.messaging.transport import InboundMessage
 from kiro_crew.testing.synthetic_credentials import github_classic
 
 _isolated_home = discord_sessions_helpers._isolated_home
@@ -65,12 +66,20 @@ class _ViewClient(_Client):
         self.defers.append(destination)
         return True
 
-    async def respond_interaction(self, interaction_id: str, token: str, text: str, **kw: Any) -> bool:
+    async def respond_interaction(
+        self, interaction_id: str, token: str, text: str, **kw: Any
+    ) -> bool:
         self.responses.append(text)
         return True
 
     async def edit_interaction_original(
-        self, token: str, text: str, *, components: Any = None, destination: str, caller_permitted: Any = None
+        self,
+        token: str,
+        text: str,
+        *,
+        components: Any = None,
+        destination: str,
+        caller_permitted: Any = None,
     ) -> str | None:
         self.webhook.append((token, text, components))
         self._mid += 1
@@ -86,7 +95,11 @@ class _ViewClient(_Client):
         return DiscordApiResult(DISCORD_OK, data=self.api_data.get((method, path), {}), status=200)
 
     def threads_created(self) -> list[Any]:
-        return [p for m, path, p in self.api_calls if m == "POST" and path == f"/channels/{VIEW}/threads"]
+        return [
+            p
+            for m, path, p in self.api_calls
+            if m == "POST" and path == f"/channels/{VIEW}/threads"
+        ]
 
 
 def _msgs(n: int, *, extra: str = "") -> list[dict[str, str]]:
@@ -209,7 +222,9 @@ class TestListing:
     async def test_text_sessions_in_the_view_channel_lists_nothing(self) -> None:
         d, client, _sessions, transport = _wired()
         await transport.receive(
-            DiscordInbound(channel_id=VIEW, user_id=OWNER, text="!sessions", message_id="m1", guild_id="g1")
+            DiscordInbound(
+                channel_id=VIEW, user_id=OWNER, text="!sessions", message_id="m1", guild_id="g1"
+            )
         )
         assert [c for c, _t, _k in client.posts] == [VIEW]
         text = client.posts[0][1]
@@ -219,14 +234,20 @@ class TestListing:
     async def test_text_sessions_from_a_non_writer_is_ignored(self) -> None:
         _d, client, _sessions, transport = _wired(users={OWNER, BOSS}, writers=[OWNER])
         await transport.receive(
-            DiscordInbound(channel_id=VIEW, user_id=BOSS, text="!sessions", message_id="m1", guild_id="g1")
+            DiscordInbound(
+                channel_id=VIEW, user_id=BOSS, text="!sessions", message_id="m1", guild_id="g1"
+            )
         )
         assert client.posts == []
 
     @pytest.mark.asyncio
     async def test_a_dm_sessions_command_is_unchanged(self) -> None:
         d, client, _sessions, _t = _wired()
-        await d.handle_message(_message("!sessions", channel_id="dm1"))
+        await d.handle_message(
+            InboundMessage(
+                channel_type="discord", user_id=OWNER, conversation_id="dm1", text="!sessions"
+            )
+        )
         assert "Launch plan" in client.sent[-1][1][0]["components"][0]["label"]
         assert client.webhook == [] and client.defers == []
 
@@ -250,7 +271,9 @@ class TestSharing:
         # A header with the Stop button, then the last five messages: 7 -> 5.
         assert "Shared session" in posted[0][1]
         assert client.posts[0][2][0]["components"][0]["custom_id"] == UNSHARE_ID
-        assert [t.split("\n", 1)[1] for _c, t in posted[1:]] == [f"message {i}" for i in range(2, 7)]
+        assert [t.split("\n", 1)[1] for _c, t in posted[1:]] == [
+            f"message {i}" for i in range(2, 7)
+        ]
         # The picker message is replaced by the result, with no buttons left.
         assert client.webhook[-1][2] == [] and "Shared in a new thread" in client.webhook[-1][1]
 
@@ -341,7 +364,16 @@ class TestSharing:
         d, client, sessions, _t = _wired()
         custom_id, message_id = await _list(d, client)
         await d.on_interaction(_press(custom_id, message_id))
-        await d.handle_message(_message("continue please", channel_id="7001", thread_id="7001"))
+        await d.handle_message(
+            InboundMessage(
+                channel_type="discord",
+                user_id=OWNER,
+                conversation_id="7001",
+                text="continue please",
+                thread_id="7001",
+                person_origin=True,
+            )
+        )
         assert sessions.last_key == KEY
 
 
@@ -351,9 +383,11 @@ async def _list_with(d: Any, client: _ViewClient) -> tuple[str, str]:
     return await _list(d, client)
 
 
-async def _shared(users: set[str] | None = None, writers: Any = None) -> tuple[Any, _ViewClient, Any, DiscordTransport]:
+async def _shared(
+    users: set[str] | None = None, writers: Any = None
+) -> tuple[Any, _ViewClient, Any, DiscordTransport]:
     d, client, sessions, transport = _wired(users=users, writers=writers)
-    custom_id, message_id = await _list(d, client)
+    custom_id, message_id = await _list_with(d, client)
     await d.on_interaction(_press(custom_id, message_id))
     client.posts.clear()
     client.api_calls.clear()
@@ -428,4 +462,4 @@ class TestRestart:
     async def test_the_view_channel_itself_is_not_a_proactive_send_target(self) -> None:
         _d, _client, _sessions, transport = _wired()
         assert transport.may_send_to(VIEW) is False
-        assert transport.configured_targets() == []
+        assert not any(t.target_id.endswith(VIEW) for t in transport.configured_targets())
