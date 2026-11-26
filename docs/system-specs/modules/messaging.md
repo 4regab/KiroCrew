@@ -4536,6 +4536,23 @@ revokes the admission; the channel stays open. A thread an earlier build opened 
 working: its button also archives and locks it, `readmit_own_thread` still admits it
 for a writer, and `rehydrate_view_threads` still lists the bot's active threads.
 
+**Worker threads.** `create_session` calls `dashboard/child_mirror.mirror_child_session`
+after the spawn is recorded. When the creator's mirror is on a channel whose transport has
+`open_child_conversation(parent_id, title)` (a default-less, optional hook; Discord
+implements it for view channels only), the transport opens a public thread under the view
+channel (`POST /channels/{id}/threads`, 7-day auto-archive, named from the redacted,
+mention-safe title), admits it (`admit_view_thread(thread, parent)`, which also records the
+parent so `sole_view_writer` can answer for the thread), posts a one-line header, and the
+helper binds the worker's mirror to it **one way** with no principal and no admission (only
+the two link-creation paths may sign). The worker's replies then mirror there through
+`_deliver_cross_surface_reply`, which passes the recipient leg because the thread is
+admitted. A writer typing in the thread is answered with `WORKER_THREAD_HINT` and drives
+nothing: with no resumed session, `handle_message` refuses any plain message in a view
+channel or a thread under one. Only the creator's session may open one: a DM or any other
+channel has no hook, and a failed thread create leaves the worker as it was. The thread
+holds the replies the mirror carries (each finished reply, redacted), not tool arguments or
+output.
+
 Restart: the binding is the record, so `rehydrate_view_threads` re-admits each view
 channel that still has an inbound-enabled session bound to it (`resumed_session`), then
 asks Discord for the guild's active threads and re-admits those the bot owns under a

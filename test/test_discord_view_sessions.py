@@ -540,3 +540,90 @@ class TestRestart:
         _d, _client, _sessions, transport = _wired()
         assert transport.may_send_to(VIEW) is False
         assert not any(t.target_id.endswith(VIEW) for t in transport.configured_targets())
+
+
+class TestWorkerThreads:
+    @pytest.mark.asyncio
+    async def test_a_worker_thread_opens_under_the_view_channel_and_is_admitted(self) -> None:
+        d, client, _sessions, transport = _wired()
+        created: list[str] = []
+        transport._on_thread_created = created.append
+
+        thread = await transport.open_child_conversation(VIEW, "Fix the <@&1> login")
+
+        assert thread == "7001" and created == ["7001"]
+        # The role mention in the title is defused with a zero-width space.
+        assert client.threads_created() == [
+            {"name": "Fix the <@\u200b&1> login", "type": 11, "auto_archive_duration": 10080}
+        ]
+        assert transport.may_send_to("7001")
+        assert [c for c, _t, _k in client.posts] == ["7001"]
+
+    @pytest.mark.asyncio
+    async def test_a_conversation_that_is_no_view_channel_gets_no_worker_thread(self) -> None:
+        _d, client, _sessions, transport = _wired()
+        assert await transport.open_child_conversation("9999", "x") == ""
+        assert client.api_calls == [] and client.posts == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_thread_create_opens_nothing(self) -> None:
+        _d, client, _sessions, transport = _wired()
+        client.fail_thread_create = True
+        assert await transport.open_child_conversation(VIEW, "x") == ""
+        assert client.posts == []
+
+    @pytest.mark.asyncio
+    async def test_a_worker_thread_names_the_writer_of_its_view_channel_until_revoked(self) -> None:
+        _d, _client, _sessions, transport = _wired()
+        thread = await transport.open_child_conversation(VIEW, "Worker")
+        assert transport.sole_view_writer(thread) == OWNER
+        transport.revoke_view_thread(thread)
+        assert transport.sole_view_writer(thread) == ""
+
+    @pytest.mark.asyncio
+    async def test_startup_remembers_which_view_channel_a_worker_thread_belongs_to(self) -> None:
+        _d, client, _sessions, transport = _wired()
+        client.api_data[("GET", f"/channels/{VIEW}")] = {"guild_id": "g1"}
+        client.api_data[("GET", "/guilds/g1/threads/active")] = {
+            "threads": [{"id": "7001", "owner_id": "bot", "parent_id": VIEW}]
+        }
+        await rehydrate_view_threads(client, transport)  # type: ignore[arg-type]
+        assert transport.sole_view_writer("7001") == OWNER
+
+    @pytest.mark.asyncio
+    async def test_a_workers_replies_reach_its_thread_through_the_mirror_ladder(self) -> None:
+        from kiro_crew.dashboard.chat_runner import _resolve_channel_target
+
+        _d, _client, _sessions, transport = _wired()
+        thread = await transport.open_child_conversation(VIEW, "Worker")
+        state = SimpleNamespace(get_channel_transport=lambda _kind: transport)
+        link = ChannelLink("discord", channel_id=thread)
+
+        assert _resolve_channel_target(state, "chat-9", link) == (link, transport)
+        transport.revoke_view_thread(thread)
+        assert _resolve_channel_target(state, "chat-9", link) is None
+
+    def test_the_sole_writer_is_named_only_when_there_is_exactly_one(self) -> None:
+        _d, _c, _s, transport = _wired(users={OWNER, BOSS}, writers=[OWNER])
+        assert transport.sole_view_writer(VIEW) == OWNER
+        assert transport.sole_view_writer("9999") == ""
+        transport.view.apply([{"id": VIEW, "writers": [OWNER, BOSS]}], [OWNER, BOSS])
+        assert transport.sole_view_writer(VIEW) == ""
+
+    @pytest.mark.asyncio
+    async def test_typing_in_a_worker_thread_gets_a_hint_and_runs_nothing(self) -> None:
+        d, client, sessions, transport = _wired()
+        thread = await transport.open_child_conversation(VIEW, "Worker")
+        client.thread_origins[thread] = ThreadOrigin(11, VIEW, "bot")
+        client.posts.clear()
+        await d.handle_message(
+            InboundMessage(
+                channel_type="discord",
+                user_id=OWNER,
+                conversation_id=thread,
+                text="hello?",
+                thread_id=thread,
+                person_origin=True,
+            )
+        )
+        assert sessions.last_key == "" and "read-only" in client.posts[-1][1]

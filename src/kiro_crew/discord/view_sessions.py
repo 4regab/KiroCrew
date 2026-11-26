@@ -32,6 +32,7 @@ from kiro_crew.discord.session_resume import (
     _DiscordResumeSurface,
     _picker_components,
     _replay_preview,
+    _safe_discord_text,
 )
 from kiro_crew.discord.view_policy import ViewChannel
 from kiro_crew.messaging.dispatch import inbound_permitted
@@ -50,11 +51,23 @@ logger = logging.getLogger(__name__)
 
 #: Custom id of the button that ends a share.
 UNSHARE_ID = "vu:stop"
+#: Longest thread name Discord accepts is 100; the title is cut well inside it.
+_THREAD_NAME_MAX = 90
+#: A worker thread with no traffic archives after Discord's longest wait, 7 days. A
+#: worker that is quiet for longer and then outlives a restart is not re-admitted.
+_WORKER_THREAD_ARCHIVE_MINUTES = 10080
+_PUBLIC_THREAD = 11
 
 _TEXT_SESSIONS_REFUSAL = (
     "🔒 `!sessions` is not available in a view channel: a text reply is public and "
     "would list your private session titles. Use the `/sessions` slash command here "
     "(only you see the list), or DM me."
+)
+
+#: What a writer is told when they type in a worker's thread, which only shows output.
+WORKER_THREAD_HINT = (
+    "ℹ️ This thread shows a worker's replies and is read-only. "
+    "Talk to the shared session in the channel above."
 )
 
 #: What a writer is told when they type in a view channel that shares no session.
@@ -281,6 +294,27 @@ def _admit(d: "DiscordDispatcher", conversation_id: str) -> None:
         d.transport.admit_view_thread(conversation_id)
 
 
+def worker_thread_name(title: str) -> str:
+    """The thread name for a worker titled *title*: redacted, mention-safe, cut short."""
+    return _safe_discord_text(" ".join(title.split()), _THREAD_NAME_MAX) or "Worker"
+
+
+async def open_worker_thread(client: "DiscordClient", view_channel_id: str, name: str) -> str:
+    """Open a public thread under the view channel for one worker; ``""`` on failure."""
+    result = await client.api_json(
+        "POST",
+        f"/channels/{view_channel_id}/threads",
+        {
+            "name": name,
+            "type": _PUBLIC_THREAD,
+            "auto_archive_duration": _WORKER_THREAD_ARCHIVE_MINUTES,
+        },
+        recheck_destination=False,
+    )
+    data = result.data
+    return str(data.get("id") or "") if isinstance(data, dict) else ""
+
+
 def _replay_text(raw: str) -> str:
     return redact_via_context(sanitize_channel_replay_text(raw))
 
@@ -427,6 +461,6 @@ async def rehydrate_view_threads(client: "DiscordClient", transport: "DiscordTra
                     and transport.view.channel(str(thread.get("parent_id") or "")) is not None
                     and str(thread.get("id") or "")
                 ):
-                    transport.admit_view_thread(str(thread["id"]))
+                    transport.admit_view_thread(str(thread["id"]), str(thread["parent_id"]))
                     admitted += 1
     return admitted

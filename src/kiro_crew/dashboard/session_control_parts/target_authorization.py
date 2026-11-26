@@ -416,6 +416,13 @@ def _owner_dm_clauses(
             logger.debug("owner-DM check: %s peer lookup failed", surface, exc_info=True)
             return f"the {surface} channel cannot place the mirror"
         if not peer:
+            # A view channel names its one writer instead: it is a conversation only that
+            # person can speak in, so the words that drive the session are the owner's.
+            view_writer = getattr(transport, "sole_view_writer", None)
+            if callable(view_writer):
+                answer = view_writer(str(getattr(mirror, "channel_id", "") or ""))
+                peer = answer if isinstance(answer, str) else ""
+        if not peer:
             return MIRROR_PEER_NOT_ON_RECORD
         if not owner or owner != f"{DM_TARGET_PREFIX}{peer}":
             return NOT_THE_SOLE_OWNER

@@ -29,7 +29,12 @@ from kiro_crew.discord.client import (
     SendPermission,
 )
 from kiro_crew.discord.view_policy import ViewPolicy
-from kiro_crew.discord.view_sessions import NOT_SHARED_HINT, refuse_text_sessions
+from kiro_crew.discord.view_sessions import (
+    NOT_SHARED_HINT,
+    open_worker_thread,
+    refuse_text_sessions,
+    worker_thread_name,
+)
 from kiro_crew.messaging.identity import channel_inbound_permitted
 from kiro_crew.messaging.outbound_files import ExtractLimits, OutboundFile
 from kiro_crew.messaging.tables import TABLE_POLICY_AUTO
@@ -154,6 +159,9 @@ class DiscordTransport(MessagingTransport):
         # dispatcher's own allow-set). A frozenset here would silently strand
         # every reply the user sends into the thread the bot just created.
         self._allowed_threads: set[str] = {str(t) for t in allowed_thread_ids}
+        # thread id -> the view channel it was opened under, for the threads the bot made
+        # there (a worker's, or a share an earlier build made). In memory, like the grant.
+        self._view_threads: dict[str, str] = {}
         # The subset of ``_allowed_threads`` that came from config.json, so a
         # reload can replace those without dropping the threads this process
         # promoted at runtime (see ``reconfigure``).
@@ -633,6 +641,8 @@ class DiscordTransport(MessagingTransport):
         ):
             return False
         self._allowed_threads.add(thread_id)
+        if self.view.channel(origin.parent_id) is not None:
+            self._view_threads[thread_id] = origin.parent_id
         sel().log_api_access(
             caller=caller or "unknown",
             operation=operation,
@@ -644,14 +654,63 @@ class DiscordTransport(MessagingTransport):
             self._on_thread_created(thread_id)
         return True
 
-    def admit_view_thread(self, thread_id: str) -> None:
-        """Admit a thread the bot opened under a view channel (see ``view_sessions``)."""
+    def sole_view_writer(self, conversation_id: str) -> str:
+        """The one writer of the view channel *conversation_id*, or ``""``.
+
+        A view channel, and a thread the bot opened under it, is a conversation only its
+        writers can speak in, so with exactly one writer it names the one human behind the
+        session, as a 1:1 DM does. Several writers, none, or an id that is neither read
+        ``""``.
+        """
+        view = self.view.channel(conversation_id) or self.view.channel(
+            self._view_threads.get(conversation_id, "")
+        )
+        writers = self.view.writers_of(view) if view is not None else frozenset()
+        return next(iter(writers)) if len(writers) == 1 else ""
+
+    async def open_child_conversation(self, parent_id: str, title: str) -> str:
+        """Open a read-only thread for a worker started from the view channel *parent_id*.
+
+        ``""`` when *parent_id* is no view channel or the thread cannot be made. The thread
+        is admitted as a mirror target only; a writer typing in it is answered with a hint
+        and drives nothing (``handle_message``).
+        """
+        if self.view.channel(parent_id) is None:
+            return ""
+        name = worker_thread_name(title)
+        thread_id = await open_worker_thread(self._client, parent_id, name)
+        if not thread_id:
+            return ""
+        self.admit_view_thread(thread_id, parent_id)
+        if self._on_thread_created is not None:
+            self._on_thread_created(thread_id)
+        sel().log_api_access(
+            caller="session_control",
+            operation="discord_view.worker_thread",
+            outcome="allowed",
+            source="discord",
+            resources=f"channel={parent_id};thread={thread_id}",
+        )
+        await self._client.send_message(
+            thread_id,
+            f"🛠️ **Worker:** {name}\nIts replies appear here. This thread is read-only.",
+        )
+        return thread_id
+
+    def admit_view_thread(self, thread_id: str, parent_id: str = "") -> None:
+        """Admit a conversation the bot bound under a view channel (see ``view_sessions``).
+
+        *parent_id* is the view channel a thread was opened under, which names its writers.
+        """
         self._allowed_threads.add(thread_id)
         self._revoked_threads.discard(thread_id)
+        if parent_id and parent_id != thread_id:
+            self._view_threads[thread_id] = parent_id
 
     def revoke_view_thread(self, thread_id: str) -> None:
         """Withdraw a shared thread: nothing is sent to it and nobody can drive it."""
         self._allowed_threads.discard(thread_id)
+        self._view_threads.pop(thread_id, None)
         self._revoked_threads.add(thread_id)
 
     # -- Inbound adapter ----------------------------------------------------

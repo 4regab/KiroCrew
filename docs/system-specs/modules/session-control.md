@@ -2393,6 +2393,18 @@ facts, and any it cannot establish answers **false**.
    refusal: a DM the transport DOES place, with a peer the roster does not name as
    its sole owner — a stranger's DM, or the owner's DM on a roster that names two
    people — refuses with the same words the channel-born shape uses.
+   When `direct_peer_of` answers nothing, a transport that has `sole_view_writer`
+   is asked instead (Discord only): a **view channel**, or a thread the bot opened
+   under one (a worker's), names the ONE person who may speak in it when its
+   `writers` list holds exactly one id. The answer goes through the same roster
+   clause, so the writer must also be the sole owner, and a channel with several
+   writers, no writers, or a thread the bot did not open reads as before.
+   The words that drive such a session are the owner's, and its readers are the
+   view channel's, an audience the owner chose when sharing the session. Only
+   the transport's answer is new: the verdict, the audience record and the
+   fence are unchanged. A worker made from such a session is mirrored to its own
+   read-only thread (`dashboard/child_mirror.py`), and this clause is what keeps
+   that mirror from taking away the worker's reach to the ledger and to peers.
 4. No Slack thread is bound beside the mirror row, read through `get_slack_link`
    on the slot's own effective key, for the reason clause 3 of the channel-born
    shape gives: `get_mirror_link` answers the `mirror` row alone when one exists.
