@@ -1,12 +1,12 @@
 ---
 title: Memory index -- a pluggable vector and word index so recall and memory search stop scanning every row
-status: draft
+status: in-progress
 author: buluoray, with kirocrew-worker
 created: 2026-11-26
 last-audited: 2026-11-26
-audited-at: a720d40f925
+audited-at: 39a999654fd
 doc-pr: 42916
-implementation-prs: []
+implementation-prs: [42927]
 tracking-issues: [42910]
 supersedes: []
 superseded-by: []
@@ -14,7 +14,7 @@ superseded-by: []
 
 # RFC: Memory index
 
-- Status: draft. Nothing is built.
+- Status: in-progress. Phases 1 and 2 are in [#42927](https://github.com/kirodotdev/KiroCrew/pull/42927), behind `memory.index.mode` (default `off`).
 - Tracking issue: [#42910](https://github.com/kirodotdev/KiroCrew/issues/42910).
 - Code read at `a720d40f925`. Every number below names how it was measured
   (section 2). All of them were taken at host load 29-38 on 32 cores, so treat
@@ -227,22 +227,25 @@ section 4.5 on real stores.
 
 ### 4.3 The local backend
 
-**Vectors.** usearch HNSW: cosine metric, M = 16, f16 storage, saved to
-`vectors.usearch` and opened with `view=True` (memory-mapped).
+**Vectors.** usearch HNSW: cosine metric, M = 16, `i8` scalars, saved to
+`vectors.usearch`.
 
-- Below `memory.index.exact_rows` live vectors, and while a build is running,
-  `local` scans an f16 matrix exactly. That takes about 1 ms at 20k rows, and
-  most member stores are this small.
-- The vector `k` asked of the backend is `max(4 * N, 256)`, where N is the
-  consumer's result limit.
+- Recall re-scores every candidate from the store's own float32 vector, so the
+  index's `i8` scalars only choose candidates. On the 23k store `i8` takes
+  25.7 MB against 48.2 MB for f16; M = 8 saves only 1.4 MB more and loses
+  quality, so M stays 16.
+- Below `memory.index.exact_rows` live vectors the search compares every vector
+  (usearch `exact=True`). Most member stores are this small.
 
-**Words.** Two FTS5 tables in one sidecar file, `words.db`. FTS5 is already
-required by the knowledge store and probed by `_sqlite_compat`.
+**Words.** FTS5 in one sidecar file, `words.db`. FTS5 is already required by the
+knowledge store and probed by `_sqlite_compat`.
 
-| Table | Tokenizer | Serves |
-|---|---|---|
-| `words_tri` (contentless) | `trigram remove_diacritics 0` over the NFKC-casefolded text | Memory page word search and graph search, for words of 3+ characters. This is an exact substring match in any language, so Chinese works and today's any-part matching stays |
-| `words_terms` (`detail=none`) plus a term-string column | `unicode61 remove_diacritics 0` over the `memory_v2.terms()` string | recall's keyword rule, and 2-character Chinese queries |
+| Table | Tokenizer | Serves | Phase |
+|---|---|---|---|
+| `words_terms` (`detail=none`, `columnsize=0`) over a term-string column | `unicode61 remove_diacritics 0` over the `memory_v2.terms()` string | recall's keyword rule, and 2-character Chinese queries | 2 |
+| `words_tri` (contentless) | `trigram remove_diacritics 0` over the NFKC-casefolded text | Memory page word search and graph search, for words of 3+ characters. This is an exact substring match in any language, so Chinese works and today's any-part matching stays | with the Memory page wiring: recall does not use it, and it doubles `words.db` |
+
+`words.db` stores no memory text. Recall reads rows from the store.
 
 How recall finds keyword candidates without a scan:
 - The rule admits a row that matches `k = max(min(2, |Q|), ceil(|Q| / 2))` of
@@ -306,11 +309,9 @@ CREATE TABLE IF NOT EXISTS memory_index_log (
    `SELECT ... WHERE id IN (...) AND is_deleted = 0`, plus the lineage guard.
    No backend ever returns a row by itself, so a deleted memory cannot come back
    from any backend.
-4. **Ranking.** Today's admission and ranking code runs unchanged on those rows.
-   - A cosine within 0.005 of its admission floor is re-scored from the stored
-     f32 blob, so f16 rounding cannot flip an admission.
-   - A filtered query that returns fewer than `limit` rows doubles `k`, up to
-     the exact path.
+4. **Ranking.** Today's admission and ranking code runs unchanged on those rows,
+   scoring each from its stored float32 vector, so the index's scalars never
+   decide an admission (section 4.5 says why the candidates are complete).
 5. **Shadow.** In `shadow`, the exact path also runs and its answer is used.
    Differences in the first N rows are counted and shown in `kirocrew doctor`.
 
@@ -321,7 +322,8 @@ CREATE TABLE IF NOT EXISTS memory_index_log (
 | Write in this process | after commit, its ident joins the overlay. The maintainer calls `upsert` / `remove` in batches, off the event loop |
 | Write from another process | seen through the log at the next query |
 | Overlay over max(2,000, 5% of rows); wrong format or space signature; digest mismatch; `built_seq` above `MAX(seq)` (after a restore); log trimmed past `applied_seq` | the index is `stale`: queries take the exact path and a rebuild is scheduled |
-| Rebuild | `rebuild()` writes `<store>.index.partial/` in a spawned child, the same shape as `memory_reconcile_child.py`: `nice 10`, at most 2 BLAS and usearch threads, one build per gateway, never on the event loop. `swap()` renames it into place. Log entries newer than `build_seq` stay in the overlay |
+| Rebuild | a spawned child, the same shape as `memory_reconcile_child.py` (`nice 10`, 2 BLAS threads, one build per gateway, never on the event loop), writes a new generation directory; the owning process adopts it and `swap()` repoints `current` with one rename. Log entries newer than `build_seq` are applied next. Measured: a build on a thread of the recalling process made a recall beside it 2.2x (23k) to 2.9x (100k) slower, because tokenizing holds the interpreter lock; beside a child a recall costs what it costs with no build |
+| Log recreated (the index was off for a while) | the index rebuilds: writes made while no log existed reached no index |
 
 **Embedding space.** The embedding provider is already pluggable
 (`memory.embedding_provider`, `register_embedding_backend`).
@@ -336,16 +338,17 @@ CREATE TABLE IF NOT EXISTS memory_index_log (
 
 ### 4.5 The quality bar
 
-- About 6.7% of rows sit above V2's 0.57 cosine floor when a real memory is the
-  query (1,537 rows on average at 23k). A top-k index cannot cheaply return
-  every one of them.
-- What recall and the Memory page actually use is the best-ranked rows, and
-  there the index matches exact search (top-64 overlap 0.999).
-- So the bar is set on the output: **the first N rows of each consumer's final
-  ranked list match the exact path's first N rows.** N is the most rows that
-  consumer ever renders or returns.
-- Target: overlap >= 0.99 for N = 64 and N = 256, on V1 and V2, at 23k and 100k,
-  with English, Chinese and mixed queries through the real embedder.
+- V2 admits a row on its cosine (at least 0.57, the lower of its two floors) or
+  on enough shared terms. So recall asks the index for exactly those two sets:
+  every vector at or above the floor (less a margin for `i8`), deepening until
+  the last hit is under it, and every row holding the keyword rule's term
+  count. Then admission, ranking and MMR see the scan's rows at any depth.
+- A search that reaches a limit (16,384 vectors, 4,096 term hits) goes back to
+  the scan and is counted, rather than answering with a partial set.
+- **Bar:** recall's output equals the scan's: overlap 1.000 at N = 64 and
+  N = 256. Measured on 23k and 100k stores (search only, English, Chinese and
+  mixed queries): facts top-64 and top-256 1.000, episodes top-10 1.000, with
+  fact recall 593 → 70 ms at 23k and 2,140 → 241 ms at 100k.
 - Word search must return the same rows as today's substring scan.
 
 Counts:
@@ -369,9 +372,10 @@ Rules for every non-local backend:
   path and marks the status `failed`.
 - A capability a backend lacks is served by `local`.
 
-**Contract test.** `test/memory_index_contract.py` is a parametrized suite that
-every backend must pass. CI runs it on `local` and `exact`, and a third party
-runs it with their backend's registry name. It checks that:
+**Conformance kit.** `kiro_crew.memory_index.conformance.run_conformance(factory)`
+runs the checks every backend must pass, each reported pass, fail or skip (a
+capability the backend does not declare). CI runs it on `local` and `exact`, and
+a third party runs it on their own backend's factory. It checks that:
 - after an upsert, search finds the doc; after a remove, it does not;
 - upserting the same ident twice leaves one doc, and removing an unknown ident
   does nothing;
@@ -391,15 +395,18 @@ backups and `memory_stores` snapshots skip it.
 
 | File | 23k rows | 100k rows | Source |
 |---|---|---|---|
-| `vectors.usearch` | 48 MB | 209 MB | measured |
-| `words.db`, `words_tri` | 42.5 MB | ~175 MB | measured at 23k and 92k |
-| `words.db`, `words_terms` + term strings | ~8 MB | ~35 MB | the FTS part measured, the term strings estimated |
-| `manifest.json`, ident map | ~1 MB | ~4 MB | estimate |
+| `vectors.usearch` (`i8`) | 25.7 MB | ~110 MB | measured at 23k |
+| `words.db`, `words_terms` + term strings | 11.0 MB | ~50 MB | measured at 23k |
 | `memory_index_log` (in the store) | < 1 MB after trim | < 1 MB | estimate |
-| **Total** | **~100 MB** | **~420 MB** | |
+| **Total, phase 2** | **38 MB** | **164 MB** | measured |
+| `words.db`, `words_tri` (with the Memory page) | +34 MB | ~+150 MB | measured at 23k |
 
-RAM: the usearch file and the FTS pages are memory-mapped and paged in on use.
-In `on` mode, today's resident scoring sets (183 MB at 23k and 440 MB at 100k
+The first phase-2 layout (f16 vectors, trigram and stored text) measured 98 MB at
+23k and 413 MB at 100k.
+
+RAM: the owning process holds the usearch index in memory (about the size of
+`vectors.usearch`, since `upsert` must write to it), and the FTS pages through
+SQLite's page cache. In `on` mode, today's resident scoring sets (183 MB at 23k and 440 MB at 100k
 per V2 store) are no longer built.
 
 ## 5. Goals and non-goals
@@ -430,19 +437,23 @@ Non-goals:
 
 ## 7. Migration plan
 
-Each phase is one PR.
+Phases 1 and 2 ship together, so the interface lands with its first caller.
 
 1. **Interface and exact backend.** `MemoryIndex`, the registry, the `exact`
-   backend, the contract test, and `memory.index.mode` (default `off`).
-   - Exit: the contract test passes on `exact`. With `mode: off` nothing
-     changes, which is pinned by the existing recall tests.
-2. **Change log and local backend.** The triggers and log migration, `local`
-   (usearch + FTS5), `IndexedReader`, and `shadow` and `on` for recall, the
-   Memory page searches and graph search. Adds `usearch` to `install_requires`.
-   - Exit: the contract test passes on `local`. On 23k and 100k stores, recall
-     p95 in `on` is under 0.2 s. `shadow` meets section 4.5 with English,
-     Chinese and mixed queries, and word search returns the same rows as today.
-3. **Default on.** Flip `memory.index.mode` to `on`.
+   backend, the conformance kit, and `memory.index.mode` (default `off`).
+   - Exit: the kit passes on `exact`. With `mode: off` nothing changes, which
+     is pinned by the existing recall tests.
+2. **Change log, local backend, V2 recall.** The triggers, `local` (usearch +
+   the FTS5 term table), the child-process rebuild, and `shadow` and `on` for V2
+   fact and episode recall. Adds `usearch` to `install_requires`.
+   - Exit: the kit passes on `local`. On 23k and 100k stores recall in `on`
+     returns the scan's rows (section 4.5) for English, Chinese and mixed
+     queries.
+3. **Memory page and graph search.** The trigram table, the Memory page's
+   search by meaning and by words, and graph search, once the open Memory
+   page changes that rewrite those paths land.
+   - Exit: word search returns the same rows as today's substring scan.
+4. **Default on.** Flip `memory.index.mode` to `on`.
    - Exit: doctor's shadow counters on real stores show the section 4.5 bar
      over one release.
 

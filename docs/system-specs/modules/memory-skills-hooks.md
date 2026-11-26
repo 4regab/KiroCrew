@@ -4577,6 +4577,89 @@ learned-rule operations address the exact prepared SQLite service. V1 retains
 workspace Markdown, JSONL fallback and separate FTS; its startup context is the
 bounded admission described above, with earlier activity behind `memory_recall`.
 
+## Memory index (`memory_index/`)
+
+A vector and word index beside each memory store, so V2 recall reads the rows worth
+scoring instead of every row. Design and phases:
+[rfc-memory-index](../../request-for-change/rfc-memory-index.md), tracked in
+[#42910](https://github.com/kirodotdev/KiroCrew/issues/42910). `memory.index.mode`
+(`off` by default) decides whether any of it runs; with `off` recall reads every row,
+as before, and no change log exists.
+
+| Module | Owns |
+|---|---|
+| `contract.py` | `MemoryIndex` (a `typing.Protocol`), the `IndexDoc` / `IndexQuery` / `Hit` / `IndexStatus` / `EmbeddingSpace` / `StoreRef` records, the four capabilities (`vector`, `terms`, `substring`, `filters`) and `MemoryIndexError` |
+| `exact.py` | `ExactIndex` (`exact`), the reference backend: every search scores every document it holds, in memory, nothing on disk |
+| `local.py` | `LocalIndex` (`local`, the default): usearch HNSW (cosine, `i8` scalars, M=16; exact below `memory.index.exact_rows` vectors) plus SQLite FTS5 in `words.db`: `words_terms` (`detail=none`, `columnsize=0`, over the `memory_v2.terms` string, with `fts5vocab` document counts). It stores no memory text and does not serve `substring` (no caller asks yet). Recall re-scores every candidate from the store's own float32 vector, so the `i8` scalars only choose candidates. Files are owner-only. One generation directory per build; `current` names the live one and `swap` repoints it with one rename; `adopt(name, build_seq=)` takes a generation another process wrote with `build_generation`. Saved vectors that lag the saved words read `stale` |
+| `build_child.py` | `run_build_in_child`: a rebuild in a spawned child (`nice 10`, 2 BLAS threads) that writes a generation and sends back its name and seq; the parent adopts and swaps it. On any failure the parent builds on its own thread |
+| `registry.py` | `register_index_backend(name, factory)` (`None` removes it), `backend_names()`, `create_index_backend(name)`. A name that shadows a built-in is refused; a factory whose instance is not a `MemoryIndex`, or declares an unknown capability, is refused at creation |
+| `conformance.py` | `run_conformance(factory)`: the checks every backend must pass, each reported `pass`, `fail` or `skip` (a capability the backend does not declare) |
+| `changelog.py` | the store's change log: `memory_index_log` and the triggers that fill it, installed only while the mode is not `off` |
+| `store_index.py` | `StoreIndex`, one store's index (owner lock, build, catch-up, candidates) and `index_for(store)`; `settings_from(memory_cfg)` reads `memory.index` |
+| `recall_rows.py` | what V2 fact recall (`semantic_candidates_v2`) and episode recall (`search_episodic_v2`) read: candidates from the index in `on`, every row otherwise; `shadow_compare` for `shadow` |
+
+**Change log.** Triggers on `memory_items` (crew lineage) or `semantic_memory` /
+`episodic_memories` (V1), and on `memory_record_meta` identity columns, insert one
+`(rel, ident)` row per insert, content update or delete: `("semantic", key)` or
+`("episodic", id)`, never a value and never a rowid. An update of `last_accessed_at`
+alone does not log. The AUTOINCREMENT counter (`sqlite_sequence`) is the store's
+change counter (`changelog.current_seq`). A store built from the install's config with
+`memory.index.mode: off` strips the triggers and the table at `init()` (nothing would
+trim them); a store opened with no config leaves them. The snapshot redactor strips
+them from a staged copy, beside `strip_reconcile_state`.
+
+**Candidates: exactly the rows V2 could admit.** In `on`, with a ready index, recall
+reads only the rows the index names, through its own `is_deleted = 0` and lineage
+guard, plus every `pref.*` fact (a key range scan), then runs today's admission,
+ranking and MMR unchanged. V2 admits a row on its cosine or on its shared terms, so
+the index names both sets in full, each searched within its own relation (`rel`
+filter):
+
+- every vector whose cosine reaches `memory_v2.LONG_COSINE_FLOOR` (the lower floor)
+  less a 0.02 margin for the `i8` scalars: the search deepens x4 from 256 until its
+  last hit is under that, or hands the query back to the scan past 16,384;
+- every row holding the keyword rule's `max(min(2, |Q|), ceil(|Q| / 2))` query terms
+  (`terms`, `min_match`), or the scan when 4,096 rows match.
+
+So the rows recall admits, ranks and renders are the scan's rows, at any depth:
+exactly below `memory.index.exact_rows` vectors (every vector compared); above it the
+vector side walks the HNSW graph, which can miss a row near the floor (measured
+equal to the scan at 100k rows; `shadow` counts misses before `on` is used). The
+change log's random install id (`changelog.log_id`) is part of the build's space
+signature, so a log another process stripped and recreated rebuilds the index. A
+fact recall with no query text (it keeps every fact) and an episode search without its
+relevance filter (it keeps every row with a vector) keep scanning. Each hand-back is
+counted in `StoreIndex.fallbacks`. In `shadow` the scan answers and `StoreIndex.shadow`
+counts, per kind, the top-64 rows checked and the ones the index did not name.
+
+**Freshness and ownership.** Before each search the index applies the logged changes
+past its `applied_seq` (read back from the store, at most 2,000; more rebuilds). A
+build reads one snapshot through its own read-only connection (no store lock held)
+in a spawned child (`build_child.py`; one build per process), and swaps in when done:
+on a thread the build's tokenizing held the interpreter lock, and a recall beside it
+took 2.2x to 2.9x as long; beside a child it takes as long as with no build. Recall scans
+until then. The embedding signature (`memory_meta` `embedding_space_sig` plus the
+dimension) is part of the build; a change rebuilds. The index directory
+`<store file>.index/` is owner-only, and one process holds its `owner.lock`; any
+other process that opens the store scans. `VectorMemoryStore.close` closes the index
+(saving its vectors, releasing the lock). A change counter below the index's
+`applied_seq`, or a log the index had to reinstall (writes made while none existed
+reached no index), rebuilds. `StoreIndex` takes the store's own `_db_lock`, never a
+second lock, because recall already holds that one when it asks for candidates. A
+named store's `memory.db.index/` is host-local state
+(`memory_stores.STORE_INDEX_DIR_NAME`), so it never rides in a bundle.
+
+Tested in `test/test_memory_index.py` (contract, registry, kit; the kit fails a
+backend that keeps removed documents, shows a build early, or cannot open) and
+`test/test_memory_index_store.py` (the log names writes and deletes but not reads and
+copies no value; fact and episode recall on the index equal the scan and follow a
+delete; `shadow` answers from the scan; recall scans while a build runs; `off`
+strips the log at open; a build in a child process is adopted and answers like the
+scan; a recreated log rebuilds; a full term window hands back to the scan and facts
+are not crowded out by episodes; closing the store frees the owner lock; an `exact`
+index opened empty is not ready; the index directory is host-local; `local` passes
+the kit on disk and marks lagging vectors stale).
+
 ## Memory providers (`memory_provider/`)
 
 Crew's memory has one seam with two implementations: Crew's own memory (everything

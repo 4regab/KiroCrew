@@ -35,6 +35,7 @@ from kiro_crew import memory_reconcile_child
 from kiro_crew import memory_record_metadata as record_meta
 from kiro_crew import memory_schema, memory_stores, platform_compat, sqlite_wal
 from kiro_crew.boot_timing import timed_step
+from kiro_crew.memory_index import changelog as index_changelog
 from kiro_crew.owner_only_files import prepare_owner_only_sqlite
 
 if TYPE_CHECKING:
@@ -634,6 +635,14 @@ def _schema_steps(self: VectorMemoryStore, migrated: list[int]) -> list[Callable
         # any other store is marked by reconcile, which never waits for the lock.
         if steps and record_meta.marker_wanted_for_empty_store(self.db):
             steps.append(functools.partial(record_meta.install_marker_if_empty, self.db))
+        # The index change log exists only while memory.index is on: with nothing
+        # trimming it, an index that was turned off would let it grow forever.
+        # Only a store built from the install's config decides: a store opened
+        # with no config must not strip the log another process relies on.
+        index_settings = getattr(self, "_index_settings", None)
+        if index_settings is not None and index_settings.mode == "off":
+            if index_changelog.is_present(self.db):
+                steps.append(functools.partial(index_changelog.strip, self.db))
         if self._lineage == memory_schema.LINEAGE_CREW:
             # Before its migrations run, a crew file has no memory_meta to read,
             # so the stamp step is planned and reads the stamps when it runs.
@@ -685,6 +694,12 @@ def close(self: VectorMemoryStore) -> None:
             # Before the shared connection and the store-use lock go: no read
             # connection may outlive the admission that opened the file.
             self._readers.disable()
+            # The index saves its vectors and gives up its owner lock, so the
+            # next handle on this store can own the index again.
+            index = getattr(self, "_memory_index", None)
+            if index is not None:
+                self._memory_index = None
+                index.close()
             if self._db:
                 db, self._db = self._db, None
                 _close_shared(db, wal_kept_on_close=self._wal_kept_on_close)
