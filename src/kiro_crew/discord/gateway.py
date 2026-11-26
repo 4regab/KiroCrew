@@ -130,8 +130,6 @@ _PENDING_REGISTRATIONS: set[asyncio.Task[None]] = set()
 
 def _rehydrate_view_threads(client: "DiscordClient", transport: DiscordTransport) -> None:
     """Re-admit the shared view threads this bot opened before the restart, in the background."""
-    if not transport.view.active:
-        return
 
     async def _run() -> None:
         try:
@@ -506,7 +504,8 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
                 )
         _publish_slash_commands(client)
         _reopen_owner_dm(client, allowed_ids)
-        _rehydrate_view_threads(client, transport)
+        if view.active:
+            _rehydrate_view_threads(client, transport)
         logger.info("Discord channel started (transport path, Gateway WebSocket).")
         return client
     except Exception as exc:
