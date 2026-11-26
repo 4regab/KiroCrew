@@ -4503,6 +4503,35 @@ entries reach the policy instead of being repaired away. Gateway startup request
 guild message intents when any view channel is configured. Pinned by
 `test_discord_view_policy.py`.
 
+**Sharing sessions (`discord/view_sessions.py`).** In a view channel itself (not a
+thread), `on_interaction` hands a writer's `/sessions` and picker presses to
+`handle_view_interaction` before the thread-roster check. The listing is an ephemeral
+deferral (`defer_interaction`, then `edit_interaction_original`), written through the
+resume controller with `_ViewSurface`, so the private titles never reach the channel.
+It needs `DiscordSessionResume.is_owner` as the DM picker does. A press peeks the choice
+(`PickerRegistry.peek`), takes the per-channel share throttle (`ViewPolicy.allow_share`,
+one per 15 s), opens a public thread under the channel (`POST /channels/{id}/threads`,
+type 11, 7-day auto-archive), then runs the controller's `choose` with
+`ChannelLink("discord", channel_id=<thread>, principal=<owner>)`: the same signed,
+inbound-enabled binding a DM pick makes, so a writer's message in the thread routes to
+the session and each finished reply is mirrored through `_deliver_cross_surface_reply`.
+A failed bind deletes the thread. The thread is admitted through
+`DiscordTransport.admit_view_thread` (and `DiscordDispatcher.register_allowed_thread`),
+which makes it a normal mirror target. The replay (`replay_messages`, user and assistant
+turns) goes through `sanitize_channel_replay_text`, `redact_via_context` and
+`_replay_preview`. `!sessions`/`!bot` typed in the channel is answered by
+`refuse_text_sessions` with a pointer and no list. The `Stop sharing` button (`vu:stop`)
+resolves the session from the thread it sits in, never from the button, then releases the
+binding, calls `revoke_view_thread` and archives and locks the thread.
+
+Restart: no file records which threads are shared. `readmit_own_thread` also accepts a
+parent that is a view channel (bot-owned thread, writer caller, not revoked), and
+`rehydrate_view_threads` asks Discord for the guild's active threads at startup and
+re-admits those the bot owns under a view channel. An archived thread is re-admitted by a
+writer's next message. `_still_may_send_to` allows the view channel itself so the
+ephemeral writes can pass the mid-send re-check; `may_send_to` and
+`configured_targets` do not list it. Pinned by `test_discord_view_sessions.py`.
+
 ### Discord's dispatcher composition
 
 `DiscordDispatcher` is one class composed from owners beside its facade.
