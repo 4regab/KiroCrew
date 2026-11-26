@@ -151,6 +151,16 @@ export function recordShown(slot: string, ts: string | undefined): void {
   else if (isSlotOnScreen(slot) && isSlotRenderedVisibly(slot)) noteShownHere(slot, ts)
 }
 
+/* Reads the active chat a just-shown mounted transcript renders; bound by attachFocusRelay. */
+let readRevealedImpl: () => void = () => {}
+
+/** A mounted transcript its container hid has just been shown: the active
+ *  chat it renders is read through the focus relay's read path, so an
+ *  unfocused reveal is read when the window gains focus. */
+export function readRevealedActiveSlot(): void {
+  readRevealedImpl()
+}
+
 /* Slot-focus intent signal (resume prefetch). The hook instance owns the
    live socket, but split view needs to report pane focus from a component
    tree that has no access to the hook's return value — so the sender is a
@@ -298,14 +308,19 @@ export function attachFocusRelay({ socket, flushSlotActivity, onActiveSlotChange
   // The active chat on screen in a focused window is read: on a reveal, and when
   // a relay Crew tab that covered it goes away with nothing else (an SSH Crew)
   // in front. Only the latter clears this window's badge, which a reply landing
-  // under the tab lit.
+  // under the tab lit; so does a visible mounted transcript off the chat
+  // routes, whose badge a reply lit while its container hid it.
   const readActiveSlotIfShown = (clearBadge: boolean) => {
     const active = store.getState().chat.activeSlot
-    if (!active || socket.reconnectingRef.current || !document.hasFocus() || !isChatSurfaceVisible() || relayTabCovers()) return
+    if (!active || socket.reconnectingRef.current || !document.hasFocus() || !isActiveSlotRendered() || relayTabCovers()) return
     // Leaving a relay tab for an SSH Crew leaves the local chat covered.
     if (clearBadge && localCovered(store.getState())) return
-    if (clearBadge && store.getState().dashboard.unreadSlots?.includes(active)) store.dispatch(markSlotRead(active))
+    const clear = clearBadge || !isChatSurfaceVisible()
+    if (clear && store.getState().dashboard.unreadSlots?.includes(active)) store.dispatch(markSlotRead(active))
     emitSlotRead(active, slotLastTsOf(store.getState().dashboard, active))
+  }
+  readRevealedImpl = () => {
+    if (!document.hidden) readActiveSlotIfShown(false)
   }
   let covered = relayTabCovers()
   const unsubCover = store.subscribe(() => {
@@ -335,6 +350,7 @@ export function attachFocusRelay({ socket, flushSlotActivity, onActiveSlotChange
     unsubMemberThread()
     sendSlotFocusedImpl = () => {}
     reannounceFocusImpl = () => {}
+    readRevealedImpl = () => {}
     unsubRoute()
     bindSubagentReplaySender(null)
     bindComposeIntentSender(null)

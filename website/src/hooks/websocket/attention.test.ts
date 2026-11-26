@@ -8,7 +8,7 @@ import { relayPaneOpened, setActiveId } from '../../store/instancesSlice'
 import type { ChatSlot } from '../../types'
 import { emitComposeIntent } from '../../lib/composeIntent'
 import { _resetSlotReadRelayForTest, emitSlotRead } from '../../lib/slotReadRelay'
-import { attachFocusRelay, attendArrival, isSlotOnScreen, COMPOSE_INTENT_THROTTLE_MS, emitSlotFocused, endSplitPaneFocus, focusedSlotForCurrentSurface } from './attention'
+import { attachFocusRelay, attendArrival, isSlotOnScreen, readRevealedActiveSlot, COMPOSE_INTENT_THROTTLE_MS, emitSlotFocused, endSplitPaneFocus, focusedSlotForCurrentSurface } from './attention'
 import { noteRouteChange } from '../../lib/routeChange'
 import { holdChatTranscriptMount } from '../../lib/mountedChatTranscript'
 import { clearViewedThreadSlot, setViewedThreadSlot } from '../../lib/viewedThread'
@@ -423,6 +423,65 @@ describe('the retained active slot off the chat routes', () => {
         expect(arrive('slot-kept')).not.toHaveBeenCalled()
       } finally { release() }
       expect(isSlotOnScreen('slot-kept')).toBe(false)
+    })
+  })
+
+  it('badges a reply on an app page whose ChatPage is mounted hidden', () => {
+    atPath('/apps/notes', () => {
+      store.dispatch(setActiveSlot('slot-kept'))
+      const pane = document.createElement('div')
+      document.body.appendChild(pane)
+      let shown = false
+      pane.checkVisibility = () => shown
+      const release = holdChatTranscriptMount(pane)
+      try {
+        expect(isSlotOnScreen('slot-kept')).toBe(false)
+        expect(arrive('slot-kept')).toHaveBeenCalledWith('slot-kept')
+        shown = true
+        expect(isSlotOnScreen('slot-kept')).toBe(true)
+        pane.remove()
+        expect(isSlotOnScreen('slot-kept')).toBe(false)
+      } finally { release(); pane.remove() }
+    })
+  })
+
+  it.each([true, false])('reads the badged reply once the hidden ChatPage is shown (focused: %s)', (focused) => {
+    const resized: Array<() => void> = []
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { resized.push(cb) } observe() {} disconnect() {} })
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(focused)
+    const sendIfOpen = vi.fn()
+    const reads = () => sendIfOpen.mock.calls.filter(([m]) => (m as { type: string }).type === 'slot_read')
+    atPath('/apps/notes', () => {
+      store.dispatch(setActiveSlot('slot-kept'))
+      const detach = attachFocusRelay({
+        socket: { sendIfOpen, reconnectingRef: { current: false } } as unknown as SocketConnection,
+        flushSlotActivity: vi.fn(),
+        onActiveSlotChange: vi.fn(),
+      })
+      const pane = document.createElement('div')
+      document.body.appendChild(pane)
+      let shown = false
+      pane.checkVisibility = () => shown
+      const release = holdChatTranscriptMount(pane, readRevealedActiveSlot)
+      try {
+        arrive('slot-kept')
+        resized.forEach(cb => cb())
+        expect(store.getState().dashboard.unreadSlots).toContain('slot-kept')
+        shown = true
+        resized.forEach(cb => cb())
+        if (!focused) {
+          expect(store.getState().dashboard.unreadSlots).toContain('slot-kept')
+          expect(reads()).toHaveLength(0)
+          focus.mockReturnValue(true)
+          act(() => window.dispatchEvent(new Event('focus')))
+        }
+        expect(store.getState().dashboard.unreadSlots).not.toContain('slot-kept')
+        expect(reads()).toHaveLength(1)
+      } finally {
+        release(); pane.remove(); detach()
+        hidden.mockRestore(); focus.mockRestore(); vi.unstubAllGlobals(); _resetSlotReadRelayForTest()
+      }
     })
   })
 
