@@ -450,6 +450,8 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         _code_channel_admitted,
         _deny_factory,
         _deny_operation,
+        _has_unaddressable_mirror,
+        _is_view_worker,
         _live_target_refusal,
         _not_creator_reason,
         _owner_dm_clauses,

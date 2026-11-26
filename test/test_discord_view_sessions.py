@@ -581,6 +581,16 @@ class TestWorkerThreads:
         assert transport.sole_view_writer(thread) == ""
 
     @pytest.mark.asyncio
+    async def test_only_a_thread_under_a_view_channel_is_a_view_worker_thread(self) -> None:
+        _d, _client, _sessions, transport = _wired()
+        thread = await transport.open_child_conversation(VIEW, "Worker")
+        assert transport.is_view_worker_thread(thread)
+        assert not transport.is_view_worker_thread(VIEW)
+        assert not transport.is_view_worker_thread("9999")
+        transport.revoke_view_thread(thread)
+        assert not transport.is_view_worker_thread(thread)
+
+    @pytest.mark.asyncio
     async def test_startup_remembers_which_view_channel_a_worker_thread_belongs_to(self) -> None:
         _d, client, _sessions, transport = _wired()
         client.api_data[("GET", f"/channels/{VIEW}")] = {"guild_id": "g1"}

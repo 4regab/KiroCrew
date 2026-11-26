@@ -2405,6 +2405,19 @@ facts, and any it cannot establish answers **false**.
    fence are unchanged. A worker made from such a session is mirrored to its own
    read-only thread (`dashboard/child_mirror.py`), and this clause is what keeps
    that mirror from taking away the worker's reach to the ledger and to peers.
+   The same thread must not make the worker unaddressable to its creator, so
+   `authorize_target` (and the broadcast resolution list) read `mirrored_target`
+   through `_has_unaddressable_mirror` rather than `_has_channel_mirror`: the two
+   differ only for a worker (`_created_by` set) whose one mirror is a one-way,
+   principal-less link to a conversation the transport answers
+   `is_view_worker_thread` for, with no Slack thread beside it and
+   `judge_owner_dm` finding the thread's sole writer to be the roster's sole owner
+   (`_is_view_worker`). The audience record is unchanged: a read records the
+   CALLER's own binding, so the creator's reply is not withheld, and a DM, a
+   two-writer or no-writer view channel, a thread the bot did not open or an inbound
+   mirror still refuses. `_has_channel_mirror` itself, and every other reader of it
+   (the revive gates, `set_note`, the crew-log and debug scopes, context withholding),
+   is untouched.
 4. No Slack thread is bound beside the mirror row, read through `get_slack_link`
    on the slot's own effective key, for the reason clause 3 of the channel-born
    shape gives: `get_mirror_link` answers the `mirror` row alone when one exists.

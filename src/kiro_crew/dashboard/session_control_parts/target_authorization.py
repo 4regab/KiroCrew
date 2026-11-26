@@ -461,6 +461,47 @@ def _owner_dm_clauses(
     return "the outbound mirror points somewhere other than this conversation"
 
 
+def _is_view_worker(state: "DashboardState", slot: "_ChatSlot") -> bool:
+    """Whether *slot* is a worker whose only mirror is its read-only view-channel thread.
+
+    ``create_session`` gives a worker started from a shared view channel its own thread
+    (``dashboard/child_mirror.py``). That thread is a conversation only the view channel's
+    one writer can read, the audience the creator already answers to, so the worker is not
+    republishing to anyone else and stays addressable. Every clause must hold: the worker
+    was created by another session; its one mirror is a one-way, principal-less link to a
+    conversation the transport reports as a thread the bot opened under a view channel; no
+    Slack thread is bound beside it; and :func:`judge_owner_dm` finds the thread's one
+    writer to be the roster's sole owner. A DM, a two-writer or no-writer view channel, a
+    thread the bot did not open, an inbound mirror and a store that cannot answer all read
+    False, so the refusal stands.
+    """
+    sessions = getattr(state, "sessions", None)
+    if sessions is None or not getattr(slot, "_created_by", ""):
+        return False
+    try:
+        key = slot_history_key(slot)
+        binding = _read_mirror_binding(sessions, key)
+        if binding is None or sessions.mirror_accepts_inbound(key):
+            return False
+        link, slack_thread, _slack_channel = binding
+        if slack_thread or not isinstance(link, ChannelLink) or link.thread_id or link.principal:
+            return False
+        probe = getattr(
+            state.get_channel_transport(link.channel_type), "is_view_worker_thread", None
+        )
+        if not callable(probe) or probe(link.channel_id) is not True:
+            return False
+        return judge_owner_dm(state, slot).refusal == ""
+    except Exception:
+        logger.debug("view-worker check failed for %s", getattr(slot, "key", ""), exc_info=True)
+        return False
+
+
+def _has_unaddressable_mirror(state: "DashboardState", slot: "_ChatSlot") -> bool:
+    """:func:`_has_channel_mirror`, except for a worker's own read-only view thread."""
+    return _has_channel_mirror(state, slot) and not _is_view_worker(state, slot)
+
+
 def session_owner_dm_refusal(state: "DashboardState", session_key: str) -> str:
     """:func:`owner_dm_refusal` for a caller known only by its session key.
 
@@ -737,7 +778,7 @@ def _broadcast_resolution_slots(
             continue
         if getattr(slot, "_app", "") or getattr(slot, "linked_session_key", ""):
             continue
-        if _has_channel_mirror(state, slot):
+        if _has_unaddressable_mirror(state, slot):
             continue
         if getattr(slot, "workspace", "default") != getattr(caller_slot, "workspace", "default"):
             continue
@@ -1172,7 +1213,7 @@ def authorize_target(
     app_reachable = app_admits_reach(slot, operation)
     if (refusal := _live_target_refusal(slot, app_reachable=app_reachable)) is not None:
         raise deny(refusal[0], refusal[1])
-    if _has_channel_mirror(state, slot):
+    if _has_unaddressable_mirror(state, slot):
         # Same boundary as the channel-link refusal, reached by the other
         # mechanism: an outbound mirror republishes this session's turns to a
         # channel, so a read would pull that channel's content back and a stop
