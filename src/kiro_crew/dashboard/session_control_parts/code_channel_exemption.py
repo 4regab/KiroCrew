@@ -254,6 +254,19 @@ def _recorded_senders(slot: Any) -> tuple[frozenset[str], bool]:
     return frozenset(entry[1]), entry[2]
 
 
+def owner_wrote_all_channel_text(slot: Any) -> bool:
+    """Whether every Slack author on record for *slot* is the Slack owner (``is_owner``).
+
+    The same record and the same owner-by-identity check as :func:`_sender_refusal`,
+    with no opener and no Stop fence. No record (none was routed, or a gateway
+    restart dropped it), an overflowed record or a failed check answers False.
+    """
+    authors, overflowed = _recorded_senders(slot)
+    if overflowed or not authors:
+        return False
+    return all(_is_owner(author) for author in authors)
+
+
 def forget_senders() -> None:
     """Drop every record (tests)."""
     with _senders_lock:

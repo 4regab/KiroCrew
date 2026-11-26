@@ -202,6 +202,7 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         judge_code_channel,
         note_channel_sender,
         note_thread_conductor_start,
+        owner_wrote_all_channel_text,
         published_goal,
         published_item_fields,
         published_state,

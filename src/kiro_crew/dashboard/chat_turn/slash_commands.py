@@ -490,6 +490,56 @@ def _refuse_blocked_slash(turn) -> None:
     state.push_slots_update()
 
 
+#: Local commands a channel's words run only when the Crew's owner wrote them.
+_OWNER_ONLY_CHANNEL_COMMANDS = frozenset({"/goal", "/workflow"})
+
+
+def _refuses_channel_sender(turn: _ChatTurn, slot: _ChatSlot) -> bool:
+    """Whether *turn* carries channel text the Slack owner did not alone write.
+
+    A dashboard turn (the owner's or an admitted teammate's; the chat routes judge
+    who may send one) carries none and is never refused here. A channel turn is
+    one marked channel-origin or stamped with the channels it was typed in (a stamp
+    outlives a restart, the mark does not). It passes only while every Slack author
+    on record for the slot is the owner (``owner_wrote_all_channel_text``), so an
+    unknown author, or any author on another channel, refuses.
+    """
+    if not (turn._directive_channel_origin or _channels_judging_turn(turn, slot)):
+        return False
+    # Call-time import: the session-control package imports dashboard modules.
+    from kiro_crew.dashboard.session_control_parts.code_channel_exemption import (
+        owner_wrote_all_channel_text,
+    )
+
+    return not owner_wrote_all_channel_text(slot)
+
+
+async def _refuse_channel_owner_command(
+    state: DashboardState, slot: _ChatSlot, session_key: str, first_word: str
+) -> None:
+    """Answer an owner-only command a channel sent: in the chat, and in its linked thread."""
+    text = (
+        f"`{first_word}` was not run: from a channel it runs only when every message this "
+        "chat received there is known to be from the Crew's owner. Run it from the Kiro "
+        "Crew dashboard."
+    )
+    sel().log_tool_invocation(
+        session_key=session_key,
+        agent=slot.agent or "kirocrew",
+        source="dashboard",
+        tool_name=first_word,
+        tool_kind="slash_command",
+        outcome="denied",
+        metadata={"slot": slot.key, "reason": "channel_sender_not_owner"},
+    )
+    _append_command_reply(slot, text)
+    # The turn ends before the reply mirror, so the linked thread is told directly.
+    await _deliver_linked_slack_message(
+        state, slot, getattr(state, "sessions", None), session_key, text
+    )
+    state.push_slots_update()
+
+
 async def _turn_slash_gate(turn: _ChatTurn) -> _Flow | None:
     """Answer the local slash commands before a session is claimed."""
     _commands_off = turn._commands_off
@@ -615,6 +665,13 @@ async def _turn_slash_gate(turn: _ChatTurn) -> _Flow | None:
             reply_with=_append_command_reply,
             reply_to_channel=_reply_to_thread,
         )
+        return _Flow.END
+
+    # /goal and /workflow start work that runs on after this turn, so a channel's
+    # words run them only when the Crew's owner wrote them (`_refuses_channel_sender`).
+    if first_word in _OWNER_ONLY_CHANNEL_COMMANDS and _refuses_channel_sender(turn, slot):
+        turn_exit.local_command = first_word
+        await _refuse_channel_owner_command(state, slot, session_key, first_word)
         return _Flow.END
 
     # ── /goal: arm / clear a goal-driven self-verdict loop (v0) ──
