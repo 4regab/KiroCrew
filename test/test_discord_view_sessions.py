@@ -1,4 +1,4 @@
-"""Sharing a session into a Discord view channel: ``/sessions``, a thread per session.
+"""Sharing a session into a Discord view channel: ``/sessions``, the channel itself.
 
 Drives a real dispatcher and transport against the in-memory fakes of
 ``discord_sessions_helpers``, with a client that records the REST calls the real one
@@ -254,20 +254,17 @@ class TestListing:
 
 class TestSharing:
     @pytest.mark.asyncio
-    async def test_a_pick_opens_a_thread_links_the_session_and_replays_five(self) -> None:
+    async def test_a_pick_links_the_channel_and_replays_five(self) -> None:
         d, client, sessions, transport = _wired()
         custom_id, message_id = await _list(d, client)
         await d.on_interaction(_press(custom_id, message_id))
 
-        assert client.threads_created() == [
-            {"name": "Launch plan", "type": 11, "auto_archive_duration": 10080}
-        ]
-        thread = "7001"
-        assert sessions.mirror_links[KEY] == ChannelLink("discord", channel_id=thread)
+        assert client.threads_created() == []
+        assert sessions.mirror_links[KEY] == ChannelLink("discord", channel_id=VIEW)
         assert KEY in sessions.inbound_keys
-        assert thread in d._allowed_threads and transport.may_send_to(thread)
+        assert VIEW in d._allowed_threads and transport.may_send_to(VIEW)
         posted = [(c, t) for c, t, _k in client.posts]
-        assert all(c == thread for c, _ in posted)
+        assert all(c == VIEW for c, _ in posted)
         # A header with the Stop button, then the last five messages: 7 -> 5.
         assert "Shared session" in posted[0][1]
         assert client.posts[0][2][0]["components"][0]["custom_id"] == UNSHARE_ID
@@ -275,7 +272,7 @@ class TestSharing:
             f"message {i}" for i in range(2, 7)
         ]
         # The picker message is replaced by the result, with no buttons left.
-        assert client.webhook[-1][2] == [] and "Shared in a new thread" in client.webhook[-1][1]
+        assert client.webhook[-1][2] == [] and "Shared in this channel" in client.webhook[-1][1]
 
     @pytest.mark.asyncio
     async def test_the_replay_is_redacted_and_defuses_mentions_for_both_roles(self) -> None:
@@ -314,12 +311,13 @@ class TestSharing:
             _press(custom_id, message_id, channel="6001"),  # another channel
         ):
             await d.on_interaction(forged)
-        assert client.threads_created() == [] and sessions.mirror_links == {}
+        assert client.posts == [] and sessions.mirror_links == {}
         await d.on_interaction(_press(custom_id, message_id))
-        assert len(client.threads_created()) == 1
+        assert KEY in sessions.mirror_links
         # The same button a second time: the choice was consumed.
+        posts = len(client.posts)
         await d.on_interaction(_press(custom_id, message_id))
-        assert len(client.threads_created()) == 1
+        assert len(client.posts) == posts
         assert "expired" in client.webhook[-1][1]
 
     @pytest.mark.asyncio
@@ -327,54 +325,131 @@ class TestSharing:
         d, client, sessions, _t = _wired(users={OWNER, BOSS}, writers=[OWNER])
         custom_id, message_id = await _list_with(d, client)
         await d.on_interaction(_press(custom_id, message_id, user=BOSS))
-        assert client.threads_created() == [] and sessions.mirror_links == {}
+        assert client.posts == [] and sessions.mirror_links == {}
 
     @pytest.mark.asyncio
-    async def test_a_failed_thread_create_shares_nothing(self) -> None:
-        d, client, sessions, _t = _wired()
-        custom_id, message_id = await _list(d, client)
-        client.fail_thread_create = True
-        await d.on_interaction(_press(custom_id, message_id))
-        assert sessions.mirror_links == {} and "nothing was shared" in client.webhook[-1][1]
-
-    @pytest.mark.asyncio
-    async def test_a_failed_bind_deletes_the_thread_it_opened(self) -> None:
+    async def test_a_failed_bind_shares_nothing(self) -> None:
         d, client, sessions, _t = _wired()
         custom_id, message_id = await _list(d, client)
         d._session_resume.conv_log.messages.pop(KEY)  # the transcript vanished
         await d.on_interaction(_press(custom_id, message_id))
-        assert ("DELETE", "/channels/7001", None) in client.api_calls
         assert sessions.mirror_links == {} and d._allowed_threads == set()
+        assert client.posts == []
+
+    @pytest.mark.asyncio
+    async def test_a_second_session_cannot_take_an_occupied_channel(
+        self, _clock: list[float]
+    ) -> None:
+        d, client, sessions, _t = await _shared()
+        _clock[0] += 16
+        custom_id, message_id = await _list_with(d, client)
+        await d.on_interaction(_press(custom_id, message_id))
+        assert client.posts == [] and list(sessions.mirror_links) == [KEY]
+        assert "Shared in this channel" not in client.webhook[-1][1]
 
     @pytest.mark.asyncio
     async def test_shares_are_rate_limited_per_channel(self, _clock: list[float]) -> None:
-        d, client, _sessions, _t = _wired()
+        d, client, _sessions, _t = await _shared()
+        await d.on_interaction(_press(UNSHARE_ID, "55", channel=VIEW))
         custom_id, message_id = await _list(d, client)
         await d.on_interaction(_press(custom_id, message_id))
-        custom_id, message_id = await _list(d, client)
-        await d.on_interaction(_press(custom_id, message_id))
-        assert len(client.threads_created()) == 1 and "too fast" in client.webhook[-1][1]
+        assert VIEW not in d._allowed_threads and "too fast" in client.webhook[-1][1]
         _clock[0] += 16
         custom_id, message_id = await _list(d, client)
         await d.on_interaction(_press(custom_id, message_id))
-        assert len(client.threads_created()) == 2
+        assert VIEW in d._allowed_threads
+
+
+class TestChannelConversation:
+    @staticmethod
+    def _tap(transport: DiscordTransport) -> list[Any]:
+        got: list[Any] = []
+
+        async def dispatch(msg: Any) -> None:
+            got.append(msg)
+
+        transport._dispatch = dispatch
+        return got
+
+    @staticmethod
+    def _typed(user: str = OWNER, text: str = "continue please") -> DiscordInbound:
+        return DiscordInbound(
+            channel_id=VIEW, user_id=user, text=text, message_id="m9", guild_id="g1"
+        )
 
     @pytest.mark.asyncio
-    async def test_a_writer_message_in_the_thread_drives_the_shared_session(self) -> None:
-        d, client, sessions, _t = _wired()
-        custom_id, message_id = await _list(d, client)
-        await d.on_interaction(_press(custom_id, message_id))
+    async def test_a_writer_typing_in_the_shared_channel_drives_the_session(self) -> None:
+        d, client, sessions, transport = await _shared()
+        got = self._tap(transport)
+        await transport.receive(self._typed())
+        assert client.threads_created() == [] and client.posts == []
+        assert [(m.conversation_id, m.thread_id) for m in got] == [(VIEW, VIEW)]
         await d.handle_message(
             InboundMessage(
                 channel_type="discord",
                 user_id=OWNER,
-                conversation_id="7001",
+                conversation_id=VIEW,
                 text="continue please",
-                thread_id="7001",
+                thread_id=VIEW,
                 person_origin=True,
             )
         )
         assert sessions.last_key == KEY
+
+    @pytest.mark.asyncio
+    async def test_typing_where_nothing_is_shared_gets_a_hint_and_runs_nothing(self) -> None:
+        d, client, sessions, transport = _wired()
+        got = self._tap(transport)
+        await transport.receive(self._typed())
+        assert got == [] and [c for c, _t, _k in client.posts] == [VIEW]
+        assert "/sessions" in client.posts[0][1]
+        assert sessions.last_key == ""
+
+    @pytest.mark.asyncio
+    async def test_a_non_writer_and_a_stranger_are_ignored_in_the_channel(self) -> None:
+        d, client, _sessions, transport = _wired(users={OWNER, BOSS}, writers=[OWNER])
+        got = self._tap(transport)
+        for user in (BOSS, "999"):
+            await transport.receive(self._typed(user))
+        assert got == [] and client.posts == []
+
+    @pytest.mark.asyncio
+    async def test_a_message_after_the_link_is_gone_runs_no_turn(self) -> None:
+        d, client, sessions, _t = await _shared()
+        await d._session_resume.leave_resumed_session(VIEW)
+        await d.handle_message(
+            InboundMessage(
+                channel_type="discord",
+                user_id=OWNER,
+                conversation_id=VIEW,
+                text="anyone there?",
+                thread_id=VIEW,
+                person_origin=True,
+            )
+        )
+        assert sessions.last_key == "" and "/sessions" in client.posts[-1][1]
+
+    @pytest.mark.asyncio
+    async def test_the_share_comes_back_after_a_restart(self) -> None:
+        d, client, _sessions, transport = await _shared()
+        transport._dispatch = d.handle_message
+        d._allowed_threads.clear()
+        transport._allowed_threads.clear()
+        assert not transport.may_send_to(VIEW)
+        assert await rehydrate_view_threads(client, transport) == 1  # type: ignore[arg-type]
+        assert transport.may_send_to(VIEW) and VIEW in d._allowed_threads
+
+    @pytest.mark.asyncio
+    async def test_an_unshared_channel_is_not_readmitted_after_a_restart(self) -> None:
+        d, client, _sessions, transport = _wired()
+        transport._dispatch = d.handle_message
+        assert await rehydrate_view_threads(client, transport) == 0  # type: ignore[arg-type]
+        assert not transport.may_send_to(VIEW)
+
+    @pytest.mark.asyncio
+    async def test_a_button_in_the_channel_is_actionable_for_a_writer(self) -> None:
+        d, _client, _sessions, _t = await _shared()
+        assert await d._interaction_actionable(OWNER, VIEW) is True
 
 
 async def _list_with(d: Any, client: _ViewClient) -> tuple[str, str]:
@@ -396,20 +471,18 @@ async def _shared(
 
 class TestStopSharing:
     @pytest.mark.asyncio
-    async def test_the_button_unlinks_archives_and_locks(self) -> None:
+    async def test_the_button_unlinks_the_channel_and_leaves_it_open(self) -> None:
         d, client, sessions, transport = await _shared()
-        client.thread_origins["7001"] = ThreadOrigin(11, VIEW, "bot")
-        await d.on_interaction(_press(UNSHARE_ID, "55", channel="7001"))
+        await d.on_interaction(_press(UNSHARE_ID, "55", channel=VIEW))
         assert KEY not in sessions.mirror_links
-        assert ("PATCH", "/channels/7001", {"archived": True, "locked": True}) in client.api_calls
-        assert "7001" not in d._allowed_threads and not transport.may_send_to("7001")
-        assert "Sharing stopped" in client.webhook[-1][1]
+        assert client.api_calls == []  # the channel is never archived or locked
+        assert VIEW not in d._allowed_threads and not transport.may_send_to(VIEW)
+        assert client.webhook[-1][1] == "🔕 Sharing stopped."
 
     @pytest.mark.asyncio
     async def test_a_non_writer_cannot_stop_it(self) -> None:
         d, client, sessions, _t = await _shared(users={OWNER, BOSS}, writers=[OWNER])
-        client.thread_origins["7001"] = ThreadOrigin(11, VIEW, "bot")
-        await d.on_interaction(_press(UNSHARE_ID, "55", user=BOSS, channel="7001"))
+        await d.on_interaction(_press(UNSHARE_ID, "55", user=BOSS, channel=VIEW))
         assert KEY in sessions.mirror_links and client.api_calls == []
 
     @pytest.mark.asyncio
@@ -421,10 +494,14 @@ class TestStopSharing:
         assert KEY in sessions.mirror_links and client.api_calls == []
 
     @pytest.mark.asyncio
-    async def test_a_stopped_thread_is_not_readmitted(self) -> None:
-        d, client, _sessions, transport = await _shared()
+    async def test_a_thread_an_earlier_build_opened_is_still_archived_and_locked(self) -> None:
+        d, client, _sessions, transport = _wired()
+        d._allowed_threads.add("7001")
+        transport.admit_view_thread("7001")
         client.thread_origins["7001"] = ThreadOrigin(11, VIEW, "bot")
         await d.on_interaction(_press(UNSHARE_ID, "55", channel="7001"))
+        assert ("PATCH", "/channels/7001", {"archived": True, "locked": True}) in client.api_calls
+        assert "7001" not in d._allowed_threads and not transport.may_send_to("7001")
         assert await transport.readmit_own_thread("7001", OWNER) is False
 
 

@@ -29,7 +29,7 @@ from kiro_crew.discord.client import (
     SendPermission,
 )
 from kiro_crew.discord.view_policy import ViewPolicy
-from kiro_crew.discord.view_sessions import refuse_text_sessions
+from kiro_crew.discord.view_sessions import NOT_SHARED_HINT, refuse_text_sessions
 from kiro_crew.messaging.identity import channel_inbound_permitted
 from kiro_crew.messaging.outbound_files import ExtractLimits, OutboundFile
 from kiro_crew.messaging.tables import TABLE_POLICY_AUTO
@@ -705,7 +705,17 @@ class DiscordTransport(MessagingTransport):
             # event: discard it silently unless an approved user tried to use
             # an unapproved thread. Messages in configured threads still pass
             # through the normal user authorization audit below.
-            if inbound.channel_id in self._allowed_channels:
+            if self.view.channel(inbound.channel_id) is not None:
+                # A view channel is the conversation itself: the one shared session is
+                # bound to the channel, with no thread. Only a writer got this far.
+                if inbound.user_id not in self._allowed:
+                    return
+                if inbound.channel_id not in self._allowed_threads:
+                    # ponytail: one hint per message; a writer is one person, so no throttle.
+                    await self._client.send_message(inbound.channel_id, NOT_SHARED_HINT)
+                    return
+                thread_id = inbound.channel_id
+            elif inbound.channel_id in self._allowed_channels:
                 if inbound.user_id not in self._allowed:
                     # Reuse the normal denial audit without creating a shared
                     # channel thread for an unauthorized sender.
@@ -826,7 +836,11 @@ class DiscordTransport(MessagingTransport):
             # are excluded: their ids are decided by the channel rosters, not by
             # a peer.
             self._client.remember_dm_recipient(inbound.channel_id, inbound.user_id)
-        if thread_id and not await self._client.is_thread_channel(thread_id):
+        if (
+            thread_id
+            and self.view.channel(thread_id) is None
+            and not await self._client.is_thread_channel(thread_id)
+        ):
             sel().log_api_access(
                 caller=inbound.user_id,
                 operation="discord_transport.receive",

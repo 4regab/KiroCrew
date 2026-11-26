@@ -1,19 +1,21 @@
-"""Sharing a session into a Discord view channel: ``/sessions`` and one thread per session.
+"""Sharing a session into a Discord view channel: ``/sessions`` and the channel itself.
 
 In a view channel (``discord.view_channels``) a writer runs ``/sessions``. The list of
 private session titles is answered EPHEMERALLY, so only the writer sees it. Picking a
-session opens a public thread under the view channel, links the session to that thread
-(each finished reply is mirrored into it) and replays the last few messages there.
-Everyone who can see the channel reads the whole shared session, the writer's own
-messages included. Only writers can type in the thread, and typing there drives the
-linked session. ``Stop sharing`` in the thread unlinks the session and archives and
-locks the thread.
+session links it to the channel itself (each finished reply is mirrored straight into
+it, with no thread) and replays the last few messages there. Everyone who can see the
+channel reads the whole shared session, the writer's own messages included. Only
+writers can type in the channel, and typing there drives the linked session. One
+session is shared per channel at a time. ``Stop sharing`` in the channel unlinks it.
+
+Sharing made by an earlier build lives in a thread under the channel; that thread keeps
+working and its ``Stop sharing`` still unlinks the session and archives and locks it.
 
 The pieces reuse the DM resume machinery (picker registry, bind transaction, replay
 preview) through :class:`~kiro_crew.discord.session_resume.DiscordSessionResume`; what
-is new is only the surface (private picker, a thread as the bound conversation) and
-the thread's life cycle. Every function here fails closed: a refusal shows the writer
-a short private line and changes nothing.
+is new is only the surface (private picker, the channel as the bound conversation).
+Every function here fails closed: a refusal shows the writer a short private line and
+changes nothing.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from kiro_crew.discord.session_resume import (
     _DiscordResumeSurface,
     _picker_components,
     _replay_preview,
-    _safe_discord_text,
 )
 from kiro_crew.discord.view_policy import ViewChannel
 from kiro_crew.messaging.dispatch import inbound_permitted
@@ -47,18 +48,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Custom id of the in-thread button that ends a share.
+#: Custom id of the button that ends a share.
 UNSHARE_ID = "vu:stop"
-#: Longest thread name Discord accepts is 100; the title is cut well inside it.
-_THREAD_NAME_MAX = 90
-#: A thread with no traffic archives after this many minutes (Discord's longest, 7 days).
-_THREAD_AUTO_ARCHIVE_MINUTES = 10080
-_PUBLIC_THREAD = 11
 
 _TEXT_SESSIONS_REFUSAL = (
     "🔒 `!sessions` is not available in a view channel: a text reply is public and "
     "would list your private session titles. Use the `/sessions` slash command here "
     "(only you see the list), or DM me."
+)
+
+#: What a writer is told when they type in a view channel that shares no session.
+NOT_SHARED_HINT = (
+    "ℹ️ No session is shared in this channel. Run `/sessions` here to pick one "
+    "(only you see the list)."
 )
 
 
@@ -93,12 +95,11 @@ class _ViewSurface(_DiscordResumeSurface):
         token: str,
         *,
         caller_permitted: Any,
-        thread_id: str = "",
     ) -> None:
         super().__init__(client, view_channel_id)
         self.token = token
         self.caller_permitted = caller_permitted
-        self.expectation_id = thread_id or view_channel_id
+        self.expectation_id = view_channel_id
 
     def no_choices(self, query: str) -> str:
         return super().no_choices(query).replace("`!sessions`", "`/sessions`")
@@ -107,14 +108,11 @@ class _ViewSurface(_DiscordResumeSurface):
         return (
             super().picker_heading(query, total)
             + "\n⚠️ Everyone who can see this channel will read the WHOLE shared session, "
-            "your own messages included, and the session's title is the thread name."
+            "your own messages included."
         )
 
     def choice_success(self, choice: SessionChoice) -> str:
-        return (
-            f"🧵 Shared in a new thread: {choice.title}\n"
-            "Press **Stop sharing** in that thread to end it."
-        )
+        return f"🔗 Shared in this channel: {choice.title}"
 
     async def post_picker(
         self, heading: str, nonce: str, choices: tuple[SessionChoice, ...]
@@ -240,13 +238,6 @@ async def _pick(d: "DiscordDispatcher", itx: "DiscordInteraction", view: ViewCha
             itx.message_id, "⏳ Sharing too fast. Wait a few seconds and run `/sessions` again."
         )
         return
-    thread_id = await _create_thread(client, view.channel_id, picked.title)
-    if not thread_id:
-        await surface.settle_picker(
-            itx.message_id, "⚠️ Couldn't create the thread, so nothing was shared."
-        )
-        return
-    surface.expectation_id = thread_id
     choice = await controller.choose(
         surface,
         caller=itx.user_id,
@@ -255,16 +246,15 @@ async def _pick(d: "DiscordDispatcher", itx: "DiscordInteraction", view: ViewCha
         message_id=itx.message_id,
         nonce=nonce,
         index=index,
-        link=ChannelLink(channel_type="discord", channel_id=thread_id, principal=itx.user_id),
+        link=ChannelLink(channel_type="discord", channel_id=view.channel_id, principal=itx.user_id),
     )
     if choice is None:
-        await _delete_thread(client, thread_id)
         return
-    _admit(d, thread_id)
+    _admit(d, view.channel_id)
     await client.send_message(
-        thread_id,
+        view.channel_id,
         f"🔗 **Shared session:** {choice.title}\n"
-        "Everyone who can see this thread reads the whole session. Only writers can reply.",
+        "Everyone who can see this channel reads the whole session. Only writers can reply.",
         components=[
             {
                 "type": 1,
@@ -274,41 +264,21 @@ async def _pick(d: "DiscordDispatcher", itx: "DiscordInteraction", view: ViewCha
             }
         ],
     )
-    await _replay_into(d, client, thread_id, choice.key, view.replay_messages)
+    await _replay_into(d, client, view.channel_id, choice.key, view.replay_messages)
     sel().log_api_access(
         caller=itx.user_id or "unknown",
         operation="discord_view.share",
         outcome="allowed",
         source="discord",
-        resources=f"channel={view.channel_id};thread={thread_id};session={choice.title}",
+        resources=f"channel={view.channel_id};session={choice.title}",
     )
 
 
-def _admit(d: "DiscordDispatcher", thread_id: str) -> None:
-    d.register_allowed_thread(thread_id)
+def _admit(d: "DiscordDispatcher", conversation_id: str) -> None:
+    """Admit the conversation a share was bound to: the view channel, or a v1 thread."""
+    d.register_allowed_thread(conversation_id)
     if d.transport is not None:
-        d.transport.admit_view_thread(thread_id)
-
-
-async def _create_thread(client: "DiscordClient", channel_id: str, title: str) -> str:
-    """Open a public thread under the view channel, named from the sanitized title."""
-    name = _safe_discord_text(" ".join(title.split()), _THREAD_NAME_MAX) or "Shared session"
-    result = await client.api_json(
-        "POST",
-        f"/channels/{channel_id}/threads",
-        {
-            "name": name,
-            "type": _PUBLIC_THREAD,
-            "auto_archive_duration": _THREAD_AUTO_ARCHIVE_MINUTES,
-        },
-        recheck_destination=False,
-    )
-    data = result.data
-    return str(data.get("id") or "") if isinstance(data, dict) else ""
-
-
-async def _delete_thread(client: "DiscordClient", thread_id: str) -> None:
-    await client.api_json("DELETE", f"/channels/{thread_id}", None, recheck_destination=False)
+        d.transport.admit_view_thread(conversation_id)
 
 
 def _replay_text(raw: str) -> str:
@@ -351,50 +321,54 @@ async def _replay_into(
 
 
 async def unshare(d: "DiscordDispatcher", itx: "DiscordInteraction") -> None:
-    """The ``Stop sharing`` button: unlink this thread's session, then archive and lock it.
+    """The ``Stop sharing`` button: unlink the session shared where the button sits.
 
-    The session is the one linked to the thread the button sits in, never one a button
-    names, so a replayed button can only end the share it was posted in.
+    The session is the one linked to the conversation the button sits in, never one a
+    button names, so a replayed button can only end the share it was posted in. In the
+    view channel itself that is all; in a thread an earlier build opened, the thread is
+    also archived and locked.
     """
     client = d.client
     assert client is not None
-    thread_id = itx.channel_id
+    conversation_id = itx.channel_id
     try:
-        view = await d.view.view_of(client, thread_id)
+        view = await d.view.view_of(client, conversation_id)
     except Exception:
         return
-    if view is None or view.channel_id == thread_id or not d.view.is_writer(view, itx.user_id):
+    if view is None or not d.view.is_writer(view, itx.user_id):
         return
+    in_thread = view.channel_id != conversation_id
     try:
-        await d._session_resume.leave_resumed_session(thread_id)
+        await d._session_resume.leave_resumed_session(conversation_id)
     except ResumeReleaseError:
         await client.edit_interaction_original(
             itx.interaction_token,
             "⚠️ Couldn't stop sharing. Try again.",
-            destination=thread_id,
+            destination=conversation_id,
         )
         return
     await client.edit_interaction_original(
         itx.interaction_token,
-        "🔕 Sharing stopped. This thread is now closed.",
+        "🔕 Sharing stopped." + (" This thread is now closed." if in_thread else ""),
         components=[],
-        destination=thread_id,
+        destination=conversation_id,
     )
-    d._allowed_threads.discard(thread_id)
+    d._allowed_threads.discard(conversation_id)
     if d.transport is not None:
-        d.transport.revoke_view_thread(thread_id)
-    await client.api_json(
-        "PATCH",
-        f"/channels/{thread_id}",
-        {"archived": True, "locked": True},
-        recheck_destination=False,
-    )
+        d.transport.revoke_view_thread(conversation_id)
+    if in_thread:
+        await client.api_json(
+            "PATCH",
+            f"/channels/{conversation_id}",
+            {"archived": True, "locked": True},
+            recheck_destination=False,
+        )
     sel().log_api_access(
         caller=itx.user_id or "unknown",
         operation="discord_view.unshare",
         outcome="allowed",
         source="discord",
-        resources=f"channel={view.channel_id};thread={thread_id}",
+        resources=f"channel={view.channel_id};conversation={conversation_id}",
     )
 
 
@@ -415,18 +389,27 @@ async def refuse_text_sessions(t: "DiscordTransport", inbound: "DiscordInbound")
 
 
 async def rehydrate_view_threads(client: "DiscordClient", transport: "DiscordTransport") -> int:
-    """Re-admit the active threads this bot opened under a view channel; returns how many.
+    """Re-admit what a restart forgot of the shares; returns how many.
 
-    The admission is held in memory, so a restart forgets it and the mirror feed to a
-    shared thread would stay refused until a writer next posted in it. Discord is asked
-    instead of a local file: the active threads of the guild, kept only when the bot
-    owns them and their parent is a configured view channel. An archived thread is not
-    listed; a writer's next message in it re-admits it through ``readmit_own_thread``.
+    The admission is held in memory, so without this the mirror feed to a shared
+    conversation would stay refused until a writer next posted in it. A view channel is
+    re-admitted when a session is still bound to it (the binding is the record). A
+    thread an earlier build opened is asked of Discord instead of a local file: the
+    active threads of the guild, kept only when the bot owns them and their parent is a
+    configured view channel. An archived thread is not listed; a writer's next message
+    in it re-admits it through ``readmit_own_thread``.
     """
-    bot_id = getattr(client, "bot_user_id", "")
-    if not bot_id or not transport.view.active:
+    if not transport.view.active:
         return 0
     admitted = 0
+    dispatcher = transport.dispatcher
+    for channel_id in transport.view.channel_ids():
+        if dispatcher is not None and dispatcher._session_resume.resumed_session(channel_id):
+            _admit(dispatcher, channel_id)
+            admitted += 1
+    bot_id = getattr(client, "bot_user_id", "")
+    if not bot_id:
+        return admitted
     guilds: set[str] = set()
     for channel_id in transport.view.channel_ids():
         info = (await client.api_json("GET", f"/channels/{channel_id}", None)).data

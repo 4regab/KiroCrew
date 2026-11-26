@@ -665,6 +665,19 @@ class DiscordDispatcher:
                     if landed and len(queued) == 1 and not self._routing_checks.get(channel_id):
                         await self._session_resume.settle(channel_id, route)
                     return monitor_result
+        if (
+            wants_routing
+            and cmd is None
+            and thread_id
+            and route.resumed_key is None
+            and self.view.channel(thread_id) is not None
+        ):
+            # The share ended (`!new`, `!unlink`, the dashboard): a view channel never
+            # starts a conversation of its own, so nothing here runs a turn.
+            from kiro_crew.discord.view_sessions import NOT_SHARED_HINT
+
+            await say(NOT_SHARED_HINT)
+            return monitor_result
         if cmd == "new":
             try:
                 left_resumed = await self._session_resume.leave_resumed_session(channel_id)

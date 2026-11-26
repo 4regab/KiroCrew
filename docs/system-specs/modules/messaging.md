@@ -4510,27 +4510,39 @@ deferral (`defer_interaction`, then `edit_interaction_original`), written throug
 resume controller with `_ViewSurface`, so the private titles never reach the channel.
 It needs `DiscordSessionResume.is_owner` as the DM picker does. A press peeks the choice
 (`PickerRegistry.peek`), takes the per-channel share throttle (`ViewPolicy.allow_share`,
-one per 15 s), opens a public thread under the channel (`POST /channels/{id}/threads`,
-type 11, 7-day auto-archive), then runs the controller's `choose` with
-`ChannelLink("discord", channel_id=<thread>, principal=<owner>)`: the same signed,
-inbound-enabled binding a DM pick makes, so a writer's message in the thread routes to
-the session and each finished reply is mirrored through `_deliver_cross_surface_reply`.
-A failed bind deletes the thread. The thread is admitted through
-`DiscordTransport.admit_view_thread` (and `DiscordDispatcher.register_allowed_thread`),
-which makes it a normal mirror target. The replay (`replay_messages`, user and assistant
-turns) goes through `sanitize_channel_replay_text`, `redact_via_context` and
-`_replay_preview`. `!sessions`/`!bot` typed in the channel is answered by
-`refuse_text_sessions` with a pointer and no list. The `Stop sharing` button (`vu:stop`)
-resolves the session from the thread it sits in, never from the button, then releases the
-binding, calls `revoke_view_thread` and archives and locks the thread.
+one per 15 s), then runs the controller's `choose` with
+`ChannelLink("discord", channel_id=<the view channel>, principal=<owner>)`: the same
+signed, inbound-enabled binding a DM pick makes, so the channel itself is the shared
+conversation, with no thread. A writer's message in the channel routes to the session
+and each finished reply is mirrored through `_deliver_cross_surface_reply`. One session
+is shared per channel: the binding is exclusive, so a second pick is refused by the
+controller. The channel is admitted as a conversation (`_admit`: the transport's and the
+dispatcher's thread rosters, which `may_send_to` and the button checks read) only while a
+session is bound to it. The replay (`replay_messages`, user and assistant turns) goes
+through `sanitize_channel_replay_text`, `redact_via_context` and `_replay_preview` into
+the channel, after a header carrying the `Stop sharing` button (`vu:stop`).
+`!sessions`/`!bot` typed in the channel is answered by `refuse_text_sessions` with a
+pointer and no list.
 
-Restart: no file records which threads are shared. `readmit_own_thread` also accepts a
-parent that is a view channel (bot-owned thread, writer caller, not revoked), and
-`rehydrate_view_threads` asks Discord for the guild's active threads at startup and
-re-admits those the bot owns under a view channel. An archived thread is re-admitted by a
-writer's next message. `_still_may_send_to` allows the view channel itself so the
-ephemeral writes can pass the mid-send re-check; `may_send_to` and
-`configured_targets` do not list it. Pinned by `test_discord_view_sessions.py`.
+A writer's plain message in a view channel is handled in `DiscordTransport.receive`
+ahead of the allowed-channel branch: it never opens a thread (`auto_thread` does not
+apply), skips the `is_thread_channel` check, and is dispatched with the channel as both
+conversation and thread id. With no session bound it is answered with `NOT_SHARED_HINT`
+and runs nothing; `handle_message` makes the same refusal when the binding goes away
+(`!new`, `!unlink`, the dashboard) while the channel is still admitted, so a view
+channel never starts a conversation of its own. `Stop sharing` resolves the session from
+the conversation the button sits in, never from the button, releases the binding and
+revokes the admission; the channel stays open. A thread an earlier build opened keeps
+working: its button also archives and locks it, `readmit_own_thread` still admits it
+for a writer, and `rehydrate_view_threads` still lists the bot's active threads.
+
+Restart: the binding is the record, so `rehydrate_view_threads` re-admits each view
+channel that still has an inbound-enabled session bound to it (`resumed_session`), then
+asks Discord for the guild's active threads and re-admits those the bot owns under a
+view channel. An archived thread is re-admitted by a writer's next message.
+`_still_may_send_to` allows the view channel itself so the ephemeral writes can pass the
+mid-send re-check; `may_send_to` and `configured_targets` list it only while it is
+admitted. Pinned by `test_discord_view_sessions.py`.
 
 ### Discord's dispatcher composition
 

@@ -16,7 +16,7 @@ state on the instance, and a patch of the method on the class or on an instance
 reaches every caller.
 
 Instance fields read (a call on one included): ``_allowed_threads``, ``_model_pickers``,
-``_session_resume``, ``client``, ``sessions``, ``transport``.
+``_session_resume``, ``client``, ``sessions``, ``transport``, ``view``.
 
 Instance fields assigned, or whose mapping is changed: ``_model_pickers``.
 """
@@ -488,6 +488,8 @@ async def _interaction_actionable(self: DiscordDispatcher, user_id: str, thread_
         transport = self.transport
         if transport is None or not await transport.readmit_own_thread(thread_id, user_id):
             return False
+    if self.view.channel(thread_id) is not None:
+        return True
     try:
         return bool(await client.is_thread_channel(thread_id))
     except Exception:
@@ -712,7 +714,11 @@ async def _on_autocomplete_interaction(self: DiscordDispatcher, itx: "DiscordInt
     async def lookup() -> list[dict[str, str]]:
         if not admitted():
             return []
-        if thread_id and not await client.is_thread_channel(thread_id):
+        if (
+            thread_id
+            and self.view.channel(thread_id) is None
+            and not await client.is_thread_channel(thread_id)
+        ):
             return []
         if not await channel_inbound_permitted("discord"):
             logger.info("discord autocomplete emptied: denied by channels governance policy")
