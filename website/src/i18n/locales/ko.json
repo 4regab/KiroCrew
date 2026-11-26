@@ -11447,8 +11447,8 @@
       "reason_not_object": "이 위젯의 데이터가 올바르지 않아 표시할 수 없습니다.",
       "reason_apps_unavailable": "앱을 불러오지 못해 이 위젯을 표시할 수 없습니다.",
       "reason_failed": "{{app}} 앱이 이 위젯을 표시하지 못했습니다.",
-      "install_app": "{{app}} 설치",
-      "turn_on_app": "{{app}} 켜기",
+      "open_to_install": "설치하려면 {{app}} 열기",
+      "open_to_turn_on": "켜려면 {{app}} 열기",
       "show_data": "위젯 데이터 보기"
     },
     "messageActions": {

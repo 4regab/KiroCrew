@@ -11447,8 +11447,8 @@
       "reason_not_object": "このウィジェットのデータが無効なため、表示できません。",
       "reason_apps_unavailable": "アプリを読み込めなかったため、このウィジェットを表示できません。",
       "reason_failed": "{{app}} アプリはこのウィジェットを表示できませんでした。",
-      "install_app": "{{app}} をインストール",
-      "turn_on_app": "{{app}} をオンにする",
+      "open_to_install": "{{app}} を開いてインストール",
+      "open_to_turn_on": "{{app}} を開いてオンにする",
       "show_data": "ウィジェットのデータを表示"
     },
     "messageActions": {

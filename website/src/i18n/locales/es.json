@@ -11969,8 +11969,8 @@
       "reason_not_object": "Los datos de este widget no son válidos, así que no se puede mostrar.",
       "reason_apps_unavailable": "No se pudieron cargar las apps, así que este widget no se puede mostrar.",
       "reason_failed": "La app {{app}} no pudo mostrar este widget.",
-      "install_app": "Instalar {{app}}",
-      "turn_on_app": "Activar {{app}}",
+      "open_to_install": "Abrir {{app}} para instalarla",
+      "open_to_turn_on": "Abrir {{app}} para activarla",
       "show_data": "Mostrar los datos del widget"
     },
     "messageActions": {

@@ -11447,8 +11447,8 @@
       "reason_not_object": "此小组件的数据无效，因此无法显示。",
       "reason_apps_unavailable": "无法加载应用，因此无法显示此小组件。",
       "reason_failed": "{{app}} 应用无法显示此小组件。",
-      "install_app": "安装 {{app}}",
-      "turn_on_app": "开启 {{app}}",
+      "open_to_install": "打开 {{app}} 进行安装",
+      "open_to_turn_on": "打开 {{app}} 以开启",
       "show_data": "显示小组件的数据"
     },
     "messageActions": {

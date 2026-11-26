@@ -11708,8 +11708,8 @@
       "reason_not_object": "Die Daten dieses Widgets sind ungültig, daher kann es nicht angezeigt werden.",
       "reason_apps_unavailable": "Die Apps konnten nicht geladen werden, daher kann dieses Widget nicht angezeigt werden.",
       "reason_failed": "Die App {{app}} konnte dieses Widget nicht anzeigen.",
-      "install_app": "{{app}} installieren",
-      "turn_on_app": "{{app}} einschalten",
+      "open_to_install": "{{app}} öffnen, um sie zu installieren",
+      "open_to_turn_on": "{{app}} öffnen, um sie einzuschalten",
       "show_data": "Daten des Widgets anzeigen"
     },
     "messageActions": {

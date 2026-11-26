@@ -11708,8 +11708,8 @@
       "reason_not_object": "এই উইজেটের ডেটা বৈধ নয়, তাই এটি দেখানো যাচ্ছে না।",
       "reason_apps_unavailable": "অ্যাপগুলো লোড করা যায়নি, তাই এই উইজেটটি দেখানো যাচ্ছে না।",
       "reason_failed": "{{app}} অ্যাপ এই উইজেটটি দেখাতে পারেনি।",
-      "install_app": "{{app}} ইনস্টল করো",
-      "turn_on_app": "{{app}} চালু করো",
+      "open_to_install": "ইনস্টল করতে {{app}} খোলো",
+      "open_to_turn_on": "চালু করতে {{app}} খোলো",
       "show_data": "উইজেটের ডেটা দেখাও"
     },
     "messageActions": {
