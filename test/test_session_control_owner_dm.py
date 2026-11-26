@@ -1873,3 +1873,101 @@ def test_sole_direct_target_is_the_one_owner_rule():
     assert sole_direct_target(many.configured_targets()) == ""
     assert _owner_dm_target(one) == sole_direct_target(one.configured_targets())
     assert _owner_dm_target(many) == sole_direct_target(many.configured_targets())
+
+
+# ── a view channel with one writer is the owner's own conversation ──
+
+VIEW_CHANNEL = "555000111222333444"
+WORKER_THREAD = "555000111222333999"
+
+
+class _ViewTransport(_Transport):
+    """A Discord transport that also knows view channels and opens worker threads."""
+
+    def __init__(self, writers: dict[str, str]) -> None:
+        super().__init__("discord", users=[OWNER])
+        self._writers = writers
+        self.opened: list[tuple[str, str]] = []
+
+    def sole_view_writer(self, conversation_id: str) -> str:
+        return self._writers.get(conversation_id, "")
+
+    async def open_child_conversation(self, parent_id: str, title: str) -> str:
+        self.opened.append((parent_id, title))
+        return WORKER_THREAD if parent_id in self._writers else ""
+
+
+def test_a_session_shared_in_a_one_writer_view_channel_may_create_workers(tmp_path, monkeypatch):
+    state = _state(tmp_path, monkeypatch)
+    state.register_channel_transport(_ViewTransport({VIEW_CHANNEL: OWNER}))
+    caller = _mirrored_slot(
+        state, "chat-conductor", ChannelLink("discord", channel_id=VIEW_CHANNEL)
+    )
+    assert sc.owner_dm_refusal(state, caller) == ""
+
+
+@pytest.mark.parametrize(
+    ("writers", "expected"),
+    [
+        ({}, "MIRROR_PEER_NOT_ON_RECORD"),  # not a view channel, or several writers
+        ({VIEW_CHANNEL: GUEST}, "NOT_THE_SOLE_OWNER"),  # the one writer is not the owner
+    ],
+)
+def test_a_view_channel_without_the_owner_as_its_one_writer_stays_refused(
+    tmp_path, monkeypatch, writers, expected
+):
+    state = _state(tmp_path, monkeypatch)
+    state.register_channel_transport(_ViewTransport(writers))
+    caller = _mirrored_slot(
+        state, "chat-conductor", ChannelLink("discord", channel_id=VIEW_CHANNEL)
+    )
+    want = (
+        sc.MIRROR_PEER_NOT_ON_RECORD
+        if expected == "MIRROR_PEER_NOT_ON_RECORD"
+        else NOT_THE_SOLE_OWNER
+    )
+    assert sc.owner_dm_refusal(state, caller) == want
+    with pytest.raises(sc.SessionControlError) as exc:
+        asyncio.run(sc.create_session(state, caller_session_key=_key(caller)))
+    assert exc.value.code == "mirrored_caller"
+
+
+def test_a_worker_made_from_a_shared_view_channel_gets_its_own_one_way_thread(
+    tmp_path, monkeypatch
+):
+    state = _state(tmp_path, monkeypatch)
+    transport = _ViewTransport({VIEW_CHANNEL: OWNER})
+    state.register_channel_transport(transport)
+    caller = _mirrored_slot(
+        state, "chat-conductor", ChannelLink("discord", channel_id=VIEW_CHANNEL, principal=OWNER)
+    )
+
+    created = asyncio.run(sc.create_session(state, caller_session_key=_key(caller), title="Fix it"))
+
+    child = state.get_slot(created["target"])
+    link = state.sessions.get_mirror_link(slot_history_key(child))
+    assert transport.opened == [(VIEW_CHANNEL, "Fix it")]
+    assert link == ChannelLink("discord", channel_id=WORKER_THREAD)
+    assert link.principal is None and link.admission is None
+    assert not state.sessions.mirror_accepts_inbound(slot_history_key(child))
+    # The worker stays what it was before it had a thread: not refused by the channel
+    # gates, because its thread belongs to the same one-writer view channel.
+    transport._writers[WORKER_THREAD] = OWNER
+    assert sc.owner_dm_refusal(state, child) == ""
+    transport._writers.pop(WORKER_THREAD)
+    assert sc.owner_dm_refusal(state, child) == sc.MIRROR_PEER_NOT_ON_RECORD
+    # The shared session itself is untouched.
+    assert state.sessions.get_mirror_link(_key(caller)).channel_id == VIEW_CHANNEL
+
+
+def test_a_worker_from_a_dm_session_gets_no_thread(tmp_path, monkeypatch):
+    state = _state(tmp_path, monkeypatch)
+    transport = _ViewTransport({VIEW_CHANNEL: OWNER})
+    transport._dm_pairings = DISCORD_DM_PAIRING
+    state.register_channel_transport(transport)
+    caller = _mirrored_slot(state, "chat-conductor", DISCORD_DM_CONVERSATION)
+
+    created = asyncio.run(sc.create_session(state, caller_session_key=_key(caller)))
+
+    child = state.get_slot(created["target"])
+    assert state.sessions.get_mirror_link(slot_history_key(child)) is None

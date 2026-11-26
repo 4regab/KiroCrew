@@ -152,10 +152,10 @@ class TestMessages:
         ]
 
     @pytest.mark.asyncio
-    async def test_a_writer_still_reaches_the_normal_flow(self) -> None:
-        transport, _dispatched, client = _transport(_policy([{"id": VIEW, "writers": [OWNER]}]))
+    async def test_a_writer_in_the_view_channel_never_opens_a_thread(self) -> None:
+        transport, dispatched, client = _transport(_policy([{"id": VIEW, "writers": [OWNER]}]))
         await transport.receive(_msg(OWNER, VIEW))
-        assert client.created_threads == [(VIEW, "m1", "hello")]
+        assert client.created_threads == [] and dispatched == []
 
     @pytest.mark.asyncio
     async def test_a_thread_under_the_view_channel_inherits_view(

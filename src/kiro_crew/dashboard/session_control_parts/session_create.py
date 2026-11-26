@@ -1621,6 +1621,9 @@ async def create_session(
 
     schedule_eager_spawn(state, slot)
     lineage_recorded = await _record_spawn(caller_key, slot)
+    from kiro_crew.dashboard.child_mirror import mirror_child_session  # the worker's own thread
+
+    await mirror_child_session(state, caller_key, slot)
     _audit(
         caller_session_key=caller_key,
         operation="create",

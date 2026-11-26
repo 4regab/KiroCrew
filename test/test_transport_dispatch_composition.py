@@ -119,6 +119,7 @@ BASE_NAMES = frozenset(
         "TurnOutcome",
         "TurnRecord",
         "Verdict",
+        "ViewPolicy",
         "_APPROVAL_REGISTRY",
         "_BUSY_OPTIONS_REFUSAL",
         "_CHANNEL",
@@ -318,7 +319,8 @@ BASE_MEMBERS: dict[str, tuple[str, bool, str]] = {
             "(self, *, sessions: \"'SessionManager'\", ctx_builder: \"'ContextBuilder'\", cfg: "
             "\"'KiroCrewConfig'\", allowed_user_ids: 'set[str]', allowed_thread_ids: 'set[str] "
             "| None' = None, agent: 'str | None' = None, conv_log: \"'ConversationLog | "
-            "None'\" = None, approval_mode: 'str' = 'interactive') -> 'None'"
+            "None'\" = None, approval_mode: 'str' = 'interactive', view_policy: 'ViewPolicy | None'"
+            " = None) -> 'None'"
         ),
     ),
     "_apply_model": (
