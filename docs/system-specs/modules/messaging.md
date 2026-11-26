@@ -4476,6 +4476,33 @@ TTL-bounded picker registry resolves the index against the exact list it posted
 and refuses an expired, evicted or already-consumed one rather than applying a
 model from a stale advertisement.
 
+### Discord view channels (`discord/view_policy.py`)
+
+`discord.view_channels` (`[{id, writers, replay_messages}]`) marks server channels
+whose readers must not drive the agent. `ViewPolicy` is one object built by
+`maybe_start_discord` and handed to both `DiscordTransport` (`view=`) and
+`DiscordDispatcher` (`view=`); `transport.reconfigure` reloads it, so a config edit
+applies on the next message. `ViewPolicy.denies(client, channel_id, user_id, surface=)`
+is the single decision, called at three sites: `DiscordTransport.receive` (before the
+auto-thread branch, for senders on the user roster), `DiscordDispatcher.handle_message`
+(a person's message in a thread) and `on_interaction` (buttons and slash commands,
+right after the roster check). A channel is a view channel when its id is listed or
+its parent is: a thread's parent is read once from Discord (`thread_origin`) and
+memoized, since a parent never changes. In a view channel only a writer passes; a
+denial returns silently and writes one `discord_view.denied` audit row per user and
+channel per minute (ids only, never content). The gate only narrows: it never admits a
+user the normal roster refuses, and a DM is never gated.
+
+Fail closed: `writers` omitted means the single id in `allowed_user_ids`, or nobody
+when there are none or several; a non-list `writers`, a bare id or a duplicated id
+leaves the channel read-only for all; an entry with no digit id is dropped with a
+warning; a reload whose `view_channels` is not a list keeps the previous set; a thread
+whose parent cannot be read is denied to a user who is not a writer in every view
+channel. `view_channels` is stored as written (`section_builders`), so malformed
+entries reach the policy instead of being repaired away. Gateway startup requests
+guild message intents when any view channel is configured. Pinned by
+`test_discord_view_policy.py`.
+
 ### Discord's dispatcher composition
 
 `DiscordDispatcher` is one class composed from owners beside its facade.

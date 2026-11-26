@@ -96,6 +96,10 @@ async def on_interaction(self: DiscordDispatcher, itx: "DiscordInteraction") -> 
     # Auth first (deny-by-default short-circuit).
     if not authorized:
         return
+    if itx.guild_id and await self.view.denies(
+        self.client, itx.channel_id, itx.user_id, surface="interaction"
+    ):
+        return
     thread_id = itx.channel_id if itx.guild_id else ""
     # The same actionable-interaction decision is re-used by the spawn
     # approval timeout path. If a condition here can drop every press, an

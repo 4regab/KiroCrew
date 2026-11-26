@@ -1027,6 +1027,9 @@ def _build_discord_config(discord_data: dict) -> DiscordConfig:
         allowed_user_ids=_coerce_str_ids(section.get("allowed_user_ids")),
         allowed_thread_ids=_coerce_str_ids(section.get("allowed_thread_ids")),
         allowed_channel_ids=_coerce_str_ids(section.get("allowed_channel_ids")),
+        # Kept as stored: the writers gate (discord/view_policy.py) reads every entry
+        # and fails closed on a malformed one, so a coercion here could only hide it.
+        view_channels=section.get("view_channels"),
         auto_thread=bool(section.get("auto_thread")),
         soft_threshold_pct=section.read("soft_threshold_pct", _threshold_pct, unclamped=_safe_int),
         reactions_enabled=bool(section.get("reactions_enabled")),

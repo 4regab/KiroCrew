@@ -10035,6 +10035,7 @@
         "allowed_user_ids": [],
         "allowed_thread_ids": [],
         "allowed_channel_ids": [],
+        "view_channels": [],
         "auto_thread": true,
         "soft_threshold_pct": 80,
         "reactions_enabled": true,
@@ -10162,6 +10163,36 @@
       "label": "*",
       "help": "",
       "hasChildren": false,
+      "enumValues": null,
+      "defaultValue": null
+    },
+    {
+      "path": "discord.view_channels",
+      "kind": "core",
+      "type": "array",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [
+        "discord"
+      ],
+      "label": "View Channels",
+      "help": "Server channels shown to readers who must not drive the agent. Each entry is {\"id\": \"<channel id>\", \"writers\": [\"<user id>\"], \"replay_messages\": 5}. In a view channel and in every thread under it, only a writer can send messages, run commands or press buttons; everyone else is ignored, even when listed in allowed_user_ids. Omitted writers = the owner only (the single id in allowed_user_ids); with none or several ids and no writers, nobody writes.",
+      "hasChildren": true,
+      "enumValues": null,
+      "defaultValue": []
+    },
+    {
+      "path": "discord.view_channels.*",
+      "kind": "core",
+      "type": "object",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "label": "*",
+      "help": "",
+      "hasChildren": true,
       "enumValues": null,
       "defaultValue": null
     },

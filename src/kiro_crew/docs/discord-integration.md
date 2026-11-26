@@ -203,6 +203,25 @@ again; the save reconnects with the thread intents.
   forum or the opener takes effect at the next restart; to stop one post at
   once, add its ID to `allowed_thread_ids` and then remove it. Anyone who can
   see the forum can read every admitted post.
+
+- **View channels.** `discord.view_channels` lists server channels you want people
+  to read but not drive. In a view channel, and in every thread under it, only a
+  *writer* can send a message, run a command (`/` or `!`) or press a button. Everyone
+  else is ignored and each denial is audited with the channel and user id only, even
+  when their id is on `allowed_user_ids`. A writer must still be on
+  `allowed_user_ids`: the gate only narrows access.
+
+  ```json
+  "view_channels": [{"id": "<channel id>", "writers": ["<your user id>"]}]
+  ```
+
+  Leave `writers` out and the writer is the single id in `allowed_user_ids`; if that
+  list holds none or several ids, nobody writes. A `writers` value that is not a list,
+  a bare id, or a channel listed twice makes that channel read-only for everyone. A
+  reload whose `view_channels` is not a list keeps the previous setting. Everyone who
+  can see the channel can read whatever the bot posts there, so give readers View
+  Channel and Read Message History only, and no Send Messages, Create Threads or Add
+  Reactions permission, as a second lock.
 - **Slash commands answer privately.** Every `/` command reply is ephemeral, so
   only the person who ran it sees it, which is what keeps a refusal, a status
   line or the `/model` list out of a shared thread. A reply that is not ready

@@ -23,6 +23,7 @@ from kiro_crew.discord.client import DiscordClient
 from kiro_crew.discord.commands import application_command_payload
 from kiro_crew.discord.transport import DiscordTransport
 from kiro_crew.discord.transport_dispatch import _CHANNEL, DiscordDispatcher
+from kiro_crew.discord.view_policy import ViewPolicy
 from kiro_crew.messaging.driver import APPROVAL_AUTO, APPROVAL_INTERACTIVE
 from kiro_crew.messaging.queue_drain import unregister_drain
 from kiro_crew.messaging.spawn_approval_delivery import (
@@ -398,6 +399,10 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
                 "discord.allowed_user_ids to enable."
             )
 
+        view = ViewPolicy()
+        discord_cfg = getattr(getattr(orch, "_cfg", None), "discord", None)
+        if discord_cfg is not None:
+            view.reconfigure(discord_cfg)
         dispatcher = DiscordDispatcher(
             sessions=orch.sessions,
             ctx_builder=orch.ctx_builder,
@@ -407,11 +412,12 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
             agent=None,
             conv_log=getattr(orch, "conv_log", None),
             approval_mode=_resolve_approval_mode(orch),
+            view_policy=view,
         )
         client = DiscordClient(
             token=bot_token,
             on_interaction=dispatcher.on_interaction,
-            enable_guild_threads=bool(allowed_threads or allowed_channels),
+            enable_guild_threads=bool(allowed_threads or allowed_channels or view.active),
         )
 
         async def _dispatch(message: InboundMessage) -> None:
@@ -425,6 +431,7 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
             auto_thread=auto_thread,
             on_thread_created=dispatcher.register_allowed_thread,
             dispatch=_dispatch,
+            view_policy=view,
         )
         # Inbound: Gateway WS -> transport.receive (authorize + normalize)
         # -> dispatcher.handle_message (drive the turn on the shared TurnDriver).

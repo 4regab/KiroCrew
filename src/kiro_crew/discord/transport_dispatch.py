@@ -95,6 +95,7 @@ from kiro_crew.discord.session_resume import (
     RoutingDecision,
 )
 from kiro_crew.discord.transport import DISCORD_CAPABILITIES, _coerce_snowflakes
+from kiro_crew.discord.view_policy import ViewPolicy
 from kiro_crew.discord.transport_dispatch_commands import _RELEASE_FAILURE, _REPLY_COMMANDS
 from kiro_crew.discord.transport_dispatch_model_picker import _ModelPicker
 from kiro_crew.discord.transport_dispatch_origin import (
@@ -325,7 +326,9 @@ class DiscordDispatcher:
         agent: str | None = None,
         conv_log: "ConversationLog | None" = None,
         approval_mode: str = APPROVAL_INTERACTIVE,
+        view_policy: ViewPolicy | None = None,
     ) -> None:
+        self.view = view_policy or ViewPolicy()
         self.sessions = sessions
         self.ctx_builder = ctx_builder
         self.cfg = cfg
@@ -466,6 +469,8 @@ class DiscordDispatcher:
             self._configured_threads = frozenset(threads)
         if self.transport is not None:
             self.transport.reconfigure(section)
+        else:
+            self.view.reconfigure(section)
 
     # ── Turn dispatch (transport's dispatch callback) ──────────────────────
 
@@ -528,6 +533,13 @@ class DiscordDispatcher:
         channel_id = msg.conversation_id
         user_id = msg.user_id
         thread_id = msg.thread_id or ""
+        # A person's message in a view channel from a non-writer (writers gate).
+        if (
+            thread_id
+            and msg.person_origin
+            and await self.view.denies(self.client, thread_id, user_id, surface="dispatch")
+        ):
+            return monitor_result
         scope_id = self._scope_id(user_id, thread_id)
         text = msg.text
         native_session_key = self._session_key(user_id, thread_id)

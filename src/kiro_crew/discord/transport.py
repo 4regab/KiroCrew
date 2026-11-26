@@ -28,6 +28,7 @@ from kiro_crew.discord.client import (
     DiscordInbound,
     SendPermission,
 )
+from kiro_crew.discord.view_policy import ViewPolicy
 from kiro_crew.messaging.identity import channel_inbound_permitted
 from kiro_crew.messaging.outbound_files import ExtractLimits, OutboundFile
 from kiro_crew.messaging.tables import TABLE_POLICY_AUTO
@@ -138,8 +139,10 @@ class DiscordTransport(MessagingTransport):
         auto_thread: bool = True,
         on_thread_created: Callable[[str], None] | None = None,
         dispatch: DispatchFn | None = None,
+        view_policy: ViewPolicy | None = None,
     ) -> None:
         self._client = client
+        self.view = view_policy or ViewPolicy()
         # Deny-by-default: freeze both allow-lists as snowflake strings so they
         # cannot mutate under an in-flight authorization decision.
         self._allowed: frozenset[str] = frozenset(str(u) for u in allowed_user_ids)
@@ -200,6 +203,7 @@ class DiscordTransport(MessagingTransport):
         changes are SEL-audited by COUNT (the receive path audits its own
         outcomes on the same channel); ids are never logged.
         """
+        self.view.reconfigure(section)
         users = _coerce_snowflakes(getattr(section, "allowed_user_ids", None))
         if users is None:
             logger.warning(
@@ -664,6 +668,18 @@ class DiscordTransport(MessagingTransport):
             return
         thread_id: str | None = None
         conversation_id = inbound.channel_id
+        if (
+            inbound.guild_id
+            and inbound.user_id in self._allowed
+            and await self.view.denies(
+                self._client,
+                inbound.channel_id,
+                inbound.user_id,
+                surface="message",
+                normal_channel=inbound.channel_id in self._allowed_channels,
+            )
+        ):
+            return
         if inbound.guild_id:
             # Discord's guild intents deliver every visible channel message.
             # Unrelated chatter is expected background traffic, not a security
