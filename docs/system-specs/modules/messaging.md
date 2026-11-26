@@ -4552,6 +4552,10 @@ channel or a thread under one. Only the creator's session may open one: a DM or 
 channel has no hook, and a failed thread create leaves the worker as it was. The thread
 holds the replies the mirror carries (each finished reply, redacted), not tool arguments or
 output.
+The worker stays addressable by its creator: `DiscordTransport.is_view_worker_thread`
+(a thread admitted under a view channel and not revoked) is the transport's half of the
+session-control predicate that keeps this one-way mirror from raising `mirrored_target`
+(see session-control, owner-DM clause 3).
 
 Restart: the binding is the record, so `rehydrate_view_threads` re-admits each view
 channel that still has an inbound-enabled session bound to it (`resumed_session`), then

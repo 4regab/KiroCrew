@@ -668,6 +668,10 @@ class DiscordTransport(MessagingTransport):
         writers = self.view.writers_of(view) if view is not None else frozenset()
         return next(iter(writers)) if len(writers) == 1 else ""
 
+    def is_view_worker_thread(self, conversation_id: str) -> bool:
+        """Whether *conversation_id* is a thread the bot opened under a view channel."""
+        return conversation_id in self._view_threads and conversation_id in self._allowed_threads
+
     async def open_child_conversation(self, parent_id: str, title: str) -> str:
         """Open a read-only thread for a worker started from the view channel *parent_id*.
 
