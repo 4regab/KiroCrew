@@ -95,7 +95,6 @@ from kiro_crew.discord.session_resume import (
     RoutingDecision,
 )
 from kiro_crew.discord.transport import DISCORD_CAPABILITIES, _coerce_snowflakes
-from kiro_crew.discord.view_policy import ViewPolicy
 from kiro_crew.discord.transport_dispatch_commands import _RELEASE_FAILURE, _REPLY_COMMANDS
 from kiro_crew.discord.transport_dispatch_model_picker import _ModelPicker
 from kiro_crew.discord.transport_dispatch_origin import (
@@ -106,6 +105,7 @@ from kiro_crew.discord.transport_dispatch_origin import (
     _queued_origin,
     _QueuedOrigin,
 )
+from kiro_crew.discord.view_policy import ViewPolicy
 from kiro_crew.history import mint_row_mid  # noqa: F401
 from kiro_crew.messaging.attachments import IngestLimits
 from kiro_crew.messaging.attachments import cleanup as cleanup_attachments
