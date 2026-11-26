@@ -48,6 +48,8 @@ _AUDIT_WINDOW_SECS = 60.0
 _now = time.monotonic
 #: Cap on remembered audit pairs and thread parents; both reset when full.
 _MEMO_MAX = 2048
+#: Fewest seconds between two shares into one view channel.
+SHARE_MIN_INTERVAL_SECS = 15.0
 REPLAY_DEFAULT = 5
 REPLAY_MAX = 10
 
@@ -117,6 +119,7 @@ class ViewPolicy:
         self._owner = ""
         self._thread_parent: dict[str, str] = {}
         self._audited: dict[tuple[str, str], float] = {}
+        self._last_share: dict[str, float] = {}
 
     @property
     def active(self) -> bool:
@@ -141,6 +144,18 @@ class ViewPolicy:
             )
             return
         self._channels = parsed
+
+    def channel_ids(self) -> list[str]:
+        return list(self._channels)
+
+    def allow_share(self, channel_id: str) -> bool:
+        """True, and starts the wait, unless a share into this channel was too recent."""
+        now = _now()
+        last = self._last_share.get(channel_id)
+        if last is not None and now - last < SHARE_MIN_INTERVAL_SECS:
+            return False
+        self._last_share[channel_id] = now
+        return True
 
     def channel(self, channel_id: str) -> ViewChannel | None:
         """The view channel configured under *channel_id* itself (not a thread of it)."""

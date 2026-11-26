@@ -24,6 +24,7 @@ from kiro_crew.discord.commands import application_command_payload
 from kiro_crew.discord.transport import DiscordTransport
 from kiro_crew.discord.transport_dispatch import _CHANNEL, DiscordDispatcher
 from kiro_crew.discord.view_policy import ViewPolicy
+from kiro_crew.discord.view_sessions import rehydrate_view_threads
 from kiro_crew.messaging.driver import APPROVAL_AUTO, APPROVAL_INTERACTIVE
 from kiro_crew.messaging.queue_drain import unregister_drain
 from kiro_crew.messaging.spawn_approval_delivery import (
@@ -125,6 +126,23 @@ def _publish_slash_commands(client: "DiscordClient") -> None:
 #: In-flight command-registration tasks, held only to keep them from being
 #: collected before they finish.
 _PENDING_REGISTRATIONS: set[asyncio.Task[None]] = set()
+
+
+def _rehydrate_view_threads(client: "DiscordClient", transport: DiscordTransport) -> None:
+    """Re-admit the shared view threads this bot opened before the restart, in the background."""
+    if not transport.view.active:
+        return
+
+    async def _run() -> None:
+        try:
+            if await client.wait_ready(timeout=_REGISTER_READY_TIMEOUT_SECS):
+                await rehydrate_view_threads(client, transport)
+        except Exception:
+            logger.warning("Discord: re-admitting shared view threads failed", exc_info=True)
+
+    task = asyncio.create_task(_run())
+    _PENDING_REGISTRATIONS.add(task)
+    task.add_done_callback(_PENDING_REGISTRATIONS.discard)
 
 
 def _reopen_owner_dm(client: "DiscordClient", allowed_ids: set[str]) -> None:
@@ -488,6 +506,7 @@ async def maybe_start_discord(orch: "GatewayOrchestrator") -> "DiscordClient | N
                 )
         _publish_slash_commands(client)
         _reopen_owner_dm(client, allowed_ids)
+        _rehydrate_view_threads(client, transport)
         logger.info("Discord channel started (transport path, Gateway WebSocket).")
         return client
     except Exception as exc:
