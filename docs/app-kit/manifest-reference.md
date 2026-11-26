@@ -1843,6 +1843,7 @@ export function activate(ctx) {
     dispose() {},
   }
 }
+globalThis.kirocrew?.register(activate)  // for the inline path behind a proxy
 ```
 
 The host sends `render` once, after the module is ready. Treat `props` as
